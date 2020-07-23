@@ -1,0 +1,16 @@
+*******************************************************************************
+*******                     Content of all documents                  *********
+*******************************************************************************
+
+The documentation is divided into several files:
+
+  DOCUMENTATION.txt : General overview.
+  FAQ.txt           : FAQ of all tools.
+  HISTORY.txt       : Complete development history.
+
+  wit.txt           : Documentation about the tool 'wit'.
+  wwt.txt           : Documentation about the tool 'wwt'.
+
+  WDF.txt           : Definition of a WDF file.
+  WBFS.txt          : Interesting things about WBFS
+

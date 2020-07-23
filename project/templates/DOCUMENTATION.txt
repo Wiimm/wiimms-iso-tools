@@ -1,0 +1,115 @@
+
+@@MODULE(head.txt)@@
+
+
+@@MODULE(content.txt)@@
+
+
+*******************************************************************************
+*******                    Overview about this document               *********
+*******************************************************************************
+
+Contents:
+
+    Motivation
+    Some special features
+    WDF support
+~    Feature requests
+~    Known bugs
+    TODO
+    HISTORY
+
+
+*******************************************************************************
+*******                            Motivation                         *********
+*******************************************************************************
+
+The motives for writing a new tool are simple:
+
+1.) I like to work with the linux command line. And the only WBFS tool I found
+    is poor in viewing information and perhaps buggy.
+    (I have destroyed the WBFS 2 times)
+
+2.) I want to learn more about WBFS.
+
+wwt, the WBFS manager, in now complete.
+wit, the ISO manage. is still under development.
+
+Visit @@URI-HOME@@ for more information.
+
+
+*******************************************************************************
+*******                             Features                          *********
+*******************************************************************************
+
+@@MODULE(features.txt)@@
+
+
+*******************************************************************************
+*******                           WDF support                           *******
+*******************************************************************************
+
+I have already implemented the WDF support in my tool 'WWT' and tested it with
+many games. In the tests I have converted games from ISO to WDF and back.
+I done this with the tools iso2wdf, wdf2iso (both discontinued) and wdf-cat
+and with WBFS import and export. It work well and have not found any errors.
+
+The advantages are:
+
+ - WDF files are much shorter than ISO images.
+
+ - WDF files needs less disk space than the sparsed ISO images.
+
+ - WDF files can be access by random access. So WBFS manager can extend their
+   code to read from and write to a WDF on the fly. WWT does this.
+
+ - WDF is not a compression and works much faster than usal compressors.
+
+For a full WDF description see the file 'WDF.txt' or try the link:
+  @@URI-FILE@@/WDF.txt
+
+The following tools support WDF:
+ - Tool 'wdf-dump' dumps the data structure of a WDF file.
+ - Tool 'wdf-cat' is a 'cat' like programm with special handling of WDF.
+ - Tool 'wit' can converts from/into WDF files.
+ - Tool 'wwt' can extract to or add from WDF files.
+
+I have tested the 3 tools 'iso2wdf', 'wdf2iso' (both discontinued) and
+'wdf-cat' with more than 2 million files (mixed files including pictures and
+documents, but only 50 Wii ISO images) without any errors. This means that the
+3 tools are stable and the usage is sure. For more details call the script
+'./scripts/test-wdf-tools.sh' from the distribution without parameters.
+
+~
+~*******************************************************************************
+~*******                         Feature requests                        *******
+~*******************************************************************************
+~
+~ - none :)
+~
+~
+~*******************************************************************************
+~*******                           Known bugs                            *******
+~*******************************************************************************
+~
+~ - none :)
+~
+*******************************************************************************
+*******                              TODO                               *******
+*******************************************************************************
+
+ - Think about the options --fast and --trunc: Are they really needed?
+
+
+*******************************************************************************
+*******                             HISTORY                             *******
+*******************************************************************************
+
+For the complete history see file 'HISTORY.txt'. The last changes:
+
+@@MODULE(last-history.txt)@@
+
+
+*******************************************************************************
+*******                              END                                *******
+*******************************************************************************

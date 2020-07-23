@@ -1,0 +1,46 @@
+*******************************************************************************
+*******             Processing include and exclude options              *******
+*******************************************************************************
+
+The user may define ID inclusion and exclusion lists. Each element represents
+an ID4 or an ID6. Discs with an ID in the exclusion list are ignored (not
+added, extracted, removed or listed). If --include or --include-path is used,
+only discs in the include list are processed.
+
+The include list is controlled by the to options --include and --include-path
+and the exclude list by the options --exclude and --exclude-path. All four
+options can be used multiple times. The exclude list ha a higher priority
+as the include list.
+
+ -n --include id     Include oly discs with given ID4 or ID6 from operation.
+ -n --include @file  Read include list from file.
+
+ -N --include-path file_or_dir
+                     ISO file or base of directory tree -> scan their ID6
+
+ -x --exclude id     Exclude discs with given ID4 or ID6 from operation.
+ -x --exclude @file  Read exclude list from file.
+
+ -X --exclude-path file_or_dir
+                     ISO file or base of directory tree -> scan their ID6
+
+The parameters of --include and --exclude are scanned for ID6. Th section
+"Processing ID6 parameters" describes this scanning in detail.
+
+The parameter of --include-path and --exclude-path is a filename or a
+directory name. The given file or each file of the directory tree (recurse,
+max depth=15) are scanned. Subdirectories beginning with a dot ('.') are
+ignored. If a file exists and is an ISO file the ID6 is extracted and inserted
+into the include or exclude data base.
+
+Example:
+
+ You want to make a backup from all new discs of 2 USB drives. The new
+ backups should be stored info the sub directory 'new-backup'. The existing
+ backups are stored in 'old-backup'. The file names of the old backups does
+ not matter:
+
+ # wwt extract -aA --dest new-backup --exclude-path old-backup
+
+The command 'EXCLUDE' use the options --exclude and --exclude-path to builtd
+the exclude data base and prints the result to stdout.

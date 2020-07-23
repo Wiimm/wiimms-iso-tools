@@ -1,0 +1,27 @@
+*******************************************************************************
+*******              Wiimms ISO Toolset v@.@@@ - @@@@-@@-@@             *******
+*******************************************************************************
+
+Wiimms ISO Toolset (WIT) is a command line tool set for linux and for other
+unix like operating systems including cygwin. The tools manage WBFS partitions
+and ISO Images. WWT cotains the following tools:
+
+The both main tools are:
+  wit      : @@WIT-LONG@@ manage ISO files.
+  wwt      : @@WWT-LONG@@ manage WBFS partitions.
+
+And these are special WDF and CISO tools:
+  wdf-cat  : a 'cat' like programm with special handling of WDF files.
+  wdf-dump : dump the data structure of a WDF file.
+
+The software is developed under the GPL 2.0 license. See file gpl-2.0.txt
+or URI http://www.gnu.org/licenses/gpl-2.0.txt for details.
+
+The most current source is available under:
+  @@URI-VIEWVC@@/
+The source of this revision (@@REV@@) is available under:
+  @@URI-VIEWVC@@/?pathrev=@@REV-NEXT@@
+You can also checkout the SVN repository:
+  @@URI-REPOS@@/
+
+See @@URI-HOME@@ for announcements and discussions.

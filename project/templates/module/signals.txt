@@ -1,0 +1,16 @@
+*******************************************************************************
+*******                            Signals                              *******
+*******************************************************************************
+
+The WIT tools will handle the following signals:
+
+ INT or TERM
+
+    If catched first time the tool will finish after current job.
+    If catched second time the tool will finish immediately with cleanup.
+    If catched third time the tool will finish immediately without cleanup.
+
+ USR1, USR2
+
+    USR1 will decrease and USR2 increase the verbose level.
+    The effect is delayed until beginning the next job.

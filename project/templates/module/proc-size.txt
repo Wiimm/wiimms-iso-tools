@@ -1,0 +1,74 @@
+*******************************************************************************
+*******                    Processing size options                      *******
+*******************************************************************************
+
+The different programs using different options to setup size values. These
+options are --size, --split-size, --hss and --wss. The processing of the
+arguments are identical for all size options.
+
+The argument syntax is: term [ sign term ]... [sign]
+with term := float [factor]
+
+ 'float' is any C like floating point number like '12', '1.2' or '1e5'.
+ 'sign' is either the character '+' or the character '-'.
+
+ 'factor' is one of the following characters:
+
+    'c' : char, numeric factor = 1
+    'b' : byte, numeric factor = 1
+
+    'k' : kilo, numeric factor = 1 kB = 1000
+    'm' : mega, numeric factor = 1 MB = 1000*1000
+    'g' : giga, numeric factor = 1 GB = 1000*1000*1000
+    't' : tera, numeric factor = 1 TB = 1000*1000*1000*1000
+    'p' : peta, numeric factor = 1 PB = 1000*1000*1000*1000*1000
+    'e' : exa,  numeric factor = 1 EB = 1000*1000*1000*1000*1000*1000
+
+    'K' : kilo, numeric factor = 1 KiB = 1024
+    'M' : mega, numeric factor = 1 MiB = 1024*1024
+    'G' : giga, numeric factor = 1 GiB = 1024*1024*1024
+    'T' : tera, numeric factor = 1 TiB = 1024*1024*1024*1024
+    'P' : peta, numeric factor = 1 PiB = 1024*1024*1024*1024*1024
+    'E' : exa,  numeric factor = 1 EiB = 1024*1024*1024*1024*1024*1024
+
+    'u' | 'U' : size of a GameCube disc        = 1 459 978 240
+    'w' | 'W' : size of a singe layer Wii disc = 4 699 979 776
+
+  Without 'factor' a default factor is used. This default factor is different
+  for the first term and for the other terms. The default factors depends on
+  the used option.
+
+The terms are added together. If there is at the very end of the term 1 sign
+it wil be interpreted as '-1' or '+1' (using the default factor for other terms).
+
+Option --size
+    Default factor for first term:     1G
+    Default factors for other terms:   1
+    Minimal value:                    10m
+
+Option --split-size
+    Default factor for first term:     1G
+    Default factors for other terms: 512
+    Value must be multiples of:      512
+    Minimal value:                   100m
+
+Option --hss
+    Default factor for all terms:      1
+    Value must be power of:            2
+    Minimal value:                   512
+
+Option --wss
+    Default factor for all terms:      1
+    Value must be power of:            2
+    Minimal value:                  1024
+
+Examples:
+    --split-size 2g     -> split at 2.000.000.000 bytes.
+    --split-size 1g     -> split at 1.000.000.000 bytes.
+    --split-size 1G     -> split at 1.073.741.824 bytes = 1 GiB.
+    --split-size 0.5g   -> split at   500.000.000 bytes.
+    --split-size 2G-1K  -> split at 2 GiB - 1 KiB.
+    --split-size 2G-1   -> split at 2 GiB - 512
+    --split-size 2-1    -> split at 2 GiB - 512
+    --split-size 2-     -> split at 2 GiB - 512
+    -Z2-                -> split at 2 GiB - 512

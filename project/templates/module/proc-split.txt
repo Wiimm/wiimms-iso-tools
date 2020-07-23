@@ -1,0 +1,64 @@
+*******************************************************************************
+*******                    Processing split options                     *******
+*******************************************************************************
+
+Output files may be splittet into multiple files. The options --split and
+--split-size controls the output splitting:
+
+  -z --split            Enable output file splitting, default size = 4 gb.
+                        4 gb means 4.000.000.000 bytes (4 billion bytes).
+                        The default size for a WBFS is different. It is
+                        4GiB-32KiB = 0xffff8000 = 4.294.934.528 bytes.
+
+  -Z --split-size size  Enable output file splitting and set split size.
+                        See section "Processing size options" for detailed
+                        infos about the 'size' argument.
+
+A new file is created every time when the previous one reached the split size.
+Input split files are automatically detected. Only the last file of the input
+split file may grow if opened in modify mode.
+
+The split size always rounded down to a multiply of 512 (0x200), the hd sector
+size. For a WBFS it is rounde down to a multiply of 32 KiB (32768, 0x8000),
+the WII ISO sector size.
+
+There are two naming schemas for the splitted files:
+
+WBFS files are named like (defined by oggzee):
+    - name.wbfs
+    - name.wbf1
+    - name.wbf2
+      ...
+    - name.wbf9
+    - name.wbf10
+      ...
+
+All other files are named like:
+    - name.ext
+    - name.ext.1
+    - name.ext.2
+      ...
+    - name.ext.9
+    - name.ext.10
+      ...
+
+The WIT tools supports splitted WDF files *not* following the rules for
+splitted WDF files. All files are splitted hard by breaking the files into
+peaces. This is done by the file layer so that other layer including the WDF
+layer don't see the split.
+
+These are the rules for automatic detection of split files. The automatic
+detection works only for plain files but not for other files types like
+block devices or pipes:
+
+ WBFS file:
+    The last character of the filename is replaced by '1'. If a file with
+    this new filename is available, the split file support is enabled.
+
+ WDF file:
+    The WDF header is read. If the current WDF files is to short and a file
+    with same filename plus '.1' exists, the split file support is enabled.
+
+ ISO file:
+    If the file is smaller than 4 GiB and a file with same filename plus '.1'
+    exists then then split file support is enabled.

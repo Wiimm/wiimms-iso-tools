@@ -1,0 +1,47 @@
+
+[img]https://wit.wiimm.de/images/wiimms-tools.png[/img]
+
+[size=18][color=#0000FF][b]@@TOOLSET-SHORT@@: @@TOOLSET-LONG@@ v@@VERSION@@ - @@@@-@@-@@[/b][/color][/size]
+[size=15][color=#800000][b]Ein Kommandozeilen-Toolkit für ISO und WBFS Dateien.[/b][/color][/size]
+
+
+[b]wit+wwt[/b] sind [url=@@URI-HOME@@info/command-line.html]Kommandozeilen-Tools[/url]. Das bedeutet, dass man zur Ausführung vorher ein Kommandofenster aufmacht um dann die Kommandos einzugeben. Dieses hat aber den Vorteil, dass man sich Batch-Dateien für immer wiederkehrende Aufgaben schreiben kann. Zum Ansprechen der Laufwerke (WBFS Platten) muss das Kommandofenster im Admin-Modus arbeiten. Die Syntax der Kommandos ist stark an Unix angelehnt, da die Programme auch unter Linux entwickelt werden.
+
+[color=#0000c0][size=12][b]Eigenschaften:[/b][/size]
+(Die Links zeigen auf die englischsprachige Website)[/color]
+@@MODULE(features-de.forum)@@
+
+[size=12][color=#0000c0][b]Download der aktuellen Version:[/b][/color][/size]
+~[size=12][color=#0000c0][b]Download[/b][/color] [color=#800000][b]der EXPERIMENTELLEN Version:[/b][/color][/size]
+[list]
+[*] [url=@@URI-DOWNLOAD-I386@@][b]@@DISTRIB-I386@@[/b][/url] : Linux/i386 Version
+[*] [url=@@URI-DOWNLOAD-X86_64@@][b]@@DISTRIB-X86_64@@[/b][/url] : Linux/x86_64 Version
+~[*] [url=@@URI-DOWNLOAD-MAC@@][b]@@DISTRIB-MAC@@[/b][/url] : Mac OS Universal Binaries (ppc, i386 und x86-64)
+[*] [url=@@URI-DOWNLOAD-CYGWIN@@][b]@@DISTRIB-CYGWIN@@[/b][/url] : Cygwin (Windows) Version
+[/list] Weitere Versionen sind unter [url=@@URI-HOME@@download.html][b]@@URI-HOME@@download.html[/b][/url] verfügbar.
+
+[size=12][color=#0000c0][b]Es existieren auch mehrere graphische Oberflächen (GUI) zur Bedienung von WIT. Die beiden wichtigsten sind:[/b][/color][/size]
+[list]
+[*] [url=@@URI-QTWITGUI@@][b]QtWitGui, Bearbeitung einzelner Wii ISO discs.[/b][/url]
+    Dieses QT basierte GUI bietet Dinge rund um die Bearbeitung (Kopieren, modifizieren) von einzelnen Wii ISO discs.
+
+[*] [url=@@URI-WIIBAFU@@][b]Wii Backup Fusion[/b], ein WBFS- und ISO-Manager.[/url]
+    WiiBaFu ist ein ausgereiftes GUI, welches auf QT basiert.
+
+[*] [url=@@URI-MACWITGUI@@][b]Witgui[/b] für Mac.[/url]
+    [i]Witgui[/i] ist eine graphische Oberfläche für die Mac-Version von [i]wit[/i].
+[/list]
+
+~ Highlights
+[size=12][color=#0000c0][b]Höhepunkte dieser Version:[/b][/color][/size]
+[list]
+[*]
+[/list]
+
+[size=12][color=#0000c0][b]Letzte Änderungen:[/b][/color][/size]
+
+[code]
+@@MODULE(last-history.txt)@@
+[/code]
+
+Die Quellen stehen unter der GPL2 Lizenz und können entweder direkt aus dem [url=@@URI-REPOS@@][b]SVN Repository[/b][/url] exportiert oder mit einem [url=@@URI-VIEWVC@@][b]Browser besurft werden[/b][/url]. Unter [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url] gibt es weitere Informationen.

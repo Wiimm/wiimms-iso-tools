@@ -1,0 +1,40 @@
+
+[img]https://wit.wiimm.de/images/wiimms-tools.png[/img]
+
+[size="5"][color="#0000FF"][b]@@TOOLSET-SHORT@@: @@TOOLSET-LONG@@ v@@VERSION@@ - @@@@-@@-@@[/b][/color][/size]
+[size="3"][color="#800000"][b]A command line ISO+WBFS tool set for various os.[/b][/color][/size]
+
+[url=@@URI-HOME@@][b]@@TOOLSET-SHORT@@[/b][/url] (@@TOOLSET-LONG@@) is a set of [url=@@URI-HOME@@info/command-line.html]command line[/url] tools to manipulate Wii ISO images and WBFS containers. The two main tools are called [url=@@URI-HOME@@wit][b]@@WIT-SHORT@@[/b][/url] (@@WIT-LONG@@) and [url=@@URI-HOME@@wwt][b]@@WWT-SHORT@@[/b][/url] (@@WWT-LONG@@, the WBFS manager).
+
+[size="3"][color="#0000c0"][b]Feature overview:[/b][/color][/size]
+@@MODULE(features-en.forum)@@
+
+[size="3"][color="#0000c0"][b]Download of the current version:[/b][/color][/size]
+~[size="3"][color="#0000c0"][b]Download[/b][/color] [color="#800000"][b]this EXPERIMENTAL release:[/b][/color][/size]
+[list]
+[*] [url=@@URI-DOWNLOAD-I386@@][b]@@DISTRIB-I386@@[/b][/url] : Linux/i386 version
+[*] [url=@@URI-DOWNLOAD-X86_64@@][b]@@DISTRIB-X86_64@@[/b][/url] : Linux/x86_64 version
+~[*] [url=@@URI-DOWNLOAD-MAC@@][b]@@DISTRIB-MAC@@[/b][/url] : Mac OS universal binaries (ppc, i386 and x86-64)
+[*] [url=@@URI-DOWNLOAD-CYGWIN@@][b]@@DISTRIB-CYGWIN@@[/b][/url] : Cygwin (Windows) version
+[*] Other releases are available at [url=@@URI-HOME@@download.html][b]@@URI-HOME@@download.html[/b][/url].
+[/list]
+
+[size="3"][color="#0000c0"][b]There are also some GUI available:[/b][/color][/size]
+[list]
+[*] [url=@@URI-QTWITGUI@@][b]QtWitGui[/b], manipulate and convert single ISO images.[/url]
+    This QT based GUI focuses on manipulating single ISO images. It can do much more.
+
+[*] [url=@@URI-WIIBAFU@@][b]Wii Backup Fusion[/b], a WBFS and ISO manager.[/url]
+    This QT based GUI is a complete WBFS manager and ISO tool.
+
+[*] [url=@@URI-MACWITGUI@@][b]Witgui[/b] for Mac.[/url]
+    This is a graphical user interface for wit available for Mac OS X.
+[/list]
+
+[size="3"][color="#0000c0"][b]Change log:[/b][/color][/size]
+
+[code]
+@@MODULE(last-history.txt)@@
+[/code]
+
+The source is published under the license of GPL2. Checkout the sources directly from the [url=@@URI-REPOS@@][b]SVN repository[/b][/url] or [url=@@URI-VIEWVC@@][b]browse the source[/b][/url]. Visit [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url] for more information.

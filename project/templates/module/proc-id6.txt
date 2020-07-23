@@ -1,0 +1,72 @@
+*******************************************************************************
+*******                    Processing ID6 parameters                    *******
+*******************************************************************************
+
+Discs in a WBFS partition are addressed by its ID6. Therfor commands like
+EXTRACT and REMOVE needs as parameters an ID6 tag. And EXTRACT needs also
+the name of the destination file. This section describes the processing
+of ID6 parameters.
+
+First all control characters (ASCII <32) will be replaced by a space. Spaces
+at the beginning and a the end are removed. Multiples spaces will be replaced
+by a single space.
+
+In the second step each parameter will be processed by the following rules.
+If one rule matches the processing terminates. ID6 are words that contains
+exactly 6 characters in the range a-z, A-Z and 0-9. All other characters are
+word separators. ID6 is converted into upper case.
+
+The rules as overview:
+    '*' | '+'
+    ID4
+    ID6
+    ID6 = name
+    name [ID6]
+    ID6 anything
+
+
+1.) '*' | '+'
+
+    Both characters has the same meaning: Use all ID6 will be found on the
+    given WFS partitions. The parameter will be replaced by the complete ID6
+    list. A destination filename is not defined.
+
+	Only the first occurrence will be processed. All other are ignord.
+
+    Note: '*' is the natural 'all' placeholder but must be escaped in most
+          shells. Therefor the additional '+' is possible.
+
+2.) ID4
+
+    If the parameter contains exactly one ID4 and nothing else the ID4 is
+    used. Only for some commands/options a pure ID4 is allowd.
+
+3.) ID6
+
+    If the parameter contains exactly one ID6 and nothing else the ID6 is
+    used. A destination filename is not defined.
+
+4.) ID6 = name
+
+    Use this format to set an ID6 and an destination filename. Blanks before
+    and behind '=' are ignored. The name is used as the destination filename.
+
+5.) name [ID6]
+
+    The line is searched for an ID6 which is directly included in square
+    bracktes. If more than 1 '[ID6]' is found the last one will be used.
+    The whole parameter is used as the destination filename.
+
+6.) ID6 anything
+
+    This is the table support. The ID6 is taken and the remaining is ignored.
+    A destination filename is not defined.
+
+If the option --unique is supported and set then repeated parameters with the
+same ID6 are eliminated. The last non empty destination filename is used.
+
+If a destination filename is needed but none is set than the a name from the
+title database or an internal name of the game will be used. Before creating
+an ISO image the destination filename is post processed to eliminate unusal
+characters. Only single spaces, A-Z, a-z, 0-9 and _+-='"$%&,.!()[]{}<> are
+allowed.

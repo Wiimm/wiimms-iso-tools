@@ -1,0 +1,420 @@
+
+@@MODULE(head.txt)@@
+
+
+@@MODULE(content.txt)@@
+
+
+*******************************************************************************
+*******                           HISTORY v2.*                          *******
+*******************************************************************************
+
+wit v2.00a r2834 - 2011-07-08
+
+ - Because no bugs (exclude installing) reported since months my WIT tools
+   seems to be perfect (or ready to use or something between). So it's time
+   to increase the major version and to proclaim v2.00a. The whole project
+   consists about 100 000 code lines.
+ - Bug fix for Windows install script: Remove duplicate WIT entries.
+
+
+wit v2.00b r2855 - 2011-07-13
+ - Bug fix: If creating a Wii image and using hard links (option --links) the
+   offsets of some hard linked files are wrong for some special situations.
+
+
+wit v2.01a r3138 - 2011-10-27
+
+ - Windows version only: Update to Cygwin DLL 1.7.9-1
+ - Bug fix (thanx to fig2k4): Special characters in FST file names with code
+   >127 will now be translated into UTF-8 to list and create files correct.
+ - New option for "wwt LIST": --fragments: Print fragments and a ratio instead
+   of the region info. A summary line is printed too.
+ - New command: wwt LIST-F|LF: Short cut for "wwt LIST --fragments"
+ - Option --sort=fragments sort some listings by the number of wbfs fragments.
+ - Option --fast is ignored and will be removed in the near future.
+   Please don't use --fast any longer.
+ - New option: --copy-gc: If extracting a GameCube disc image, don't extract
+   the real files to '/files/...'. Instead create a copy of the source image
+   and store it as 'game.iso'. If the source image have the correct format and
+   option --no-link is not set, try a hard link first.
+ - Option --neek replaces the old --sneek, but --sneek is also accepted.
+   Option --neek includes now option --copy-gc.
+ - "wit extract --neek --dest %i": Extract like DiscEx (but faster!).
+   The only change is for GameCube discs because of implied --copy-gc.
+
+
+wit v2.02a r3240 - 2011-11-25
+
+ - The default output filename for WBFS files changed from "ID6.wbfs" ("%+")
+   to "TITLE [ID6].wbfs" ("%X").
+ - The file order for composed files is now Nintendo like.
+ - If extracting an image, a new files called 'align-files.txt' is created. It
+   stores information about file alligning. If creating a new image and option
+   --align-files is set, this file is read to align files, that have a previous
+   aligning of >=0x8000 (Wii sector size). This fixes the bug for "Super Paper
+   Mario" and perhaps for some other games.
+ - wit FILES: If the file list is sorted by offset, than an 'unused' column is
+   added before the 'offset' column.
+ - wfuse for Mac is back again. It was lost because non installed FUSE package.
+
+
+wit v2.03a r3309 - 2011-12-30
+
+ - wit+wwt SKELETON: Support of GameCube images.
+ - New command: wwt DUP: Duplicate an existing WBFS to a new file including
+   block assigning errors. The idea is to have a command, that can duplicate
+   a defect WBFS for tests.
+ - Command "wwt DUMP" accept now --show for a fine control of printed data.
+   The dump may now contain also a usage table and a integrity check report.
+
+ - For a long time the code contains a WBFS extension. Now I have xompleted,
+   enabled and tested it. With this extension the WBFS "free blocks table" is
+   managed in a total different way:
+    - WBFS access: While opening a WBFS the free blocks table is ignored.
+      Instead of using the stored one an internal memory map of used blocks is
+      built. This needs only a part of a second. Some advantages:
+       - Errors in the free blocks table are irrelevant.
+       - Blocks overlaps and invalid block assignings are automatically
+         detected, reported, and fixed for internal usage.
+       - If removing a discs with overlaps, the blocks are still marked used.
+       - Blocks, that are not handled by the free blocks tables (the table is
+         sometimes too small; a result of a calculation bug in the original
+         libwbfs) can be used. If closing a WBFS, a new and fixed free blocks
+         table will be written. This makes the whole process compatible and
+         transparent to other WBFS managers and USB loaders.
+    - wwt ADD: Before adding a disc, its size is compared against the free size
+      of the WBFS. This allows an early "disc full" error message.
+    - wwt ADD: If adding a disc to a partition a continuous memory block is
+      searched to minimize the (non existent) fragmentation. This is disabled
+      for WBFS files by default because a file itself can be fragmented.
+    - wwt ADD+PHANTOM --wbfs-alloc=mode: Set the WBFS block allocation mode.
+    - The commands "wwt CHECK", "wwt REPAIR" and "wwt EDIT" have been modified
+      to work with the new interface.
+
+
+wit v2.04a r3554 - 2012-03-10
+
+ - New option: wit --force: Ignore partition size errors and allow access to
+   damaged partitions. "wwt --force" works similar.
+ - New options: --disc-id=id, --boot-id=id, --ticket-id=id, --tmd-id=id and
+   --wbfs-id=id: Patch only the specific ID. These options are handled after
+   the --id and --modify options. Patching the WBFS ID while adding a game is
+   now also possible.
+ - New implementation of command "wit ID6": It generates an ID6 list of all
+   sources. This is similar as before, only the meaning of the parameters
+   changed. If option --long is set, a table with 5 IDs (DISC, BOOT, TICKET,
+   TMD and WBFS) is printed. BOOT, TICKET and TMD IDs are taken from the main
+   partition. If --long is set twice, all IDs of all partitions are printed.
+ - wwt LLLL: List contains date and time (in seconds) columns.
+
+
+wit v2.05a r3591 - 2012-04-14
+
+ - "wit VERIFY" will now ignore extracted file systems.
+ - wit --id=.....X: ID change failed if only the sixt character was modified.
+ - All ID patching options (--id, --disc-id, ...) accept now a plus sign '+' as
+   wildcard for multiple '.' to fill the complete entered ID to 4/6 characters.
+ - The listing command "wit ID6" accepts now all ID patching options to test
+   the effect of them.
+
+
+wit v2.05b r3611 - 2012-04-20
+
+ - Bug fix for assertion failure in "wwt RECOVER".
+
+
+wit v2.06a r3832 - 2012-06-15
+
+ - Windows version only: Update to Cygwin DLL 1.7.15-1
+ - wit CERT --long: Print keys and signatures as hex or base64 dump.
+
+
+wit v2.07a r3955 - 2012-07-14
+
+ - Bug fix: The automatic directory creation if using %-escapes in destination
+   file names was gone and is now back again.
+ - Bug fix: Extracting files of directories beginning with '.' fails sometimes.
+ - Bug fix: "wit edit --id=... a.wbfs" may now change the WBFS id too.
+ - Bug fix: wwt (but not wit) ignored the parameter of option --include-path.
+ - Because of compiler warnings: Switched from utime() to utimes().
+
+
+wit v2.08a r4027 - 2012-08-31
+
+ - New command: wit IMGFILES: Print a list (1 file per line) with all image
+   files inlcuding their associated split files. If option --null (-0) is set,
+   the list is NULL terminated to support all possible file names.
+ - New command: wit REMOVE: Removes the image files including their associated
+   split files.
+ - New option --scan-progress: Print a log message is printed for each found
+   image while scanning the local file system.
+ - Bug fix: "wit COPY --source a --dest b" threw an error, because the tool
+   thought, that no source was defined.
+ - Bug fix for "wwt ADD --raw": wwt copied too large (double layer) images.
+
+
+wit v2.09a r4047 - 2012-09-08
+
+ - Option --scan-progress prints more info and flush every log output.
+ - Bug fix: "wit MOVE a.wbfs ..." will work now.
+ - New escapes for output files: The old '%f' is the source filename without
+   path (like 'name.ext'). Now we have also '%g' and '%h' as split of '%f':
+   '%g' is file name without extension ('name') and '%h' is the extension
+   ('.ext').
+ - Bug fix: "wit COPY --recurse a --dest b" threw an error, because the tool
+   thought, that no source was defined (same as with --source before).
+
+
+wit v2.09b r4053 - 2012-09-09
+
+ - Bug fix: Because of the --recurse bug fix of v2.08a, "wit COPY" failed.
+
+
+wit v2.10a r4118 - 2012-10-10
+
+ - Write privileges are not longer needed, if a WBFS file or partiton is only
+   read.
+ - New command: wit ANAID (ANAlyze ID): Analyze the entered IDs and print one
+   line for each ID with 3 columns: HEX_ID, ASCII_ID, Game title.
+ - Little (compatible) changes for WDF v1.
+ - New command: wit FRAGMENTS: Print the image fragments and, if possible,
+   their filesystem mapping. Add option --brief (-b) to print only a summary
+   with the fragment counts. Add option --long (-l) to print additonally
+   alignment infos.
+   *NOTE: Filesystem mapping is only supported on real linux systems (yet),
+          but neither for Mac nor for Cygwin.
+ - The image builder search now the file 'exclude.fst' to exclude files from
+   the composing. See https://wit.wiimm.de/info/composing.html#part for details.
+
+
+wit v2.11a r4233 - 2013-02-09
+
+ - Windows version only: Update to Cygwin v1.7.17
+ - Bug fix: A wrong TMD size is now detected while scanning image partitions.
+ - Command 'wit FRAGMENTS' will now scan and print the filesystem mapping for
+   Linux (like before) and Windows (that's new). Mac is still not supported.
+
+
+wit v2.12a r4272 - 2013-03-14
+
+ - Bug fix: "wit EDIT" failed on WBFS files since v2.10a (Write privileges
+   not longer needed for WBFS files).
+ - New command: wwt SCRUB: Scrubs an image and free unused WBFS blocks. It can
+   be combined with --psel= to clear unwanted image partitions. This command
+   may help to repair wrong WBFS block maps.
+ - New wfuse option: --allow-other (-O): This option is a short cut for
+   '-o allow_other'. It enables re-exporting of the mounted file system for
+   example by a samba server.
+
+
+wit v2.13a r4298 - 2013-03-28
+
+ - New docu file: INSTALL.txt
+ - Mac+Linux+Unix: Script 'install.sh' will call itself with 'sudo' if not
+   started by user 'root'. Read INSTALL.txt for details.
+ - Windows: Cygwin updated.
+ - Bug fix: If writing an image failed ('disc full' for example), the tools
+   didn't aborted and, if option --remove was set, deleted the source image.
+   This bug arrived with the implementation of preallocation, because of a
+   lost error status.
+
+
+wit v2.20a r4399 - 2013-05-01
+
+ - After 4 years development this version should be the last release of the
+   WIT-Tools until further notice; with exception of bug fix releases. I will
+   discontinue adding new features. That's the reason for the little version
+   jump to v2.20a.
+ - New command: "wwt NEW" is a short cut for "wwt ADD --update --newer".
+ - Cygwin (Windows) DDLs updated.
+ - Title data base updated.
+
+
+wit v2.21a r4489 - 2013-06-15
+
+ - The default image format switched from WDF to WBFS. This is only relevant,
+   if no image type is specified by source, option or file extension, for
+   example for the command "wwt EXTRACT".
+ - wit DUMP --long: If dumping a DOL file, a third table with delta values
+   between the virtual address and the file offset is printed.
+ - New command: wit DOLPATCH: Patch a DOL file by reading a Riivolution XML
+   file and scanning all memory tags.
+   -> Read https://wit.wiimm.de/cmd/wit/dolpatch for details.
+ - If extracting an image, the file 'setup.txt' contains now a new parameter:
+   "image-type = TYPE". It shows the image type of the source image.
+   If cretaing an image and file 'setup.txt' contains this paramater with a
+   valid image type, this image type is used as default for the new created
+   image. The default is superseded by format options and file extensions.
+     This feature is dedicated to patching scripts. If an original image is
+   extracted with "wit extract -1n ANYID6 . WORKDIR --psel data" and then
+   patched, an image with identical image type as the original can be created
+   by the command: wit copy WORKDIR %x --id NEWID6 --name "new title of game"
+ - For easier script/batch support, the files "setup.sh" and "setup.bat" are
+   created for extracted images. They contain similar info as "setup.txt", but
+   can be directly included by ". ./PATH/setup.sh" or  "CALL PATH\setup.bat"
+   to get the settings as script variables.
+ - Cygwin (Windows) DDLs updated.
+ - Title data base updated.
+
+
+wit v2.21b r4492 - 2013-06-15
+
+ - Bug fix: wit DOLPATCH: Reading 'offset' failed on 32 bit systems.
+
+
+wit v2.22a r4516 - 2013-06-22
+
+ - Command "wit DOLPATCH" accepts now more commands and is able to create new
+   TEXT and DATA sections.
+   -> Read https://wit.wiimm.de/cmd/wit/dolpatch for details.
+ - New option: --tt-id=ID: This is a short cut for '--ticket=ID --tmd=ID'.
+   If TICKET and TMD differ, the game will freeze after loading. So it make
+   sense to change only TICKET and TMD IDs together.
+ - Bug fix, if using "wit COPY --name discname" and the destination is %X or
+   similar: The new discname is now used to create the filename.
+
+
+wit v2.22b r4520 - 2013-06-22
+
+ - Command "wit DOLPATCH":
+    - Bug fix: If loading a file, wrong data was used.
+    - Tag 'memory', attribute 'value': 4 MiB data are accepted now.
+    - Sub command 'address=hexstring': 4 MiB data are accepted now.
+
+
+wit v2.23a r4534 - 2013-07-12
+
+ - Bug fix: wit DOLPATCH: Conditions were ignored.
+   (Already fixed in unofficial v2.22c)
+ - Built-in docu.
+ - Title data base updated.
+ - Windows only: Cygwin update to v1.7.20 2013-06-07.
+ - Some makefile changes because of a new Cygwin compiler.
+
+
+wit v2.24a r4723 - 2013-11-10
+
+ - The Windows installer will now force type REG_EXPAND_SZ for path variables.
+ - wit DOLPATCH: Wrong calculation for address aligning fixed.
+ - New sub command for "wit DOLPATCH": ENTRY=address: Define a new entry point.
+ - Title data base updated.
+ - Windows version only: Update to Cygwin v1.7.25. I hope that it fixes the
+   bug that occurred during creation of MKW-Fun 2013-10 with Windows 8.1.
+
+
+wit v2.25a r4825 - 2014-01-03
+
+ - New option --auto-split: If set, the tools try to find out, if an image
+   split is needed. The split size is then either below 4 or 2 GiB. Auto-Split
+   base on tests with fseek() and works fine under Linux, but it don't work
+   with Cygwin. Mac is unknown. In future versions --auto-split is enabled by
+   default. It is disabled by any other split option.
+ - New option --no-split: Disable file splitting at all. At the moment and in
+   old versions of the tools, this is the default.
+ - wwt CHECK+REPAIR: Support for option --sections.
+ - Windows only: Cygwin update to v1.7.27 2013-12-09.
+
+
+wit v2.26a r4863 - 2014-01-22
+
+ - Bug fix: Because of a bug after implementing the auto split detection,
+   reading source images failed, if using stdin for parameters.
+ - Support for Dolphins file format GCZ (GameCube Zip):
+    - All commands detect and accept GCZ files as input file.
+    - Creating of GCZ files is also supported, but EXPERIMENTAL until final
+      tests have been done.
+    - New option --gcz force GCZ output.
+    - Patching of GCZ files is not possible, because the GCZ file structure
+      doesn't allow modifications (size of compressed data must not change).
+    - Composing an image to a GCZ file is not possible, because it needs
+      patching checksums and header after writing the complete image.
+   The GCZ support is very new, so please use it only with backups of your
+   images and don't be anger, if it destroy something.
+
+
+wit v2.27a r4908 - 2014-01-31
+
+ - Bug fix: If extracting a GameCube image, files larger than 4 MiB are
+   damaged at beginning of this 4 MiB offset.
+ - New feature: If creating a GCZ image, a blockwise z-compression is tried.
+   If the compressed data is larger than 98.5%, the uncompressed data is
+   stored. New is, that encrypted blocks are stored directly as uncompressed
+   data, because encrypted are very bad compression candidates and the 98.5%
+   test fails all the time. This makes GCZ creation faster. The new option
+   --gcz-zip disables this optimization for encrypted data.
+ - New option: --gcz-block=size: Define the block size for GCZ creation. The
+   default size is 16K (also Dolphins default).
+ - Tool 'wdf' supports info dumps of GCZ files to verify the GCZ creation.
+ - New command for wit+wwt: FEATURES: Print a list of supported features. The
+   output is machine readable. Scripts may use "wit features -qq" and check
+   the exit status.
+ - Reading support for the comming WDF v2. Details: https://wit.wiimm.de/WDF
+   Writing support will follow, if EDIT is implemented too.
+
+
+wit v2.28a r4980 - 2014-03-01
+
+ - Full WDF version 2 support:
+    - WDFv2 files are a little bit smaller and support alignment.
+    - Parts of the WDF library have been rewritten to support WDFv2 and
+      alignment. A side effect is a more compact code and a better chunk
+      management if modifiying WDF files.
+    - Option --wdf forces WDF output, the version is definied automatically.
+    - Option --wdf1 forces WDFv1 output.
+    - Option --wdf2 forces WDFv2 output.
+    - Option --align-wdf defines an alignment between 1 and 1GiB (power of 2)
+      and optional the minimal hole size before creating a new chunk.
+    - 'wit EDIT' supports --wdf1 and --wdf2 to allow version conversions.
+   For technical details about WDF see: https://wit.wiimm.de/WDF
+ - Support of split files of CleanRip: If reading a plain ISO file named
+   '*.part0', the other parts are detected as continuation files.
+ - Windows only: Cygwin update to v1.7.28 2014-02-09.
+
+
+wit v2.29a r5186 - 2014-05-16
+
+ - New patching options to support the new custom server:
+   - Option --http: Replace 'https' request to 'http' in the files 'main.dol'
+     and 'rel/StaticR.rel'.
+   - Option --domain=dom: Replace 'nintendowifi.net' by the new domain.
+   - Option --wiimmfi: Patch the images for the new custom server. It is a
+     short cut for: --http --domain=wiimmfi.de
+
+
+wit v2.30a r5771 - 2014-11-15
+
+ - Bug fix for GameCube extracts: The alignments in file 'align-files.txt'
+   were too large by a factor of 4.
+ - WDF version 2 is now the default WDF version. Use --wdf1 to force v1.
+ - With v2.21a (June 2013) the default output file format was switched from
+   WDF to WBFS. Since that command SKELETON used this new default by mistake.
+   Now the much more efficient WDFv2 is used as default for skeletons.
+ - Command SKELETON supports now GameCube images.
+ - Windows only: Cygwin update to v1.7.32 2014-08-13.
+
+
+wit v2.31a r6005 - 2015-02-08
+
+ - Some minor text edits.
+ - Title database updated.
+ - Windows only: Cygwin update to v1.7.34-6 2015-02-04.
+
+
+wit v2.40a r7331 - 2017-01-05
+
+ - This will be the last release of v2.* series. I plan to reorganize the code
+   and to use my own C source library and to integrate Wii U support.
+ - New command: wit ID8: Print ID6 + 2 next bytes as disc and version number.
+ - Title database: Definitions without titles (e.g. "RMCP =") will remove the
+   related title from the internal title database. If a ID is followed by a
+   star (e.g. "RMC* ="), then all titles beginning with the ID are removed.
+ - Title database updated.
+ - Some minor text edits.
+ - Windows only: Cygwin update to v2.6.1 2016-12-16.
+
+
+
+*******************************************************************************
+*******                              END                                *******
+*******************************************************************************

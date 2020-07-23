@@ -1,0 +1,17 @@
+
+# this is a template for ../Makefile.local
+
+# copy this file to the main directory
+# and remove appropriate comments (the leading '# ' of the include lines)
+
+#------------------------------------------------------------------------------
+
+# Linux, 32 bit, i368
+# -include makefiles-local/Makefile.local.i386
+
+# Linux, 64 bit, x86
+# -include makefiles-local/Makefile.local.x86_64
+
+# Mac, universal binary
+# -include makefiles-local/Makefile.local.mac
+

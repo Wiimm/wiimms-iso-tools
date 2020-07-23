@@ -1,0 +1,40 @@
+    The destination filenames are scanned for escape sequences beginning with
+    the escape character '%'. The accepted format is:
+
+        '%cX'  or  '%mcX'  or  '%n-mcX'
+
+    'n' is the number of skipped characters of the field.
+
+    'm' is the zero based index of the last copied character.
+
+    'c' is an optional character. If c is 'u' then the source will be
+    converted into upper case and if c is 'l' into lower case.
+
+    'X' selects the source and is one of (ignoring case):
+        'I' : ID6
+        'N' : Disc name
+        'T' : Title of title db. If no title found the disc name is used.
+        'E' : The default extension ('wdf', 'iso', 'ciso' or 'wbfs')
+        'P' : The path (all upto the last '/') of the source file
+        'F' : The filename (start behind the last '/') of the source file
+        'X' : Extended filename: A shortcut for '%T [%I].%E'
+        'Y' : Extended filename: A shortcut for '%T [%I]' (no file extension)
+        '+' : The default filename: WBFS='%I.%E', all other='%X'
+
+    To use the '%' sign itself just type '%%'.
+
+    Examples:
+        '%4I.%E'    : Store the disc with ID4 as name.
+        '%1uT/%X'   : Store the disc into a subdirectory named with the
+                      first character (upper case) of the title.
+        '%3-4lI/%X' : Store the disc into aa subdirectory named with the
+                      language code of the ID using the lower case letter.
+        '%P/%X'     : Store the disc into the directory of the source
+                      with the extended filename.
+
+    Instead of '%' an alternative escape character can be used. It is defined
+    by the option --esc= (-E). This makes live easier if using the cygwin
+    version together with the windows shell 'cmd'. Define the environment
+    variables 'WIT_OPT' and/or 'WWT_OPT' for a new default definition.
+     Example for Unix bash: export WIT_OPT="--esc=$"
+     Example for Windows:   set WIT_OPT=--esc=$

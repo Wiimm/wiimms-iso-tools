@@ -1,0 +1,19 @@
+wit v@@VERSION@@ r@@REV-NEXT@@ - @@@@-@@-@@
+
+ - Windows version only: Update to Cygwin 2.11.1.
+ - Options --wiimmfi & --domain: Domain 'sake.gamespy.com' is replaced too,
+   but only if the new domain is not longer than 11 characters. This is a
+   special support for 'Super Smash Bros. Brawl'.
+ - Option --dsync[=MODE] changed: --dsync accepts an optional parameter MODE
+   now. If set, it one of OFF (disable), ON (enable) or AUTO (default). With
+   AUTO, DSYNC is enabled if the progress counters are active. This option has
+   only impact, if compiler and operation system support the flag O_DSYNC.
+   Linux does.
+ - Option --progress (-P) changed: Print progress counter. If --verbose is set
+   at least twice, printing is enabled too. If progress is enabled, the
+   default of --dsync is changed.
+ - Some minor bug fixes.
+
+~
+~Known bugs:
+~

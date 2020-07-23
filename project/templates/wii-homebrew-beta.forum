@@ -1,0 +1,32 @@
+
+[img]https://wit.wiimm.de/images/wiimms-tools.png[/img]
+
+[size=18][color=#0000FF][b]@@TOOLSET-SHORT@@: @@TOOLSET-LONG@@
+v@@VERSION@@ - @@@@-@@-@@[/b][/color][/size]
+[size=15][color=#800000][b]Beta-Test-Version![/b][/color][/size]
+
+[color=#800000]Die Produkt-Version wird im [url=https://wit.wiimm.de/r/wii-homebrew]WIT Hauptthema[/url] besprochen.[/color]
+
+[size=12][color=#0000c0][b]Download[/b][/color] [color=#800000][b]der EXPERIMENTELLEN Version:[/b][/color][/size]
+[list]
+[*] [url=@@URI-DOWNLOAD-I386@@][b]@@DISTRIB-I386@@[/b][/url] : Linux/i386 Version
+[*] [url=@@URI-DOWNLOAD-X86_64@@][b]@@DISTRIB-X86_64@@[/b][/url] : Linux/x86_64 Version
+~[*] [url=@@URI-DOWNLOAD-MAC@@][b]@@DISTRIB-MAC@@[/b][/url] : Mac OS Universal Binaries (ppc, i386 und x86-64)
+[*] [url=@@URI-DOWNLOAD-CYGWIN@@][b]@@DISTRIB-CYGWIN@@[/b][/url] : Cygwin (Windows) Version
+[/list] Weitere Versionen sind unter [url=@@URI-HOME@@download.html][b]@@URI-HOME@@download.html[/b][/url] verfügbar.
+
+~ Highlights
+[size=12][color=#0000c0][b]Höhepunkte dieser Version:[/b][/color][/size]
+[list]
+[*]
+[color=#800000]Bitte testet es![/color]
+[/list]
+
+
+[size=12][color=#0000c0][b]Letzte Änderungen:[/b][/color][/size]
+
+[code]
+@@MODULE(last-history.txt)@@
+[/code]
+
+Die Quellen stehen unter der GPL2 Lizenz und können entweder direkt aus dem [url=@@URI-REPOS@@][b]SVN repository[/b][/url] exportiert oder mit einem [url=@@URI-VIEWVC@@][b]Browser besurft werden[/b][/url]. Diese beiden Links zeigen auf den Beta-Zweig des SVN-Repositories. Unter [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url] gibt es weitere Informationen.

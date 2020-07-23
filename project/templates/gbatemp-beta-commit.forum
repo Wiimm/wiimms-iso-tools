@@ -1,0 +1,24 @@
+
+[img]https://wit.wiimm.de/images/wiimms-tools.png[/img]
+
+[size="5"][color="#0000FF"][b]@@TOOLSET-SHORT@@: @@TOOLSET-LONG@@ v@@VERSION@@ - @@@@-@@-@@[/b][/color][/size]
+[size="4"][color="#800000"][b]Beta test version, for EXPERIMENTAL use only.[/b][/color][/size]
+
+
+[color="#000080"][b]I have commited a new version to the beta branch.[/b][/color]
+Binaries are not available.
+
+
+[size="3"][color="#0000c0"][b]Highlights of this release:[/b][/color][/size]
+[list]
+[*]
+[color=#ffffff].[/color]
+[/list]
+
+[size="3"][color="#0000c0"][b]Change log:[/b][/color][/size]
+
+[code]
+@@MODULE(last-history.txt)@@
+[/code]
+
+The source is published under the license of GPL2. Checkout the sources directly from the [url=@@URI-REPOS@@][b]SVN repository[/b][/url] or [url=@@URI-VIEWVC@@][b]browse the source[/b][/url]. These URLs are different from the product version. Visit [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url] for more information.

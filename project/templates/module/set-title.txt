@@ -1,0 +1,44 @@
+ Processing the new title:
+
+    The title string is parsed for escape sequences beginning with the escape
+    character '%'. The accepted format is:
+
+        '%cX'  or  '%mcX'  or  '%n-mcX'
+
+    'n' is the number of skipped characters of the field.
+
+    'm' is the zero based index of the last copied character.
+
+    'c' is an optional character. If c is 'u' then the source will be
+        converted to uppercase and if c is 'l' to lower case.
+
+    'X' selects the source and is one of:
+
+        'i' : the (new) ID6
+        'I' : the (new) ID6
+        'j' : The previous ID stored in the WBFS inode.
+        'J' : The previous ID stored in the ISO header.
+
+        'n' : The previous disc title stored in the WBFS inode.
+        'N' : The previous disc title stored in the ISO ehader.
+
+        't' : The title from the title database based on the new ID or, if not
+              changed, on the ID of the WBFS inode. If no title found the disc
+              name stored in the WBFS inode is used.
+        'T' : Same as 't'
+        'p' : The title from the title database based on the previous ID stored
+              in the WBFS inode. If no title found the disc name stored in the
+              WBFS inode is used.
+        'P' : The title from the title database based on the previous ID stored
+              in the ISO header. If no title found the disc name stored in the
+              ISO header is used.
+
+        If the object to change is not a WBFS then the ISO data is used instead
+        of the WBFS inode data ('j', 'n', and 'p' conversions).
+
+    To use the '%' sign itself just type '%%'.
+
+    Instead of '%' an alternative escape character can be used. It is defined
+    by the option --esc. This makes live easier if using the cygwin version
+    together with the windows shell 'cmd'. Define the environment variables
+    'WIT_OPT' and/or 'WWT_OPT' for a new default definition.

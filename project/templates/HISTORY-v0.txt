@@ -1,0 +1,629 @@
+
+@@MODULE(head.txt)@@
+
+
+@@MODULE(content.txt)@@
+
+
+*******************************************************************************
+*******                           HISTORY v0.*                          *******
+*******************************************************************************
+
+wwt v0.00a r116 - 2009-09-28
+
+ - First release.
+ - Supported commands: HELP, ERROR, FIND, SPACE, DUMP, ID6, LIST*,
+   ADD, EXTRACT, REMOVE
+
+wwt v0.00b r123 - 2009-09-28
+
+ - new: command FORMAT
+
+wwt v0.00c r145 - 2009-09-30
+
+ - EXTRACT & REMOVE: -tt (--test twice) => print normalized ID6 list and exit.
+ - EXTRACT: option --unique enabled.
+ - EXTRACT & ADD: progress info enabled with -vv.
+ - New processing of ID6 parameters.
+ - Bug fix: the long option --sort does'n take a parameter.
+ - Output of LIST improved.
+ - The read and write file subroutines are rewritten. ==> tests needed.
+ - The new option --sparse enables improved sparse handling.
+
+wwt v0.00d r164 - 2009-10-03
+
+ - Support for WDF images (see file 'WDF.txt', EXPERIMENTAL)
+ - New tools: wdf-dump, wdf2iso, iso2wdf, wdf-cat
+ - Option --sparse replaced by --fast.
+ - Scan environment variable 'WWT_WBFS' for WBFS partitions.
+
+wwt v0.01a r168 - 2009-10-04
+
+ - WWT leaves Alpha and goes Beta!
+ - WDF is now productive; WDF documentation expanded.
+ - Extracting to WDF is now default. --iso forces ISO output.
+ - Bug fix: Wrong "end of disc" handling while writing a double layer ISO
+   and --trunc is not set.
+
+wwt v0.02a r179 - 2009-10-05
+
+ - Command abbreviations are allowed if they are unambiguous.
+ - EXTRACT: Improved filename handling when using 'ID6=filename'.
+ - Enhanced error management.
+ - Bug fix [wdf2iso]: Couldn't create zero length files.
+ - From now on, the distribution has subdirectories: bin lib doc scripts
+ - Tools wdf-dump, iso2wdf, wdf2iso, wdf-cat: options available.
+ - New: scripts/test-wdf-tools.sh: test the wdf tools.
+   -> over 320000 files (mixed user files) testet without failures.
+ - New: scripts/time-test.sh: run time tests -> see file 'STATISTICS.txt'.
+
+wwt v0.03a r200 - 2009-10-08
+
+ - Enhanced error management again.
+ - Misspelling in --help: The shortcut for 'DUMP' is 'D' and not 'DP'.
+ - Make: Support of environment variable 'XFLAGS' -> 'XFLAGS=-march=x86-64 make'
+ - File handling: Support of open() and fopen() as alternatives for testing.
+ - Script test-wdf-tools.sh: Positive test is now done with >1 million files.
+ - New option for 'wdf-dump': --chunk: Print chunk header table.
+ - WDF specification is complete.
+
+wwt v0.04a r212 - 2009-10-11
+
+ - ADD: ID6 is now also recognized when source is a WDF.
+ - New command: FILETYPE: Print a status line for each given file.
+ - New script: test-ADD+EXTRACT.sh: ADD + EXTRACT test with various options.
+ - *EXPERIMENTAL*:
+     - Option --cache enables caching of well known file parts while reading
+       an ISO image. Perhaps cached areas must be expanded.
+     - Adding a game from a pipe if option --cache is set. Commands like
+       "wwt ... ADD --cache <(UNRAR-TO-STDOUT game.rar)" are possible.
+ - Doc: Explanation of the hidden options: --hole-size, --io and --cache
+
+wwt v0.05a r247 - 2009-10-14
+
+ - Complete new interface to the WBFS subsystem:
+    - unused source files removed.
+    - improved error messages of libwbfs
+ - WBFS file handling rewritten. It supports now file (using open() function)
+   and stream (using fopen() function) methods. Use --io to select method.
+ - New option: --ignore: Ignore non existing files/discs without warnings.
+   Can be used with: ADD, EXTRACT, REMOVE (replaces --force) and FILETYPE.
+ - The lib path moved from '/usr/local/lib/' to '/usr/local/share/wwt/'.
+ - New option --sector-size: Set logical hd sector size larger than 512
+   while formatting WBFS => The max disc count of a WBFS will be raised.
+ - Title database implemented.
+ - New command: TITLES: Print the internal title database to stdout.
+ - ADD: ISO image is acepted from stdin if a file is named '-'. For pipes
+   the experimental option --cache must be set.
+
+wwt v0.06a r258 - 2009-10-15
+
+ - If adding from a pipe the cache (option --cache) is enabled automatically.
+ - Signal handler implemented for INT, TERM, USR1 and USR2. (see docu)
+ - Bug fix: INIT failed if formatting a block device.
+ - Bug fix: EXTRACT: Wrong file size calculation for double layer discs if
+   a zero filled block at the end of the image is found (ISO and WDF).
+
+wwt v0.07a r273 - 2009-10-19
+
+ - Check the MAGIC "5d-1c-9e-a3" at position 0x18 of ISO files.
+ - New script: convert-iso-to-wdf.sh: Find ISO files and convert it to WDF.
+   The converted WDF will be compared with the source and removed if differ.
+ - 'iso2wdf' and 'wdf2iso' may convert through stdin->stdout.
+ - Script test-wdf-tools.sh: Positive test is now done with >2 million files.
+   I declare WDF as stable. I have converted all my games to WDF.
+ - The source is now more compatible for non linux/386 machines.
+ - Source files renamed.
+ - The binaries are linked without -static now. Hope that makes no problems.
+
+wwt v0.07b r278 - 2009-10-20
+
+ - Cygwin support.
+ - Minor bug fixes.
+
+wwt v0.08a r294 - 2009-10-23
+
+ - iso2wdf + wdf2iso: new options: --dest dir_or_file, --overwrite
+ - The documentation is now divided into more files: Each tool has its own one.
+ - Some minor bug fixes in libwbfs.
+ - Option --remove: short option is now -R.
+ - New options: --exclude and --exclude-path: exclude discs from operation.
+ - New command: EXCLUDE: print the results of --exclude and --exclude-path.
+ - New tool: wit = Wiimms ISO Tool. (empty framework yet)
+ - Scan environment variables 'WWT_OPT' and 'WIT_OPT' for predefined options.
+ - CYGWIN bug fix: WDF support failed because of non packed data structure.
+ - CYGWIN: I have done a little test series without failures.
+ - Allow the wbfs subsystem to read behind end of file marker (print a warning).
+
+wwt v0.09a r309 - 2009-10-27
+
+ - Bug fix: progress counter was only shown for first job.
+ - Hidden option --hole-size removed.
+ - Option --sort: keyword scanning enabled.
+ - New option --psel: define a partition selector.
+ - New option --update for ADD+EXTRACT: copy only new files.
+ - New wwt command UPDATE: shortcut for 'ADD --update'.
+ - wit commands: VERSION, HELP, ERROR, TITLES, EXCLUDE, FILELIST, FILETYPE,
+                 ID6, LIST, LIST-L, LIST-LL.
+ - Title files for: de en es fr it ja ko nl pt (loaded from WiiTDB.com).
+
+wwt v0.10a r325 - 2009-10-31
+
+ - wwt+wit DUMP: Output expanded.
+ - ADD --trunc: WBFS will be truncated/trimmed to minimal size after adding.
+ - New wwt command: TRUNCATE: truncate/trim a WBFS to minimal size.
+ - Size options: advanced arguments -> see section "Processing size options".
+ - All tools: EXPERIMENTAL support of splitted WBFS, WDF and ISO files:
+    - While generating a file use --split and --split-size to force splitting.
+    - While opening files for reading splitted files are detected automatically.
+
+wwt v0.11a r339 - 2009-11-02
+
+ - wwt "LIST --mixed": output format changed.
+ - New option --progress: enable progress counter independent of verbose level.
+ - wdf2iso + iso2wdf:
+    - Both accept any files as input. If the input is an ISO or a WDF+ISO than
+      the file is scrubbed (controlled by optiond --psel snd --raw).
+    - New option --preserve: preserves file times
+ - New command: wit COPY source... dest -> converting and scrubbing.
+ - wwt DUMP --long --long: Dump a memory layout map for each disc.
+ - wwt DUMP --long --long --long: Dump a memory layout map for whole WBFS.
+
+wwt v0.12a r364 - 2009-11-05
+
+ - Bug fix showing the progress counter.
+ - Bug fix in libwbfs/wbfs_trim() -> "ADD --trunc" and "TRUNCATE" failed.
+ - wit DUMP --long: Dump a memory map.
+ - wdf2iso + iso2wdf: print progress infos.
+ - New ISO source alternative: /path/to/WBFS_FILE/SELECTOR (see doc)
+ - New wit command: COPY: Copy and convert ISO images.
+ - New wit command: SCRUB: Scrubs ISO images.
+
+wwt v0.13a r383 - 2009-11-06
+
+ - Option --cache removed: Cache is activated when needed.
+ - Bug fix: "wit copy --remove wbfs/selector" removes disc from WBFS.
+ - Bug fix: wit SCRUB: output file format was controlled by options.
+ - wwt EXTRACT: Can extract to wbfs files.
+ - wwt ADD: Accept wbfs files as input (wbfs to wbfs copy)
+ - New tool: iso2wbfs: Converts ISO images into a splitted WBFS files.
+
+wwt v0.14a r388 - 2009-11-08
+
+ - Progress info shows copy rate in MiB/sec too.
+ - Buf fix: damaged WDF file if copying from WDF to WDF with --raw.
+ - wwt CHECK: check WBFS for block errors (report only, no repair yet).
+
+wwt v0.15a r402 - 2009-11-10
+
+ - Option --progeess has now a short brother: -P
+ - Bug fix: iso2wbfs had produced ISO images instead of WBFS.
+ - Bug fix: wwt EXTRACT --wbfs did not work.
+ - wwt EDIT (not documented): manipulate block assignments (EXPERIMENTAL!).
+   I need the EDIT command to make invalid WBFS for testing the CHECK command.
+ - wwt ID6 --long: print list in format WBFS_FILE/ID6 (wbfs+selector).
+ - wwt CHECK improved.
+
+wwt v0.16a r428 - 2009-11-15
+
+ - wwt DUMP layout redesigned.
+ - libwbfs: free blocks table bug fixes:
+    - Fix the free block table while formatting or loading
+    - Allocation of free blocks behind 32 bit boundaries
+    - Fix table if WBFS if full while adding a game.
+    - I propagate libwbfs v1 (v0 prior).
+ - bug fix: progress info failed if writing splitted files.
+ - wwt ADD/UPDATE/EXTRACT/REMOVE/TRUNCATE: A CHECK is done automatically.
+   The WBFS will be ignored if problematic errors are detected.
+     --force:    Print messages but ignore result of the check and continue.
+     --no-check: Disable the automatic check.
+ - wwt ADD/UPDATE: Cleanup to previous state if the disc is full.
+ - wwt REMOVE: new option: --no-free: do not free blocks.
+ - wwt CHECK: new option: --repair=mode: fix the detected errors.
+   THIS OPTION IS EXPERIMENTAL!
+ - New wwt command: REPAIR: Shortcut for: CHECK --repair=fbt
+   (fbt = Free Blocks Table)  THIS COMMAND IS EXPERIMENTAL!
+
+wwt v0.16b r431 - 2009-11-15
+
+ - wwt EXTRACT and REMOVE denied options --force and --no-check.
+ - cygwin: REPAIR can't write unaligned free blocks tables.
+
+wwt v0.17a r454 - 2009-11-18
+
+ - wwt ADD --ignore: Ignores non exsting sources without message.
+ - wwt DUMP: show memory range of each inode.
+ - New command: wit DIFF: Compare ISO images in raw or scrubbed mode.
+   EXPERIMENTAL, because the DIFF command is not testet very well yet!
+ - wwt EXTRACT + wit COPY/DIFF: Handle '%'-escapes for output file name.
+ - New option --esc: Define an alternative escape character, default is '%'.
+ - Bug fix: Wrong name scheme for splitted WBFS files.
+ - Some minor bugs fixed.
+
+wwt v0.18a r465 - 2009-11-22
+
+ - Bug fix: Wrong temp filename while creating an splitted WBFS.
+ - Default split size is now 4GiB-32KiB for WBFS and 4GB for all other files.
+ - wwt CHECK -ll: Print an additional dump if errors found.
+ - wit SCRUB: Allow type conversion.
+ - new commands: wwt RENAME+SETTITLE: Set ID and title of discs [EXPERIMENTAL].
+ - IMPORTAND BUG FIX in libwbfs/wiidisc: All scrubbing operations including
+   adding to a WBFS could loose sectors.
+
+wwt v0.19a r491 - 2009-11-27
+
+ - New ADD option: --sync: Synchronize: remove and add until WBFS contains
+   the same discs as source list.
+ - New command: wwt SYNC: Abbreviation for: ADD --sync
+ - New commands: wit RENAME+SETTITLE: Set ID and title of discs [EXPERIMENTAL].
+ - New command: wit MOVE: move/rename iso files.
+ - MAC bug fix: segmentation fault if formatting a drive.
+ - Bug fix: Interrupt possible while processing a source directory.
+
+wwt v0.20a r504 - 2009-12-05
+
+ - wwt FIND -l: List all instead of only WBFS partitions.
+ - Some minor bug fixes.
+ - Improved text output.
+
+wwt v0.21a r520 - 2009-12-09
+
+ - New command: wwt PHANTOM: add a phantom discs (fast, for tests only).
+ - libwbfs: I have implemented a little ID6 cache for faster disc access and
+   less IO when searching discs.
+ - CYGWIN bug fix: Using mixed reading and writing on files opened with open()
+   fails and write sometimes to wrong file positions (reproducible).
+   Switching to fopen() based IO works fine.
+ - Docu of wwt+wit RENAME+SETTITLE.
+
+wwt v0.21b r524 - 2009-12-13
+
+ - Corrections of inline and offline docu.
+ - New: FAQ.txt (first steps)
+
+wwt v0.22a r535 - 2009-12-25
+
+ - New options: --include and --include-path: include only given discs.
+ - New "wit COPY" option: --update: copy only to non existing files.
+
+wwt v0.23a r544 - 2009-12-31
+
+ - Formatting will clear all inodes. That gives undelte a better chance.
+   In respect to sparse files the inodes will be read before and only zeroed
+   if non zero data is found.
+ - CYGWIN: The filenames beginning "x:/" will be replaced by "/cygdrive/x/".
+
+wwt v0.24a r549 - 2010-01-03
+
+ - Suppress a read error if reading behind end of file while creating a
+   growing wbfs (copy to wbfs file with a sinlge disc).
+ - If the destination path of a copy command contains at least 1 valid
+   %-escape conversion than the directory path will be created automatically.
+ - CYGWIN bugfix: Unclear bug while rename "x:/" to "/cygdrive/x/".
+   Now we have a small memory leak (The original filename is not freed).
+ - Script 'install.sh' use now the system command 'install'.
+
+wwt v0.25a r558 - 2010-01-04
+
+ - wwt REMOVE: Print id6 and (that's new) title of removed discs.
+ - wwt EXTRACT+REMOVE: No warning if parameters are given, but no disc found
+   because of exclude and/or include lists.
+ - New option: --DEST (-D): Works like --dest (-d), but the directory paths
+   of the destination files will be created automatically.
+
+wwt v0.26a r569 - 2010-01-05
+
+ - cygwin: stdout and stderr use windows line ending (CR+LF).
+ - Allow german umlaut in destination file names.
+ - Bug fix: Option --include-path was only processed if also option
+   --exclude-path was set.
+ - The local title files contain now all titles and not only the local
+   modifications. This is good for cygwin which do not support automatic
+   language detection. Just rename 'titles-XY.txt' to 'titles.txt'.
+
+wwt v0.27a r579 - 2010-01-09
+
+ - Bug fix: Problems while creating a directory path.
+ - Option --no-utf-8 did not work, all titles were trash.
+ - Option --no-utf-8 is now the default for cygwin. This is needed to allow
+   german umlauts in filebnames.
+ - wwt ADD: Add files in alphabetic order and print iteration counter.
+
+wwt v0.28a r596 - 2010-01-15
+
+ - Little optimization for libwbfs add_disc(): Read only needed wii sectors
+   from iso and fill others with zeros. This makes adding faster and avoids
+   reading behind end of file. This is needed for reading from a pipe.
+ - New error code: JOB_IGNORED: Set if a disc is ignored while adding a game.
+ - wwt ADD: adding to more than one WBFS failed since v0.27a.
+ - wit COPY+SCRUB+MOVE: Process files in alphabetic order and print iteration
+   counter.
+ - Bug fix: wwt LIST: Not all discs were shown if an invalid disc was found.
+ - Decompose unusual unicode characters (remove accents...) in title database.
+
+wwt v0.29a r606 - 2010-01-22
+
+ - wwt ADD: Adding a complete WBFS is optimized and much faster now.
+ - Bug fix: Option --preserve didn't work.
+ - wwt+wit FILETYPE: Print region info if option --long is set twice.
+
+wwt v0.30a r613 - 2010-01-30
+
+ - wwt+wit FILETYPE: Print scrubbed size if option --long is set twice.
+ - New command: wit ISOSIZE: Print scrubbed ISO sizes in up to 4 aspects.
+
+wwt v0.31a r618 - 2010-01-31
+
+ - wwt+wit FILETYPE: Print table header.
+ - wwt FORMAT: new option: --recover: Format a WBFS in recover mode.
+   The recover feature is EXPERIMENTAL!
+
+wwt v0.32a r632 - 2010-02-14
+
+ - wwt+wit: New environment variable: WWT_LANG: Define a default language.
+ - wwt+wit: New option: --lang= : Define the working language.
+ - wwt FORMAT --recover: Little optimizations.
+ - Bug fix: Enable cache for all commands if reading from a pipe.
+
+wwt v0.33a r659 - 2010-03-01
+
+ - Support of the new extended WBFS inodes with the data records
+   'itime', 'mtime', 'ctime', 'atime' and 'load_count'.
+    - ADD updates itime, mtime, ctime and atime. mtime is taken from source.
+    - EXTRACT updates atime. mtime is copied to destination file.
+    - RENAME+SETTILE @INODE updates ctime and atime.
+    - RENAME+SETTILE @ISO updates mtime, ctime and atime.
+    - LIST may show one of the time values (-ll, --*time, --time=mode)
+    - DUMP show all times if disc dump is enabled (--long).
+ - wit+wwt LIST: The new options --itime, --mtime, --ctime, --atime 
+   and --time=modelist will force output of a time stamp. The meaning
+   of --long is changed.
+ - Option --sort= supports new modes 'DATE', 'ASCENDING' and 'DESCENDING'.
+ - New wwt command: LIST-LL or LLL: Abbreviation of 'LIST -ll'.
+ - New wit command: LIST-LLL or LLLL: Abbreviation of 'LIST -lll'.
+ - Bug fix: wit LIST: The WBFS file size was listed instead the ISO size.
+
+wwt v0.34a r691 - 2010-03-11
+
+ - New timestamp: 'dtime' is set when a disc is deleted.
+ - wwt FORMAT: If formatting a block device empty inodes with empty but valid
+   extended inode infos are written and the dtime is set.
+ - wwt PHANTOM: Setup extended inode info (time stamps + ...) too.
+ - wwt CHECK/REPAIR: new mode: --repair=inode: Setup all missing inode infos.
+ - New command: wwt TOUCH: Set timestamps of inode info (created if not exist).
+   Supported time options: --itime --mtime --ctime --atime --set-time=time
+ - All tools can write to a block or character device if --overwrite is set.
+ - wwt FIND --quiet: report only via return status if a WBFS is found.
+ - The split size for WBFS and ISO is now rounded down to a multiple of 32 KiB.
+   Any split sizes are allowed for WDF.
+ - wwt bug fix: If extracting to WBFS the extension '.wbfs' was not added.
+ - New wwt DUMP option: --inode: show status of all inodes (deleted discs too).
+ - libcrypto is now statically linked, so wwt runs on older linux systems.
+ - wwt+wit FILETYPE: Support of option --no-header
+ - Test script test-ADD+EXTRACT.sh runs again.
+ - Bug fix: Sometimes reading an ISO from a WBFS runs into "Not a ISO image".
+
+wwt v0.34b r701 - 2010-03-12
+
+ - Bug fix: Reading from a WBFS with exact one discs without a disc selector
+   is possible again.
+ - Bug fix: Progress information is also printed if extracting to wbfs files.
+
+wwt v0.35a r713 - 2010-03-14
+
+ - Bug fix: The "wwt TOUCH" command didn't accept most of the allowed options.
+ - wwt ADD: New option --newer: Copy only newer files if mtime of source and
+   destination are available and non zero.
+ - RENAME+SETTITLE: Timestamps are only set if ID or title are really changing.
+ - Doumentation has been improved a little bit.
+
+wwt v0.36a r728 - 2010-03-19
+
+ - Option --sort=key: new keys: 'ITIME', 'MTIME', 'CTIME' and 'ATIME'.
+ - wwt+wit LIST: Support of multiple time columns.
+ - wwt+wit LIST+ERROR: new option --sections: print machine readable output
+   devided into sections "[...]". Each section has lines like "name=value".
+ - Makefile: Changed some lib settings (explicit naming of libcrypto removed).
+
+wwt v0.37a r753 - 2010-03-26
+
+ - wwt: new command: ANALYZE: Analyze files and partitions for WBFS usage.
+   It try to find existing WBFS structures and make calculations for new WBFS.
+    - Check WBBS header
+    - Search INODE-INFO data (includes copy of WBFS header)
+    - Search discs for valid ID6 and MAGIC.
+    - Make example calculations for different sector sizes.
+   All results are printed as table with the main geometry data.
+ - wwt INIT:
+    - New option: --wss (Wbfs Sector Size): Defines the WBFS sector size.
+    - The option --sector-size (defines the HD sector size) was replaced by
+      the more handy --hss (Hd Sector Size). The old option is still allowed.
+    - If option --recover is set the command ANALYZE is called to determine
+      the values of --hss and --wss if not set before.
+   This points should complete WBFS recovering.
+ - For the ANALYZE command I have written a complete new function to calculate
+   the WBFS geometry (outsourcing of the calculation). If formatting a drive
+   this new function is called to compare the results with the old calculation.
+   If there are differences the program stops with an assertion failure.
+   ** Please tell me such errors! **
+
+wwt v0.38a r769 - 2010-03-28
+
+ - Some dtime improvements.
+ - wwt+wit: Option -C is not longer the short version of option --trunc.
+ - CISO support (EXPERIMENTAL):
+    - wdf-dump will also dump the structure and memory map of CISO files.
+    - wdf-cat will copy the extended ISO to standard output.
+    - On all places where a plain ISO is allowed as source file a CISO is
+      allowed too.
+    - To force CISO-output use option --ciso or file type ".ciso" or ".wbi".
+
+wwt v0.38b r771 - 2010-03-28
+
+ - Bug fix for wwt INIT: Wrong assertion while comparing old and new
+   calculation for WBFS geometry.
+
+wwt v0.39a r782 - 2010-03-29
+
+ - Bug fix: New CISO files > 4 GiB have been truncated (modulo 2^32 error).
+ - Character devices are allowed for WBFS.
+ - wwt --auto: If the file /proc/partitions is not found, than all devices
+   named '/dev/sd*' and '/dev/rdisk*' are scanned for WBFS. If scanning of
+   '/dev/rdisk*' fails then also files named '/dev/disk*' are scanned.
+   Using character devices '/dev/rdisk*' will speed up wwt on apple computers.
+
+wwt v0.40a r790 - 2010-03-31
+
+  - Cache handling (pipe support) improved. Discs with update partitions are
+    problematic (some discs needs a 256 MiB cache). Try --psel=game to ignore
+    update partitions. The CYGWIN version has real problems with pipes.
+  - Bug fix: Option "--ciso" was not recognized.
+  - New test script: scripts/test-wwt+wit.sh
+    - test "wwt INIT" with different HD sector sizes
+    - test "wwt ADD" with ISO, CISO, WDF, WBFS
+    - test "wwt EXTRACT" to ISO, CISO, WDF, WBFS
+    - test "wit COPY" (convert) to ISO, CISO, WDF, WBFS
+
+wwt v0.41a r824 - 2010-04-16
+
+  - New escape sequence for output file names:
+    %Y = Extended filename: A shortcut for '%T [%I]' (no file extension)
+  - wit DUMP: new option --files= (-F): dump a list of files.
+  - New command: wit ILIST: List all files from ISO images.
+  - New command: wit EXTRACT: Extract all files from ISO images.
+    This is a first implementation or better a proof of concept.
+  - New option: --files=rules: Define a rule list as selector for ISO
+    file operations. A semicolon separate single items. Each item must begin
+    with '+' (allow) or '-' (deny). Multiple usage of the option is allowed.
+    This options is used by the commands DUMP, ILIST and EXTRACT. See file
+    "wit.txt" section "Selecting files with --files=rules" for more details.
+  - Bug fix: Creating directories (--DEST) with absoulte paths will now work.
+  - New wit option: --rdepth: Set the maximum recurse depth for option
+    --recurse in the range 0..100. The default depth is 10.
+  - New param for wwt+wit LIST --section: used_blocks= (1 block = 32 KiB)
+
+wwt v0.42a r846 - 2010-04-19
+
+  - Bug fix: wit option -C was not recognized.
+  - Bug fix: Print multiple time stamps in listing works now.
+  - wit ILIST rewritten. It supports now --sort=
+  - wit EXTRACT rewritten. All needed files for SNEEK are extracted.
+  - New wit option: --pmode=default|auto|none|point|ident|name
+    The option defined how the partition type is used to prefix the file path.
+  - The new wit option --sneek is an abbreviation of --psel=data --pmode=none.
+    It also suppress creating files that SNEEK don't need.
+
+wwt v0.42b r871 - 2010-04-21  (repository only)
+
+  - The wiidisc interface now reads only well aligned (multiple of 512) data.
+  - When creating a CISO the blocksize is now always a power of 2.
+  - wwt+wit FILETYPE detect now extracted ISO file systems (FST).
+
+wwt v0.42c r873 - 2010-04-21  (repository only)
+
+  - Bug fix for wiidisc aligned reading (since v0.42b).
+
+wwt v0.43a r957 - 2010-04-30
+
+  - wwt+wit FILETYPE will detect 'boot.bin', 'fst.bin' and DOL files too.
+  - wit DUMP prints internal info of 'boot.bin', 'fst.bin' and DOL files too.
+  - "wit COPY source_dir output_file" is able to compose a fake signed ISO
+    image from a file system.
+
+wwt v0.44a r973 - 2010-05-02
+
+  - wit bug fix: Option --enc was not accepted.
+  - ISO composing supports now UPDATE, DATA and CHANNEL (new!) partitions.
+  - wit DIFF: If option --files= (-F) is set then the ISO images (real or
+    virtual FST) will be compared on file level. The option --files= declares
+    a file filter.
+  - Progress counter for "wit EXTRACT" enabled.
+  - Option --files= (-F): The macros are redifined as positive list.
+    Now we have the following macros:
+    =base =nobase =disc =nodisc =sys =nosys =files =nofiles =wit =wwt =sneek
+  - wit COPY can decrypt or encrypt ISO images on the fly when copying in
+    scrubbed mode. This does not change the signature.
+  - Fix some troubles with new cyygwin release 1.7.5-1. The main problem
+    was file path creation with absolute path names.
+
+wwt v0.45a r1012 - 2010-05-05
+
+  - To avoid troubles with platform dependent openssl support I have integrated
+    the SHA1 sources from openssl into WWT.
+  - The new command "wit VERIFY" checks the hash signatures of all needed
+    sectors (keyword "scrubbed"). All five hash levels (H0..H4) are verified.
+    This means 64 AES decryptions and 1029 SHA1 calculations for each MiB.
+
+wit v0.46a r1043 - 2010-05-13
+
+  - The main name have changed from "Wiimms WBFS Tool" to "Wiimms ISO Tools".
+    The following things are changed too:
+     - '/usr/local/share/wwt/' moved to '/usr/local/share/wit/'
+     - Environment variable WWT_LANG moved to WIT_LANG.
+  - wwt INIT --recover: recover also previous deleted files. Discs with
+    collisions (use blocks that other discs also use) are never recovered.
+  - New command: wwt RECOVER: Works like "wwt INIT --recover", but only with
+    already WBFS formatted files => not formatting, only recovering.
+    "wwt RECOVER" can be used with the option --test to see what happen.
+  - wit VERIFY: Output messages redesigned. Verbosity can be controlled in
+    five levels from -qq up to -vv.
+  - The new option --limit sets a limit for VERIFY error messages.
+  - New command: wwt VERIFY: works like "wit VERIFY" but with wwt interface.
+    It also supports options --remove and --no-free for removing or dropping
+    invalid discs.
+  - Docu of wit+wwt VERIFY and "wwt RECOVER" added.
+  - Minor bug fix for wwt CHECK: It have shown 'free blocks' errors for some
+    removed discs if this the discs removed with a non wwt tool.
+  - CGYWIN release: The new batch file 'run-cmd-as-admin.bat' starts a cmd
+    window in administrator mode. This should simplify the work with wwt.
+
+wit v0.47a r1106 - 2010-05-22
+
+  - ID checking redesigned, underscore is now an allowed character.
+  - Command line parsing rewritten: Commands and command specific options are
+    defined in a special tool (C file 'gen-ui.c'). If running this tool it
+    generates C source for all tools to analyse commands and options and to
+    print help messages.
+  - Included help was improved: wit and wwt supports now 'HELP command'.
+    The output is now aligned to the current terminal width.
+  - The documentation of all new options is now complete.
+  - Bug fix: wit has shown wrong file size for splitted ISO images.
+
+wit v0.48a r1145 - 2010-05-29
+
+ - wit SCRUB: Option --enc= available to encrypt and decrypt disc images.
+ - Bug fix for wit COPY: Creating a WBFS file with FST as source failed.
+ - Bug fix: If reading from a CISO a minimal file size is now set.
+ - Composing bug fix: Forgotten to set offset 0x4fffc to value 0xc3f81a8e.
+ - New option --id=id: Modify ID in disc header, boot.bin, ticket.bin
+   and tmd.bin when composing a Wii ISO image.
+ - New option --name=name: Modify dics title in disc header and boot.bin
+   when composing a Wii ISO image.
+ - New option --modify=NONE,DISC,BOOT,TICKET,TMD,ALL,AUTO: decides which
+   of disc header, boot.bin, ticket.bin and/or tmd.bin is modified when
+   using the options --id=id or  --name=name.
+ - New option --region=JAPAN,USA,EUROPE,KOREA,FILE,AUTO: Set region when
+   composing a Wii ISO image. Unsigned numbers are also allowed.
+ - New option --ios=number or --ios=high-low: Define system version (IOS)
+   within TMD when composing a Wii ISO image.
+ - TMD and TICKET (=new) will be fake signed if composing a disc.
+ - All UTF-8 characters with code >= 0x80 are allowed in filenames.
+
+wit v0.48b r1164 - 2010-06-01  (repository only)
+
+ - Bug fix: If reading a very small WBFS file the old and buggy calculation
+   in libwbfs for the free tables size results in zero. Accessing the non
+   existent table forces a segmentation fault. For compatibility reasons
+   the calculation can't be changed.
+ - Bug fix: wit DUMP had always reported encrypted partitions.
+ - Composing bug fix: Copy only really needed data from boot.bin if file
+   header.bin is missed.
+
+wit v0.49a r1177 - 2010-06-06
+
+ - Built in help improved.
+
+
+*******************************************************************************
+*******                              END                                *******
+*******************************************************************************

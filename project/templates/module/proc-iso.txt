@@ -1,0 +1,59 @@
+///////////////////////////////////////////////////////////////////////////////
+///////////////                Processing ISO files             ///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+Commands like "wwt ADD" or "wit COPY" uses ISO files as input. They accept
+plain ISO files and ISO files in WDF, CISO and WBFS containers and FST
+directories. In detail:
+
+ /path/to/PLAIN_ISO:
+    A PLAIN ISO file is a 1:1 copy of a Wii disc, may be scrubbed. It is not
+    compressed and not part of any container. The standard extension is ".iso".
+
+ /path/to/WDF_ISO:
+    This is an ISO packed in a WDF container. WDF container may be used for
+    any files and not only for ISO images. The standard extension is ".wdf".
+
+ /path/to/CISO:
+    This is an ISO packed in a CISO container. CISO container may be used for
+    any files and not only for ISO images. The standard extensions are
+    ".ciso" (default) and ".wbi".
+
+ /path/to/WBFS_FILE
+    An WBFS file/device is also accepted like a list of ISO files. The standard
+    extension for WBFS files is ".wbfs".
+
+ /path/to/WBFS_FILE/SELECTOR
+    This is a special construct. The ISO image of the WBFS_FILE selected
+    by SELECTOR is used as source. The selector may be one of:
+
+     - 'ABCDEF' : ID6 of a disc (exact 6 characters)
+
+     - index    : The zero based index of the disc. The range goes from zero
+                  up to the number of discs in the WBFS minus 1.
+                  (decimal number, but not 6 digits)
+
+     - '#' slot : The decimal slot number within the WBFS. The range goes from
+                  zero up to the maximal number of possible discs in the WBFS
+                  minus 1.
+
+    Examples:
+      .../a.wbfs/rmcp01 : use "Mario Kart" from 'a.wbfs' as source.
+      .../a.wbfs/5      : use the image with index #5 from 'a.wbfs' as source.
+      .../a.wbfs/#5     : use the image at slot #5 from 'a.wbfs' as source.
+
+ /path/do/FST_directory
+    If the path is a directory and the directory contains a valid FST (File
+    SysTem) structure then the directory structure is used to build an internal
+    virtual ISO image. Most commands can use this virtual ISO image like a
+    real image.
+
+
+When writing ISO files the option --wdf, --iso, --ciso, --wbfs and --fst
+control the output format. If writing a WBFS file this WBFS is truncated and
+contains exactly one ISO image. The default file name of this WBFS is
+'<ID6>.wbfs'. If none of --wdf, --iso, --ciso, --wbfs or --fst is set, the
+destination filename will be analyzed. If the extension (ignoring case) is
+".wdf", ".iso", ".ciso", ".wbi" (an alternative for ".ciso") or ".wbfs",
+the specific output format is used. The default is WDF if all other fails.
+

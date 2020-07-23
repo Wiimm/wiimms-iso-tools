@@ -1,0 +1,2 @@
+This directory contains different scripts.
+Just call them without any parameters to print the built in help.

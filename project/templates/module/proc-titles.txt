@@ -1,0 +1,78 @@
+*******************************************************************************
+*******                      Processing title db                        *******
+*******************************************************************************
+
+Title files without path specification are search in up to 4 directories:
+  1.) In the program path.
+  2.) If the program end with "/bin/" in "<PROGRAM_PATH>/../share/wit/".
+  3.) In the directory "/usr/local/share/wit/"
+  4.) In the current working directory "./"
+If you want to search only in the current working directory prefix the file
+name with './'. If setting option --verbose at least 4 times (e.g. -vvvv)
+the search paths will be logged.
+
+The titles are loaded first time they needed. At first the following three
+files are searched in the search path:
+  - titles.txt (comes with the distribution)
+  - titles-<LANG>.txt (see below)
+  - titles.local.txt (for local specificatons)
+After that all files specified by the --titles options are scanned.
+
+The idea: The file "titles.txt" is the main title database. It is a copy from
+http://wiitdb.com/titles.txt. The file "titles-<LANG>.txt" may contain
+language specific definitions. "<LANG>" are the first lower case letters of
+the environment variable "LC_CTYPE". The file "titles.local.txt" may contain
+local definitions for the user.
+
+The option -T / --titles in detail:
+
+  --titles=0 .. --titles=9
+     Set the title mode to a value between 0 and 9.
+      0: disable title lookup.
+      1: Use titles instead of real disc names. (deault)
+      2..9: reserved.
+
+  --titles=/
+     Remove all previous --title definitions an do not load the default
+     title files.
+
+  --titles=@file
+     Use the given file as a list of filenames. Each non empty line is
+     interpreted as a filename.
+
+  --titles=@-
+     Read standard input (stdin). Each non empty line is interpreted as
+     a filename.
+
+  --titles=-
+     Read standard input (stdin) and scan it for titles.
+
+  --titles=file
+     This is a filename without '/': Read the given file and scan it for
+     titles. The file is searched in the search path described above.
+
+  --titles=path/file
+     Read the given file and scan it for titles.
+
+If setting option --verbose at least 3 times (e.g. -vvv) all successfull
+loaded titles files will be logged. If setting --verbose at least 4 times
+the search paths and all searched title files will be logged.
+
+Each line of each title file is scanned for title definitions:
+    ID4 = name
+    ID6 = name
+
+The title database is build with both ID-types. A later file overides the
+settings of all previous files: If an ID4 is found, all ID4 and ID6
+definitions of all previous files are removed. If an ID6 is found, only
+the previous ID6 definition is removed.
+
+For each database lookup first an ID6 entry is searched. Only if this fails
+an ID4 entry is searched.
+
+The titles are expected in UTF-8 coding. Non UTF-8 characters are converted
+into UTF-8. If the options --no-utf-8 is set than the title database is
+converted into ANSI and all output will also be printed in ANSI.
+
+The command 'TITLES' builts the title data base and prints the result to
+stdout.

@@ -1,0 +1,70 @@
+
+@@MODULE(head.txt)@@
+
+
+@@MODULE(content.txt)@@
+
+
+*******************************************************************************
+*******                           HISTORY v3.*                          *******
+*******************************************************************************
+
+wit v3.00a r7387 - 2017-08-13
+
+ - At the beginning of Wiimms-SZS-Tools I extraced the universal usable source
+   code from Wiimms-ISO-Tools and created an independent C source code library
+   called »dcLib«. I use this dcLib also for some other projects like mkw-ana,
+   Wiimmfi, XDump and some more private projects. Now I inserted the expanded
+   and more functional dcLib back into Wiimms-ISO-Tools and removed old WIT
+   specific functions and members with same name or functionality. The great
+   advantage is the easier management of the shared sources. The adapted code
+   works fine with at least one issue: The error codes (numbers, not names)
+   changed. If you used »wit error« to translate numbers to messages, you'll
+   not have any problems.
+ - New options: --color[=mode], --256-colors, --no-colors: Define the color
+   mode of the tools. If a command is prefixed by 'C-', then --color=ON is
+   used implicitly as default. By default, the color support is only enabled
+   for terminals. However, commands have to be recoded to support colors.
+ - List of commands with color support:
+    - HELP (complete help system)
+    - wit ID6 + ID8 (highlight unusal IDs)
+    - wwt SPACE
+ - Bug fix: When extracting GameCube images, »fst.bin« was 4 times too large.
+ - Some minor fixes.
+ - Windows only: Cygwin update to v2.8.1, 2017-07-03.
+ - Apple Mac is no longer supported because I no longer have access to a Mac.
+
+
+wit v3.01a r7464 - 2017-12-03
+
+ - New option: --dsync: The option enables the usage of flag O_DSYNC when
+   opening a partition at a hard drive. With activated flag, writing an image
+   is some percent slower, but the progress counters are exact again.
+
+
+@@MODULE(last-history.txt)@@
+
+~
+~Road map (for some point in the future):
+~
+~ I have already stopped the development in favor of my SZS tools. But there
+~ are some already planned extensions:
+~
+~ - GameCube support is still incomplete.
+~    - Creation of GameCube disc is not possible.
+~
+~ - There are already code fragments implemented to trim discs in three levels:
+~    - Move partitions as whole to eliminate disc holes.
+~    - Move partition sectors to reduce partition size (alternative for
+~      partition scrubbing). Fake signing is necessary.
+~    - Move files of partitons to optimize the step above a little.
+~   For all trimming levels alignment factors may be set and it should be
+~   possible to set special alignments for GameCube sound files.
+~
+~ - On the fly patching: Create a new image as combination of 2 or more sources.
+~   Therefor trimming (sector or file level) is needed.
+~
+
+*******************************************************************************
+*******                              END                                *******
+*******************************************************************************

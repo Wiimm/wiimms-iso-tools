@@ -1,0 +1,41 @@
+
+[img]https://wit.wiimm.de/images/wiimms-tools.png[/img]
+
+[size="5"][color="#0000FF"][b]@@TOOLSET-SHORT@@: @@TOOLSET-LONG@@ v@@VERSION@@ - @@@@-@@-@@[/b][/color][/size]
+[size="4"][color="#800000"][b]Beta test version, for EXPERIMENTAL use only.[/b][/color][/size]
+
+[url=@@URI-HOME@@][b]@@TOOLSET-SHORT@@[/b][/url] (@@TOOLSET-LONG@@) is a set of [url=@@URI-HOME@@info/command-line.html]command line[/url] tools to manipulate Wii ISO images and WBFS containers. The two main tools are called [url=@@URI-HOME@@wit][b]@@WIT-SHORT@@[/b][/url] (@@WIT-LONG@@) and [url=@@URI-HOME@@wwt][b]@@WWT-SHORT@@[/b][/url] (@@WWT-LONG@@, the WBFS manager).
+
+[color="#800000"]For productive versions see the [url=https://wit.wiimm.de/r/gbatemp]main WIT thread[/url] or visit [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url].[/color]
+
+[size="3"][color="#0000c0"][b]Download[/b][/color] [color="#800000"][b]this EXPERIMENTAL release:[/b][/color][/size]
+[list]
+[*] [url=@@URI-DOWNLOAD-I386@@][b]@@DISTRIB-I386@@[/b][/url] : Linux/i386 version
+[*] [url=@@URI-DOWNLOAD-X86_64@@][b]@@DISTRIB-X86_64@@[/b][/url] : Linux/x86_64 version
+~[*] [url=@@URI-DOWNLOAD-MAC@@][b]@@DISTRIB-MAC@@[/b][/url] : Mac OS universal binaries (ppc, i386 and x86-64)
+[*] [url=@@URI-DOWNLOAD-CYGWIN@@][b]@@DISTRIB-CYGWIN@@[/b][/url] : Cygwin (Windows) version
+[*] Other releases are available at [url=@@URI-HOME@@download.html][b]@@URI-HOME@@download.html[/b][/url].
+[/list]
+
+[size="3"][color="#0000c0"][b]Highlights of this release:[/b][/color][/size]
+[list]
+[*]
+
+~[*][color=#800000]Please test it![/color]
+~[*] [color=#000080][b]GameCube support[/b][/color]
+~I'm still working at GameCube support. Reading of GameCube (standard and multiboot) works. Reading means, that the wit commands COPY, EXTRACT, DUMP, LIST, FILES, MOVE, RENAME and some more works fine. "wit MIX" is able to create a multiboot disc without a special boot partition, but the qualifier "boot" will mark one source partition as boot partition.
+~
+~[color=#800000][b]The GameCube support is experimental![/b][/color]
+~Please use the thread [url=wit.wiimm.de/r/gamecube][b]"WIT GameCube disc support"[/b][/url] for WIT GameCube discussions.
+[/list]
+
+~[size="4"][color="#800000"][b]Please report positive and negative tests![/b][/color][/size]
+~
+
+[size="3"][color="#0000c0"][b]Change log:[/b][/color][/size]
+
+[code]
+@@MODULE(last-history.txt)@@
+[/code]
+
+The source is published under the license of GPL2. Checkout the sources directly from the [url=@@URI-REPOS@@][b]SVN repository[/b][/url] or [url=@@URI-VIEWVC@@][b]browse the source[/b][/url]. These URLs are different from the product version. Visit [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url] for more information.

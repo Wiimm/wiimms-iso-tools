@@ -1,0 +1,4 @@
+wiidisc.[ch] ;
+*.h ;
+*.c ;
+*.txt ;

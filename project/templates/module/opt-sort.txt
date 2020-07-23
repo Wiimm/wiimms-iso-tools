@@ -1,0 +1,33 @@
+The option --sort defines the sort mode for output lists.
+
+  Syntax: --sort sort_mode | -S sort_mode
+
+'sort_mode' is a comma separated list of the following keywords:
+
+    -  | NONE    : Do not sort
+
+         ID      : Sort by id
+    T  | TITLE   : Sort by title taken from title db
+    N  | NAME    : Sort by name of disc
+    F  | FILE    : Sort by file name
+    SZ | SIZE    : Sort by size
+    OF | OFFSET  : Sort by offset (or index)
+    R  | REGION  : Sort by region
+         WBFS    : Sort by wbfs file name
+         NPART   : Sort by number of partitions
+
+    IT | ITIME   : Sort by itime (insertion time)
+    MT | MTIME   : Sort by mtime (last modification time)
+    CT | CTIME   : Sort by ctime (last status change time)
+    AT | ATIME   : Sort by atime (last access time)
+    TI | TIME    : Sort by itime|mtime|atime|atime, decided by the time options.
+    D  | DATE    : Alternative keyword for 'TIME'
+
+      DEFAULT    : Use the default sort method for that output
+
+      ASCENDING  : Sort in ascending order.
+      DESCENDING : Sort in descending order (reverse).
+      REVERSE    : Alternative keyword for 'DESCEND'.
+
+The latest keyword supersedes the previous one of the same group.
+'NONE' resets all. Abbreviations are allowed as long as they are unique.

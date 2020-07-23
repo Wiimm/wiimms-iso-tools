@@ -1,0 +1,102 @@
+
+# optimize mac binaries and/or build universal binaries
+
+#-----------------------------------------------------------------------------
+
+SDKROOT		= $(shell ls -d /Developer/SDKs/MacOSX* | tail -n1 )
+SDKVERSION	= $(shell echo "$(SDKROOT)" | sed -E 's/.*MacOSX//; s/([0-9]*\.[0-9*]).*/\1/g' )
+
+CC	 = "gcc-4.0"
+CFLAGS	+= -mmacosx-version-min=${SDKVERSION} -isysroot ${SDKROOT}
+LDFLAGS	+= -mmacosx-version-min=${SDKVERSION} -isysroot ${SDKROOT}
+
+#-----------------------------------------------------------------------------
+
+.PHONY : mac-distrib
+mac-distrib: mac3 doc $(INSTALL_SCRIPTS) gen-mac-distrib
+
+.PHONY : mac2
+mac2: mac-i386 mac-x86_64
+
+	@echo
+	@echo "----- building universal binaries -----"
+	@for i in $(MAIN_TOOLS); do \
+	    lipo -create bin/i386/$${i} bin/x86_64/$${i} -output $${i}; \
+	    ln -f $${i} bin/$${i}; \
+	done;
+	@for i in $(WDF_LINKS); do \
+	    ln -f wdf $${i}; \
+	    ln -f wdf bin/$${i}; \
+	done;
+	@rm -rf bin/i386 bin/x86_64
+	@echo "done"
+
+.PHONY : mac3
+mac3: mac-i386 mac-x86_64 mac-ppc
+
+	@echo
+	@echo "----- building universal binaries -----"
+	@for i in $(MAIN_TOOLS); do \
+	    lipo -create bin/ppc/$${i} bin/i386/$${i} bin/x86_64/$${i} -output $${i}; \
+	    ln -f $${i} bin/$${i}; \
+	done;
+	@for i in $(WDF_LINKS); do \
+	    ln -f wdf $${i}; \
+	    ln -f wdf bin/$${i}; \
+	done;
+	@rm -rf bin/ppc bin/i386 bin/x86_64
+	@echo "done"
+
+#-----------------------------------------------------------------------------
+
+.PHONY : mac-ppc
+mac-ppc:
+	@echo
+	@echo "----- building PowerPC -----"
+	@XFLAGS="-arch ppc -mcpu=powerpc" make clean all
+	@mkdir -p bin/ppc
+	@mv $(MAIN_TOOLS) bin/ppc
+
+#-----------------------------------------------------------------------------
+
+.PHONY : mac-i386
+mac-i386:
+	@echo
+	@echo "----- building i386 -----"
+	@XFLAGS="-arch i386 -mfpmath=sse -march=prescott" make clean all
+	@mkdir -p bin/i386
+	@mv $(MAIN_TOOLS) bin/i386
+
+
+#-----------------------------------------------------------------------------
+
+.PHONY : mac-x86_64
+mac-x86_64:
+	@echo
+	@echo "----- building X86-64 -----"
+	@XFLAGS="-arch x86_64 -mfpmath=sse" make clean all
+	@mkdir -p bin/x86_64
+	@mv $(MAIN_TOOLS) bin/x86_64
+
+#-----------------------------------------------------------------------------
+
+.PHONY : gen-mac-distrib
+gen-mac-distrib:
+
+	@printf "$(LOGFORMAT)" create "$(DISTRIB_PATH)" ""
+
+	@rm -rf $(DISTRIB_PATH)
+	@mkdir -p $(DISTRIB_PATH)/bin $(DISTRIB_PATH)/scripts $(DISTRIB_PATH)/share $(DISTRIB_PATH)/doc
+
+	@cp -p $(DISTRIB_FILES) $(DISTRIB_PATH)
+	@ln -f $(MAIN_TOOLS) $(WDF_LINKS) $(DISTRIB_PATH)/bin
+	@cp -p share/*.txt $(DISTRIB_PATH)/share
+	@cp -p $(DOC_FILES) $(DISTRIB_PATH)/doc
+	@cp -p $(SCRIPTS)/*.{sh,txt} $(DISTRIB_PATH)/scripts
+
+	@chmod -R 755 $(DISTRIB_PATH)
+	@chmod a+x $(DISTRIB_PATH)/*.sh $(DISTRIB_PATH)/scripts/*.sh $(DISTRIB_PATH)/bin*/*
+	@chmod -R a+X $(DISTRIB_PATH)
+
+	@tar -czf $(DISTRIB_PATH).tar.gz $(DISTRIB_PATH)
+

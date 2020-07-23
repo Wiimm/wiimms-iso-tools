@@ -1,0 +1,535 @@
+
+@@MODULE(head.txt)@@
+
+
+@@MODULE(content.txt)@@
+
+
+*******************************************************************************
+*******                           HISTORY v1.*                          *******
+*******************************************************************************
+
+wit v1.00a r1214 - 2010-06-12
+
+ - Because I finished my work with wwt (the WBFS manager) it's time to
+   declare Version 1.00. The tool wit is still under development.
+ - This is the last version which supports the three tools iso2wbfs, iso2wdf
+   and wdf2iso. Use the more powerful command 'wit copy' instead.
+ - Makefile changes:
+    - File './include-local' is not included anymore. Instead the file
+      'makefiles-local/Makefile.local.$(SYSTEM)' is included.
+    - make chmod: change mode 775/644 for known dirs and files.
+    - make chown: change owner of all dirs+files to owner of '.'.
+    - make chgrp: change group of all dirs+files to group of '.'.
+    - make ch+  := make chmod chown chgrp
+ - wit DUMP: Output improved.
+ - wit DUMP can now dump data structure of Wii ISO files, ticket.bin (new!),
+   tmd.bin (new!), header.bin (new!), boot.bin, fst.bin and of DOL-files.
+   The file type is detected automatically by analyzing the content.
+
+wit v1.00b r1218 - 2010-06-12  (repository only)
+
+ - The tools iso2wbfs, iso2wdf and wdf2iso have been removed. Use wit instead.
+
+wit v1.01a r1245 - 2010-06-20
+
+ - CISO support: The new options --chunk-mode, --chunk-size and --max-chunks
+   gives the user the control over chunk size when creating a CISO file.
+ - With release v0.37 I have written a complete new function to calculate the
+   WBFS geometry (outsourcing of the calculation so that other commands can use
+   the results). Up to now the new and the old calculation have been compared
+   on every WBFS formatting. From now only this new calculation is used.
+ - wit DUMP --long: Print content of TICKET and TMD too.
+ - New option for wit DUMP: --show=keylist: This option allows fine control
+   over the things that should be printed. If set --long is ignored. Allowed
+   keywords: NONE, ALL, INTRO, P-TAB, P-INFO, P-MAP, D-MAP, TICKET, TMD,
+   PART (=P-INFO|P-MAP|TICKET|TMD), MAP (=P-MAP|D-MAP).
+   If --show is set option --long is ignored.
+ - wit+wwt VERIFY --long --long: Hex dump of 'DATA' was wrong.
+ - Bug fix for option --pmode: keyword INDEX is enabled now.
+ - New warnings (exit status): "Nothing to do" and "No source file found".
+
+wit v1.01b r1248 - 2010-06-20
+
+ - Bug fix for "wit DUMP":
+    - If neither --show nor --long is set the head parameters was not printed.
+    - Indention was wrong.
+
+wit v1.01c r1313 - 2010-07-01
+
+ - Bug fix for "wit COPY": If converting an ISO to a plain iso file (*.iso) in
+   scrubbing mode the destination file was truncated to the needed size. Now
+   it is extended to 4 699 979 776 bytes again.
+
+wit v1.10a.beta r1333 - 2010-07-05
+
+ - New option: --width wd: Define the width (number of columns) for help and
+   other messages and disables the automatic detection of the terminal width.
+ - wwt EXTRACT: Support '%X' and '%Y' in output filenames.
+ - I have rewritten the wiidisc lib (part of libwbfs) from scratch. It has a
+   complete new interface and an improved functionality. It uses dynamic data
+   structures and collect data as needed. This has considerable advantages
+   for the whole WIT project:
+    - All information about a Wii disc is now in one hand. Things like usage
+      maps and partition data are loaded/built once and only if needed.
+    - wit DUMP --show=files: Print a list with images files (like -F+ before).
+      Option --show=offset,size,dec,hex,header controls the output columns.
+    - wit DUMP --show=usage: Print a wii sector usage map.
+    - wit ILIST: Redesigned. Option --show=offset,size,dec,hex,header,path
+      controls the output columns.
+    - Option --psel extended:
+        --psel=NO-ID : use all partitions but not partitions with an ID type.
+        --psel=PTAB0 : use all partitions of table #0 but no other partitions.
+        --psel=ALL   : use all partitions (the default).
+        --psel=WHOLE : use all partitions and don't scrub partitions
+        --psel=RAW   : more than 'WHOLE': copy whole dics
+    - wit DIFF: If using the option --psel the partition tables are normalized
+      before comparing. This enables DIFF to compare DATA partitions only
+      independent from the existence of other partitions.
+
+wit v1.10a.beta r1338 - 2010-07-05  (repos only)
+
+ - Channel partitions (ssbb) enabled, but not tested.
+ - The field width of offset and size columns of FST listings is now
+   calculated. A space between the columns is guaranteed.
+ - wit DUMP: A forgotten endian calculation results in a wrong region info.
+
+wit v1.10a.beta r1359 - 2010-07-09
+
+ - ID renaming: A point ('.') means: leave id character unchanged.
+ - Options --ios, --id and --name modify only disc data and the DATA partition,
+   but no longer any other partitions.
+ - There is an complete new implementation of option --psel: Combinations like
+   '--psel DATA,UPDATE' or '--psel -CHANNEL' are supported now.
+ - New: wit DUMP --show=patch: Shows a address map with patching infos.
+ - wwt EXTRACT: Complete new and improved calculation of output filename.
+ - Option --files: Macro calls are now prefixed by a colon (':'). The previous
+   prefix '=' is obsolete, but still allowed.
+ - Command "wit ILIST" evaluates option --psel now.
+ - I have run my test scripts against this release without any reported errors.
+
+wit v1.10a.beta r1363 - 2010-07-09  (repos only)
+
+ - Bug fix: File size calculation error for when composing large discs.
+
+wit v1.10a.beta r1374 - 2010-07-13
+
+ - New wiidisc lib: Advanced error handling.
+ - wit ILIST: List files like 'fst.bin' too.
+
+Aggregation of the previous beta versions:
+
+ - New option: --width wd: Define the width (number of columns) for help and
+   other messages and disables the automatic detection of the terminal width.
+ - I have rewritten the wiidisc lib (part of libwbfs) from scratch. It has a
+   complete new interface and an improved functionality. It uses dynamic data
+   structures and collect data as needed. This has considerable advantages
+   for the whole WIT project.
+ - ID renaming: A point ('.') means: leave id character unchanged.
+ - Options --ios, --id and --name modify only disc data and the DATA partition,
+   but no longer any other partitions.
+ - There is an complete new implementation of option --psel: Combinations like
+   '--psel DATA,UPDATE' or '--psel -CHANNEL' are supported now.
+ - wwt EXTRACT: Complete new and improved calculation of output filename.
+ - wwt EXTRACT: Support '%X' and '%Y' in output filenames.
+ - Option --files: Macro calls are now prefixed by a colon (':'). The previous
+   prefix '=' is obsolete, but still allowed.
+ - Bug fix: File size calculation error for when composing large discs.
+
+wit v1.10a r1386 - 2010-07-15
+
+ - wiitdb.com: Support of new languages: ru, zhcn, zhtw
+ - wwt ANALYZE: If option --long is set then calculated values are printed too
+   if other values are available. If option --long is set twice calculated
+   values are always printed.
+ - wit+wwt: Option --trunc: Truncate created PLAIN ISO image to needed size.
+
+wit v1.11a.beta r1428 - 2010-07-24
+
+ - Computed line breaks for error messages.
+ - "wit COPY" accepts the options --id --name --ios --region to patch the
+   image while copying.
+ - New command: wit EDIT: Patch ISO images directly without copying.
+
+wit v1.11a r1434 - 2010-07-26
+
+ - Option --region: endian bug fix
+
+wit v1.12a r1451 - 2010-08-01
+
+ - Bug fix for option --sneek: Option --psel was not set in a correct way.
+ - New command: wit CREATE TICKET/TMD: Create a ticket or tmd file from
+   scratch. Options and parameters control the creation.
+ - Composing: If files ticket.bin or tmd.bin missed or have a wrong size
+   TICKET and/or TMD will be created automatically.
+ - New command: wit MIX: Mix partitions from different sources into one
+   new Wii disc image.  *** "wit MIX" is EXPERIMENTAL! ***
+
+wit v1.13a r1468 - 2010-08-04
+
+ - Command "wit MIX" accepts now the option --overlay: Partitions will
+   be overlayed so that data from one partition is stored in unused areas
+   of a other partition. To find the optimum order a permutation is done.
+   Option --overlay limits the number of input partitions to 12, because
+   the calculation is rated as O(2^n).  *** "wit MIX" is EXPERIMENTAL! ***
+ - "wit MIX" wil accept the keyword 'psel' as alternative to 'select'.
+   The reason is that 'select' accepts the same keyword list as --psel.
+ - The disc subsystems recognize overlayes partitions. For overlayed
+   partitions the --psel keyword "WHOLE" is ignored.
+ - Command "wit DUMP" will print an info line for overlayed partitions.
+
+wit v1.14a r1506 - 2010-08-09
+
+ - Option --psel redesigned: it is now possible to allow or deny any partition
+   by partition type, partition table and/or by partition index. Only with the
+   unambiguous partition index it is possible to select the one wanted DATA
+   partition if multiple exists.
+ - New option --rm-files: This patching option defines filter rules to remove
+   real files and directories from the FST of the DATA partition. Fake signing
+   of the TMD is necessary.
+ - New option --zero-files: This patching option defines filter rules to zero
+   (set size to zero) real files of the FST of the DATA partition. Fake
+   signing$ of the TMD is necessary.
+ - New option --ignore-files: This option defines filter rules to ignore
+   system and real directories and files of the FST of the DATA partition.
+   Fake signing is not necessary, but the partition becomes invalid, because
+   the content of some files is not copied.
+ - New qualifier for "wit MIX": "IGNORE ruleset": Ignore files when copying a
+   disc image. See https://wit.wiimm.de/wit/cmd-mix.html#ignore for details.
+ - Some modification for expanding '@file' parameters: wit MIX needs control.
+ - wit MIX: A new algorithm for 2 partitions: It tries every possible shift to
+   find the best overlay. All holes in both partitions are relevant.
+ - wit MIX: Before creating the image a additional verify function is called.
+   This function controls that no sector is used by more than one partition.
+   With verbose level >=3 an usage map is printed too.
+
+wit v1.15a r1554 - 2010-08-15
+
+ - New "wit MIX" qualifer: HEADER: Copy the disc header (first 256 bytes of
+   disc) of the related source image to the destination image. Patching with
+   the options --id and --name is possible.
+ - New "wit MIX" qualifer: REGION: Copy the region infor (32 Bytes at offset
+   0x4e000) of the related source image to the destination image. Patching
+   with the option --region is possible.
+ - Bug fix: "wit mix --name discname" didn't work.
+ - Bug fix for "wit mix --overlay".
+ - Writing a WBFS file is now part of the file layer and libwbfs is only used
+   as helper. Now every command, and also "wit MIX", is able to write to a
+   WBFS file like to any other formats without special code.
+ - "INSTALLER" is now an alternative name for the "UPDATE" partition, like
+   "GAME" for "DATA" since the epoch.
+ - To manage allowed and permitted options, 64 bit integer numbers had been
+   used. Now arrays will be used, because wwt have already reached the limit
+   of 64 command specific options. Hope that all run as before.
+ - Korean disc support implemented. (I can't test this by myself)
+ - New option: --common-key index: Change the common key index of all partitions
+   and fake sign the tickets.
+ - I have implemented a new "ID selection interface". It works with positive
+   ('+') and negative ('-' or '/') rules. A rule consist up to 6 characters,
+   case is ignored. Points ('.') are wildcards for a single character and mult
+   ('*') and plus ('+') for many characters. Each source ID6 is compared to
+   each rule of the list until a rules matches the ID. If it is a positive rule,
+   the ID is inserted into the workig list.
+ - The syntax of the commands "wit ID6" and "wwt ID6" have changed to use the
+   new "ID selection interface" (see above). More commands will follow.
+ - The commands 'wit ILIST/ILIST-L/ILIST-LL' are renamed to 'wit FILES/FILES-L
+   /FILES-LL'. The old command names are still allowed.
+ - The new command "wit FDIFF" is a shortcut for "wit DIFF --files +".
+
+wit v1.16a r1645 - 2010-09-01
+
+ - wit MIX: Forgotten options: --iso --wdf --ciso --wbfs
+ - wit ID6 --long: Print disc title too.
+ - wwt ADD: Default is now: --enc encrypt
+ - wit DIFF: Will patch the partiton tables for scrubbed diff, because
+   different tools modify them in a different way while scrubbing.
+ - Bug fix for wwt VERIFY: Iteration through whole WBFS failed.
+ - A little change when creating a WBFS file: The hss value in the WBFS header
+   is now set to the truncated value.
+ - New file format supported: WIA = Wii ISO Archive (EXPERIMENTAL!)
+   WIA will decrypt partitions and compress the data in chunks with bzip2.
+   Because of the chunks the archive allows random read access to view
+   only parts of the image. The option --no-compress disables compressing.
+   The resulting image is very effective packable by all compression tools.
+ - GameCube ISO support for nearly all commands. (EXPERIMENTAL!)
+
+wit v1.17a r1834 - 2010-10-05
+
+ - The WIA file format was completely redesigned. WIA supports now 5
+   compression methods: NONE, PURGE, BZIP2, LZMA and LZMA2.
+ - New extended syntax of option --compression: method.level@factor
+   'method' is the name (NONE, LZMA, ...) or index of the method. '.level' is
+   a point followed by one digit. It defines the compression level. The
+   special value '0' means: Use default compression level. '@factor' is a
+   factor for the chunk size. With the default factor '1' the chunk size is
+   2 MiB (size of 1 Wii sector group). All three fields are optional.
+ - I declare the WIA file format stable and hope that converting to and from
+   WIA is free of bugs. The best for users is to convert to WIA and back and
+   compare the result with the original source.
+ - New command: WIT COMPR: Prints a list with supported compression methods.
+   With parameters the normalized names of that parameters are printed.
+   WIT COMPR accepts the options --long (twice) --no-header and --sections.
+ - The new tool 'wdf' should replace the tools wdf-cat, wdf-dump and should
+   compensate the old tools wdf2iso and iso2wdf as general wdf converters.
+   See built in help for details. The tool 'wdf' is EXPERIMENTAL!
+ - Support of GameCube multiboot discs. (EXPERIMENTAL!)
+ - New options --align-part: Align partitions while moving or creating them.
+ - New options --disc-size: Define a minimal disc size.
+ - Command "wit SCRUB" renamed to "wit CONVERT". "wit SCRUB" is still allowed.
+ - From now the first 0x50000 bytes of Wii discs will be scanned for non zero
+   data. Such data is included into the copy operations. The old and standard
+   scrubbing algorithm ignore such sectors in the range 0x08000..0x3ffff.
+ - WBFS files with more than 1 disc are not longer detected as ISO images.
+ - CYGWIN: Improved support of windows style paths ('X:\path\file').
+ - Bug fix: While composing the FST size (var 'max_fst_size4' in 'boot.bin')
+   wasn't updated. If you compose an ISO and the resulting FST is bigger than
+   the original, the Wii apploader failed.
+ - Bug fix: Creation of a WIA file failed if option --psel is set and at least
+   one partition was removed (scrubbed). The result was an invalid disc image.
+ - Bug fix: "wit MOVE" didn't create the directory path even if --DEST is set.
+ - Bug fix for "wit move": wit move have forgotten to move the continuation
+   files of splitted images.
+ - Bug fix: Non Wii ISO images are not listed any more if the source is a
+   directory. This old behavior of wit was lost some releases ago.
+
+wit v1.18a r1868 - 2010-10-10
+
+ - ETA calculation changed to support WIA chunk caching and writing.
+ - CYGWIN: The parameters of the options --dest and --DEST are now checked if
+   they start with 'X:\' or 'X:/'. These code are replaced by '/cygdrive/X/'.
+   This is also done for the last parameter of "wit COPY/MOVE/EXTRACT/DIFF" if
+   neither --dest nor --DEST is set and the last parameter is the destination.
+ - New option: --unit: Specify the unit for size values. Some possible values
+   are BYTES,KB,KIB,1000,1024,AUTO,WII. Read built in help for more details.
+ - wit LIST: Support of option --unit to define the unit for the ISO sizes.
+ - wit ISOSIZE: Support of option --unit to define the unit for the ISO sizes.
+   A summary line is also printed if the lsit contains 2 or more images.
+ - Options --include and --exclude accept now a comma separated list of IDs.
+ - Bug fix: If wit had closed a WBFS partiton a truncation errors appeared.
+ - New wit option: --auto: If set, all devices are scanned for WBFS partitions
+   and all WBFS partitions are added to the source list. It replaces parameters
+   like "--source /dev/wbfs" and works like "wwt --auto --all".
+
+wit v1.19a r1904 - 2010-10-23
+
+ - Bug fix for "wit EDIT": New hash values were not copied to other sectors
+   of the same sector group.
+ - "wwt ADD" accepts option "--source source" as alternative source definition.
+ - The layout of "wit LIST-LLL" is redesigned:
+    - Bug fix for real paths for WBFS files.
+    - New option: --real-path: print the real path instead of the entered path.
+    - New column: p-info: Print a short info about available partitions: "DUC?"
+ - The new command "wit/wwt INFO" will inform about features. The intension is
+   to inform GUIs and other wit calling programs. Therefor option --sections
+   is also supported. At this moment only supported file formats inclusive
+   attributes (read/write/modify/extend/fst) are printed.
+ - "wit FILETYPE" and other listing commands: The file types are redefined in
+   a more consistence way. ISO images are tagged as 'CONTAINER/DISCTYPE' like
+   'ISO/WII', 'WDF/GC', 'WBFS/WII', 'FST/WII'.
+ - New option --no-expand: Do not expand directories to the containing files
+   or images. This option does not change the behavior of --recurse.
+ - New options: --one-job and --job-limit=n: Limit the number of jobs to
+   execute. If done without errors the exit status is NULL.
+ - Some minor output bug fixes.
+
+wit v1.20a r1945 - 2010-11-05
+
+ - WIA creation warning "WIA is NEW! Compare with original source." removed.
+ - Preparation: Tools will read future WDF versions without warnings, if the
+   compatibility parameter allow this.
+ - The file descriptor of the last WBFS partition is saved/cached. This makes
+   wit faster when reading multiple discs from a WBFS.
+ - wit EXTRACT: The progress view is now based on the file size instead of
+   the file count.
+ - Options --include and --exclude accept now IDs with wildcards:
+   '.' is a wildcard for 1 character and '*' and '+' (same meaning) for any
+   number of characters.
+ - File 'setup.txt' is created as template while extracting a disc image.
+   It is scanned for ID, NAME and OFFSET while composing a disc image.
+   The new option --ignore-setup disables the scanning of 'setup.txt'.
+ - Bug fix for "wit CONVERT": The destination path was the current working
+   directory.
+ - Bug fix for "wwt ADD --remove": If command is done without errors all
+   sources files -- but not FST -- are removed.
+ - Bug fix: Calculation of fst size fixed for GameCube parsing.
+ - Buf fix for "wit CONVERT": Aborting with CTRL-C don't remove the source.
+ - Composed discs: New and correct calculation of total size and time stamps.
+   For time stamps the newest times of all scanned files are used.
+ - wit INFO FILE-FORMAT: New attribute 'compr': Signals a compressed file
+   format and that option --compr can be used to setup the compression mode.
+ - Splitted are also detected, if the field width of the counters is 2-6.
+
+wit v1.21a r1980 - 2010-11-17
+
+ - Simplification of the selection of compression modes:
+    - Option --compr accepts the single digit modes '0' (=NONE), '1' (=fast
+      LZMA) .. '9'@ (=BEST, best LZMA).
+    - Option --wia accepts an optional parameter: --wia=mode
+      This is a shortcut for: --wia --compression mode
+   Example: Use --wia=9 to force WIA output with compression 9=BEST.
+ - wit+wwt COMPR: Layout restyled.
+ - wit DUMP: Additional scrubbed size info and tabbing changes.
+ - Update to Cygwin DLL release version 1.7.7-1.
+ - The verbose level and log output of "wit DIFF" is now like "wit COPY".
+ - New option: wit COPY --diff: Diff source and dest after copying.
+ - wit COPY: If copying without modifying content option --preserve is set
+   automatically.
+ - Detect and dump cert.bin files.
+ - Detection and status of fake signing improved. Try "wit DUMP".
+ - wit DUMP image --show cert: Print ceritificate chain.
+ - If dumping a ticket a tmd file, the source directory is searched for a file
+   named 'cert.bin' to check the signature.
+
+wit v1.22a r2012 - 2010-11-22
+
+ - New command: wit CERT: Collect certificates and eliminate multiple entries
+   of the same certificate. Dump all collected certificates to standard
+   output (stdout) and/or write the certificate as binary to a file. Together
+   with the new option "--fake-sign filter" is is possible to fake sign some
+   or all certificates before dumping and/or storing.
+ - New global option: --cert: Add certificates to the global certificate
+   database. These certificates are used to check the signatures.
+ - "wit dump ticket.bin tmd.bin" is now able to dump the certificate chain
+   following the TICKET or TMD info. This combination is usual for 'cetk'
+   and 'tmd.1234' files in WADs.
+ - Workaround for Cygwin bug in /proc/partitions.
+ - Bug fix for "wit CONVERT --wia" (Segmentation fault).
+ - Bug fix for 'preserve time' if source is removed.
+ - Command "wit LIST" supports now --progress while scanning files and dirs.
+ - The old tools 'wdf-cat' and 'wdf-dump' are removed. Use instead the new
+   tool 'wdf'. 'wdf' is linked to 'wdf-cat' and 'wdf-dump' to facilitate the
+   old behavior when calling 'wdf-cat' or 'wdf-dump'.
+
+wit v1.23a r2092 - 2010-12-10
+
+ - Preallocation of disc space implemented. It is only enabled for Cygwin by
+   default. It can be disabled with --prealloc=0 or enabled with --prealloc.
+   The needed preallocation function is not available for mac.
+ - wwt EXTRACT + REMOVE + TOUCH + VERIFY:
+   These commands accept now ID6 pattern like '...P' or '+1'. Each '.' is a
+   wildcard that matches any single character. A '+' matches any number of
+   characters. For details see https://wit.wiimm.de/info/disc-id.html
+ - wwt EXTRACT is now able to patch while extracting and to create WIA files.
+   It support also the options --fst --pmode --psel --raw --files and --sneek.
+ - Cygwin will support UTF-8 by default.
+ - Bug fix: Error while scanning LC_CTYPE for language detection.
+ - Support of environment variable 'WWT_LANG' removed. Use 'WIT_LANG' instead.
+ - "wit EDIT" supports now the options --psel and --raw.
+ - Option --pmode accepts now the keywords AUTO, NONE, POINT, ID, NAME, INDEX
+   and COMBI. Mode 'AUTO' switches to 'COMBI' if there are multiple partitions
+   with the same partition type.
+
+wit v1.23b r2096 - 2010-12-12
+
+ - The progress counter is updated more frequently while creating a WIA file.
+ - Bug fix for options --one-job and --job-limit.
+
+wit v1.24a r2114 - 2010-12-23
+
+ - "wwt ADD+EXTRACT" support now --one-job and --job-limit=n
+ - Preallocation is now enabled by default for all systems without known
+   disadvantages. Preallocation is also used for extrated files. Thanx to
+   deo at gbatemp who shows me Linux and Mac optimizations.
+ - wit+wwt VERIFY: Print signing and encryption status.
+ - Bug fix: "wit FILES+DUMP" print the file size again.
+
+wit v1.25a r2133 - 2011-01-09
+
+ - Bug fix for "wit mix": If reading from FST signing failed.
+ - Bug fix: The space preallocation for splitted files exceeded the defined
+   limit. This results in an error on FAT partitions.
+ - "wit DUMP image": IDs (ticket, tmd, boot) and IOS of the data partition are
+   printed in the "intro" and "partition info" sections of the dump. Therefor
+   the option --show has 3 new keywords: D-ID, P-ID and ID (=D-ID|P-ID).
+   These new keywords can be used to minimze the dump (print IDs only).
+ - wwt format: If formatting a device and option --hss is not, then the real
+   sector size of the device is used. This is a concession for the new drives
+   with 4096 instead of 512 bytes per block.
+
+wit v1.25b r2143 - 2011-01-10
+
+ - Bug fix for "wwt init": Auto hd sector size (hss) detection was wrong and
+   returns always the value 4096.
+ - "wwt FIND" supports option --sections and --old-style. The later one will
+   ensure that the GUIs can read and scan the old style because I will change
+   the layout completly in one of the next releases.
+
+wit v1.26a r2223 - 2011-01-27
+
+ - Bug fix for "wwt EXTRACT --test": If extracting to an already existing file
+   the old file was removed.
+ - Bug fix for "wdf +PACK": wrong data written if packing a raw file.
+ - Bug fix: Reading a GameCube WIA is now done without an assertion failure.
+   But remember: GameCube support is still EXPERIMENTAL!
+ - I have made some changes in the make system to support GCC option -static
+   and cross compiling (Linux/i386 on Linux/x86_64).
+ - Linux/i386: Because of the static linking I can use the latest version of
+   the Linux GLIBC with preallocation support. Copying file is now fast again.
+ - BZIP2 support is now included as source and should work for all systems.
+   This enables WIA/bzip2 support for Mac/x86_64.
+ - "wit COPY/CONVERT/EXTRACT/EDIT/MOVE/DIFF" and "wwt ADD/EXTRACT/REMOVE"
+   support now the option --sections.
+ - "wwt add": New user interface implemented: In a first fast loop the jobs are
+   counted with respect to the options like --update and --newer (ignore skiped
+   files). In a second loop the jobs are executed with correct job counters.
+ - wit DUMP: Scrubbing status of disc and partitions are printed. Example:
+      "TICKET & TMD are well signed. Partition is encrypted and scrubbed."
+ - "wit EXTRACT" failed if the disc title could not found in the title db.
+ - New commands: "wit/wwt SKELETON": Create skeleton copies of discs for
+   further analysis. Details: https://wit.wiimm.de/cmd/wit/skeleton#desc
+
+wit v1.27a r2289 - 2011-02-09
+
+ - Bug fix: WBFS preallocation was always a little bit to short.
+ - Bug fix: Wrong signature status printed when dumping the content of TICKET
+   and TMD files.
+ - Bug fix: "wwt sync --newer FST" failed because of missing timestamp.
+ - New option --links: Detect soft and hard linked source files while composing
+   or extracting discs and try to create hard links instead of independent
+   copies on the destination file system.
+ - New option: --flat: If extracting files the path names of the source discs
+   are removed. This enables extracting of all files to s specific destination
+   directory without creation of subdirectories. Command "wit files --flat"
+   can be used to verify the flat names.
+ - New tool: wfuse: Mount a Wii or GameCube image or a WBFS file or partition
+   to a mount point using FUSE (Filesystem in Userspace). FUSE and wfuse are
+   not available for Cygwin/Windows.
+
+wit v1.28a r2336 - 2011-03-04
+
+ - wfuse --version: Print FUSE versions too.
+ - New option: wfuse --create: If the mount point does not exist, create it
+   and remove it on unmount.
+ - New option: wfuse --remount: If the mount point is already mounted, try
+   silently to unmount it first.
+ - New option: --include-first: Include lists takes take precedence over
+   exclude lists.
+ - New option: "wwt ADD --sync-all": Use include and exclude lists only for
+   creating the sync list.
+ - "wit DIFF/FDIFF": The diff output was changed completely. The options
+   --quit, --verbose, --file-limit, --limit, --block-size and --long allow
+   fine control. The output is now homogeneously in all three modes RAW,
+   SCRUBBED and FILES. Option --section is supported for each log level.
+   Hidden option --OLD enables the old diff layout for compatibility.
+ - New: "wdf +cmp": Compare WDF, CISO and WIA files with other sources.
+ - wit DUMP: Print version of "System Menu" if update partition found.
+ - There is now a Windows installer (BETA): windows-install.bat
+   Please remove old self made installations of WIT.
+
+wit v1.29a r2655 - 2011-05-21
+
+ - Script 'load-titles.sh' will be copied on install into the share folder to
+   allow later and easy update of the title database.
+ - New command: wit+wwt GETTITLES: Change to the share folder an call script
+   'load-titles.sh' to update the title database.
+
+ - Known bugs:
+    - The GameCube support is in development and EXPERIMENTAL!
+    - There are new problems while reading from non seekable sources (e.g.
+      pipes). The reason is the complete new and more intelligent wiidisc lib
+      which makes more lookups ==> The best is to use version 1.01c for pipes.
+
+
+*******************************************************************************
+*******                              END                                *******
+*******************************************************************************
