@@ -1,1 +1,4 @@
+*.bak
+cmd.txt
+bin/
 project/bin/
