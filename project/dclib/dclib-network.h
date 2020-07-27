@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -106,23 +106,24 @@ bool ResolveHostMem
 
 // standard values
 #define ALLOW_MODE_DENY		0	// access denied
-#define ALLOW_MODE_ALLOW	1	// access allowed
+#define ALLOW_MODE_ALLOW	0x001	// access allowed
+#define ALLOW_MODE_AKEY		0x002	// access allowed by access key
 
 // locations
-#define ALLOW_MODE_EXTERN	0x001	// keyword 'EXTERN' set
-#define ALLOW_MODE_LAN		0x002	// keyword 'LAN' set
-#define ALLOW_MODE_LOCAL	0x004	// keyword 'LOCAL' set
+#define ALLOW_MODE_EXTERN	0x004	// keyword 'EXTERN' set
+#define ALLOW_MODE_LAN		0x008	// keyword 'LAN' set
+#define ALLOW_MODE_LOCAL	0x010	// keyword 'LOCAL' set
 
 // users
-#define ALLOW_MODE_PUBLIC	0x010	// keyword 'PUBLIC' set
-#define ALLOW_MODE_USER		0x020	// keyword 'USER' set
-#define ALLOW_MODE_MOD		0x040	// keyword 'MOD' or 'MODERATOR' set
-#define ALLOW_MODE_ADMIN	0x080	// keyword 'ADMIN' or 'ADMINISTRATOR' set
-#define ALLOW_MODE_DEVELOP	0x100	// keyword 'DEVELOP' or 'DEVELOPER' set
+#define ALLOW_MODE_PUBLIC	0x020	// keyword 'PUBLIC' set
+#define ALLOW_MODE_USER		0x040	// keyword 'USER' set
+#define ALLOW_MODE_MOD		0x080	// keyword 'MOD' or 'MODERATOR' set
+#define ALLOW_MODE_ADMIN	0x100	// keyword 'ADMIN' or 'ADMINISTRATOR' set
+#define ALLOW_MODE_DEVELOP	0x200	// keyword 'DEVELOP' or 'DEVELOPER' set
 
 // logging
-#define ALLOW_MODE_LOG		0x200	// keyword 'LOG' set
-#define ALLOW_MODE_VERBOSE	0x400	// keyword 'VERBOSE' set
+#define ALLOW_MODE_LOG		0x400	// keyword 'LOG' set
+#define ALLOW_MODE_VERBOSE	0x800	// keyword 'VERBOSE' set
 
 // special processing values
 #define ALLOW_MODE_NOT		0x1000000000000000ull	// negate bits
@@ -132,6 +133,10 @@ bool ResolveHostMem
 
 #define ALLOW_MODE__OP		0x6000000000000000ull	// mask for operation
 #define ALLOW_MODE__MASK	0x0fffffffffffffffull	// mask out control bits
+
+//-----------------------------------------------------------------------------
+
+extern const KeywordTab_t AllowIP4KeyTable[];
 
 //-----------------------------------------------------------------------------
 // [[AllowIP4Item_t]]
@@ -179,6 +184,7 @@ void DumpAllowIP4
     FILE		*f,		// NULL or output file
     int			indent,		// indention
     const AllowIP4_t	*ai,		// NULL or source
+    const KeywordTab_t	*keytab,	// NULL or key table for output
     ccp			title,		// not NULL: Add title
     bool		print_tab_head	// true: add table headings and separators
 );
@@ -772,7 +778,7 @@ typedef int (*TCPFDListFunc)
 );
 
 struct TCPHandler_t;
-typedef struct TCPStream_t * (*TCPCreateFunc) ( struct TCPHandler_t * th );
+typedef struct TCPStream_t * (*TCPCreateFunc) ( struct TCPHandler_t * th, int sock );
 
 ///////////////////////////////////////////////////////////////////////////////
 // [[Socket_t]]
@@ -787,7 +793,7 @@ typedef struct Socket_t
     // if defined, these function replace the TCPHandler_t functions.
 
     TCPCreateFunc OnCreateStream;	// not NULL: called to create
-					// an initialized stream object
+					// an initialize a stream object
 
     TCPStreamFunc OnAddedStream;	// not NULL: called after the stream
 					// is created and added
@@ -844,6 +850,10 @@ typedef struct TCPStream_t
     TCPTimeFunc	OnClose;	// not NULL: called when the stream is closed
     TCPFDListFunc OnFDList;	// not NULL: Call this for FDList actions
 
+    //--- logging
+
+    TraceLog_t	*tracelog;	// NULL or valid trace-log data
+
     //--- statistics
 
     char	info[32];	// info about this stream, for debugging
@@ -853,7 +863,6 @@ typedef struct TCPStream_t
 
     TransferStats_t stat;	// transfer statistics
     TransferStats_t *xstat;	// NULL or pointer to summary statistics
-
 
     //--- data extension
 
@@ -873,6 +882,14 @@ void LogTCPStream
     ...					// arguments for 'vfprintf(format,...)'
 )
 __attribute__ ((__format__(__printf__,5,6)));
+
+//-----------------------------------------------------------------------------
+
+void LogTCPStreamActivity
+(
+    const TCPStream_t	*ts,		// valid TCP handler
+    ccp			activity
+);
 
 //-----------------------------------------------------------------------------
 
@@ -1059,9 +1076,11 @@ typedef struct TCPHandler_t
     TCPAllowFunc   OnAllowStream;	// not NULL: called before allowing a connection
 					// initialized with IsStreamAllowed()
     TCPHandlerFunc OnAcceptStream;	// not NULL: called before accpeting a connection
-    TCPCreateFunc  OnCreateStream;	// not NULL: called to create an initialized stream object
-    TCPStreamFunc  OnAddedStream;	// not NULL: called after the stream is created and added
-    TCPStreamFunc  OnDestroyStream;	// not NULL: called before destroying a stream
+    TCPCreateFunc  OnCreateStream;	// not NULL: called to create
+					// and initialize a stream object
+    TCPStreamFunc  OnAddedStream;	// not NULL: called after the stream 
+					// is created and added
+    TCPStreamFunc  OnDestroyStream;	// not NULL: called by ResetTCPStream()
 
     Socket_t listen[TCP_HANDLER_MAX_LISTEN];
 					// sockets to listen
@@ -1069,6 +1088,10 @@ typedef struct TCPHandler_t
     AllowIP4_t	*allow_ip4;		// NULL or filter for accept (not for unix files).
 					// Analysis is done by OnAllowStream()
 					// before calling OnAcceptStream().
+
+    //--- logging
+
+    TraceLog_t	tracelog;		// trace activities
 
     //--- statistics
 

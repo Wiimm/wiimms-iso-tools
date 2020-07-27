@@ -90,6 +90,7 @@ typedef enum cert_stat_t
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct cert_head_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[cert_head_t]]
 
 typedef struct cert_head_t
 {
@@ -102,6 +103,7 @@ typedef struct cert_head_t
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct cert_data_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[cert_data_t]]
 
 typedef struct cert_data_t
 {
@@ -117,13 +119,15 @@ typedef struct cert_data_t
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct cert_item_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[cert_item_t]]
 
 typedef struct cert_item_t
 {
     char		name[0x82];	// concatenated name
     const cert_head_t	* head;		// pointer to cert head
     const cert_data_t	* data;		// pointer to cert data
-    u32			sig_size;	// size of 'head->sig_data'
+    u32			sig_space;	// space for head->sig_data'
+    u32			sig_size;	// used size of 'head->sig_data'
     u32			key_size;	// size of 'data->public_key'
     u32			data_size;	// size of 'data'
     u32			cert_size;	// total size of cert
@@ -134,6 +138,7 @@ typedef struct cert_item_t
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct cert_chain_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[cert_chain_t]]
 
 typedef struct cert_chain_t
 {
@@ -175,6 +180,21 @@ ccp cert_get_status_name
 );
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[sig_info_t]]
+
+typedef struct sig_info_t
+{
+    uint		sig_type;	// signature type
+    uint		sig_space;	// reserved space
+    uint		sig_size;	// signature size
+    uint		key_size;	// key size
+    ccp			name;		// signature name
+}
+sig_info_t;
+
+//-----------------------------------------------------------------------------
+
+const sig_info_t * cert_get_signature_info ( uint sig_type );
 
 ccp cert_get_signature_name
 (
@@ -182,19 +202,10 @@ ccp cert_get_signature_name
     ccp			ret_invalid	// return value if 'sig_type' unknown
 );
 
-///////////////////////////////////////////////////////////////////////////////
-
-int cert_get_signature_size // returns NULL for unknown 'sig_type'
-(
-    u32			sig_type	// signature type
-);
-
-///////////////////////////////////////////////////////////////////////////////
-
-int cert_get_pubkey_size // returns NULL for unknown 'sig_type'
-(
-    u32			key_type	// signature type
-);
+// returns 0 for unknown 'sig_type//key_type'
+int cert_get_signature_space ( u32 sig_type );
+int cert_get_signature_size  ( u32 sig_type );
+int cert_get_pubkey_size     ( u32 key_type );
 
 ///////////////////////////////////////////////////////////////////////////////
 

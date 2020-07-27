@@ -298,7 +298,7 @@ DEFINES1	+= -D_LZMA_PROB32=1	# LZMA option
 DEFINES		=  $(strip $(DEFINES1) $(MODE) $(XDEF))
 
 CFLAGS		+= -fomit-frame-pointer -fno-strict-aliasing -funroll-loops
-CFLAGS		+= -Wall -Wno-parentheses -Wno-unused-function
+CFLAGS		+= -Wall -Wno-parentheses -Wno-unused-function -Wno-format-truncation
 #CFLAGS		+= -O3 -Isrc/libwbfs -Isrc/lzma -Isrc -I$(UI) -I. -Iwork
 CFLAGS		+= -O3 -Isrc/libwbfs -Isrc -I$(UI) -I. -Iwork
 ifeq ($(SYSTEM),cygwin)
@@ -313,6 +313,10 @@ DEPFLAGS	+= -MMD
 
 LDFLAGS		+= -static-libgcc
 LDFLAGS		:= $(strip $(LDFLAGS))
+
+ifeq ($(SYSTEM_LINUX),1)
+ LIBS		+= -ltinfo
+endif
 
 ifeq ($(HAVE_ZLIB),1)
  LIBS		+= -lz

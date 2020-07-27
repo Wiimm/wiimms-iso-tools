@@ -153,12 +153,12 @@ void CloseAll();
  #define CloseWFile(f,r)	XCloseWFile	(__FUNCTION__,__FILE__,__LINE__,f,r)
  #define SetWFileTime(f,s)	XSetWFileTime	(__FUNCTION__,__FILE__,__LINE__,f,s)
  #define OpenWFile(f,n,i)	XOpenWFile	(__FUNCTION__,__FILE__,__LINE__,f,n,i)
- #define OpenWFileModify(f,n,i)	XOpenWFileModify	(__FUNCTION__,__FILE__,__LINE__,f,n,i)
+ #define OpenWFileModify(f,n,i)	XOpenWFileModify(__FUNCTION__,__FILE__,__LINE__,f,n,i)
  #define CheckCreated(f,d,e)	XCheckCreated	(__FUNCTION__,__FILE__,__LINE__,f,d,e)
  #define CreateWFile(f,n,i,o)	XCreateWFile	(__FUNCTION__,__FILE__,__LINE__,f,n,i,o)
- #define OpenStreamWFile(f)	XOpenStreamWFile	(__FUNCTION__,__FILE__,__LINE__,f)
+ #define OpenStreamWFile(f)	XOpenStreamWFile(__FUNCTION__,__FILE__,__LINE__,f)
  #define SetupAutoSplit(f,m)	XSetupAutoSplit	(__FUNCTION__,__FILE__,__LINE__,f,m)
- #define SetupSplitWFile(f,m,s)	XSetupSplitWFile	(__FUNCTION__,__FILE__,__LINE__,f,m,s)
+ #define SetupSplitWFile(f,m,s)	XSetupSplitWFile(__FUNCTION__,__FILE__,__LINE__,f,m,s)
  #define CreateSplitWFile(f,i)	XCreateSplitWFile(__FUNCTION__,__FILE__,__LINE__,f,i)
  #define FindSplitWFile(f,i,o)	XFindSplitWFile	(__FUNCTION__,__FILE__,__LINE__,f,i,o)
  #define PrintErrorFT(f,m)	XPrintErrorFT	(__FUNCTION__,__FILE__,__LINE__,f,m)
@@ -189,12 +189,12 @@ void CloseAll();
  #define CloseWFile(f,r)	XCloseWFile	(f,r)
  #define SetWFileTime(f,s)	XSetWFileTime	(f,s)
  #define OpenWFile(f,n,i)	XOpenWFile	(f,n,i)
- #define OpenWFileModify(f,n,i)	XOpenWFileModify	(f,n,i)
+ #define OpenWFileModify(f,n,i)	XOpenWFileModify(f,n,i)
  #define CheckCreated(f,d,e)	XCheckCreated	(f,d,e)
  #define CreateWFile(f,n,i,o)	XCreateWFile	(f,n,i,o)
- #define OpenStreamWFile(f)	XOpenStreamWFile	(f)
+ #define OpenStreamWFile(f)	XOpenStreamWFile(f)
  #define SetupAutoSplit(f,m)	XSetupAutoSplit	(f,m)
- #define SetupSplitWFile(f,m,s)	XSetupSplitWFile	(f,m,s)
+ #define SetupSplitWFile(f,m,s)	XSetupSplitWFile(f,m,s)
  #define CreateSplitWFile(f,i)	XCreateSplitWFile(f,i)
  #define FindSplitWFile(f,i,o)	XFindSplitWFile	(f,i,o)
  #define PrintErrorFT(f,m)	XPrintErrorFT	(f,m)
@@ -366,6 +366,32 @@ uint CombineFileMaps
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			split file support		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[split_file_t]]
+
+typedef struct split_file_t
+{
+    int		index;	// found base index (0|1)
+    ccp		format;	// format string for snprintf(), alloced
+    char	*digit;	// NULL or pointer to '1'-digit of '%01u' in 'format'
+}
+split_file_t;
+
+//-----------------------------------------------------------------------------
+
+void InitializeSplitFilename ( split_file_t *split );
+void ResetSplitFilename ( split_file_t *split );
+void AnalyseSplitFilename ( split_file_t *split, ccp path, enumOFT oft );
+
+//-----------------------------------------------------------------------------
+// old interface
+
+int CalcSplitFilename ( char *buf, size_t buf_size, ccp path, enumOFT oft );
+char * AllocSplitFilename ( ccp path, enumOFT oft );
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			file support			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 // [[2do]] [[ft-id]]
@@ -527,6 +553,9 @@ typedef struct WFile_t
     off_t	split_off;		// if split file: offset in combined file
     off_t	split_filesize;		// if split file: size of split file
 					// max file size for new files
+
+    split_file_t split_fname;		// split support for var 'fname'
+    split_file_t split_rename;		// split support for var 'rename'
     ccp		split_fname_format;	// format with '%01u' at the end for 'fname'
     ccp		split_rename_format;	// format with '%01u' at the end for 'rename'
 
@@ -602,12 +631,6 @@ enumError ExecSeekF ( WFile_t * f, off_t off );
 
 int WrapperReadSector  ( void * handle, u32 lba, u32 count, void * iobuf );
 int WrapperWriteSector ( void * handle, u32 lba, u32 count, void * iobuf );
-
-//-----------------------------------------------------------------------------
-// split file support
-
-int CalcSplitFilename ( char * buf, size_t buf_size, ccp path, enumOFT oft );
-char * AllocSplitFilename ( ccp path, enumOFT oft );
 
 //-----------------------------------------------------------------------------
 // filename generation

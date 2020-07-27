@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -242,8 +242,9 @@ static inline bool IsNormalD ( double d )
 //    return fpclass == FP_NORMAL || fpclass == FP_ZERO;
 }
 
-bool IsNormalF3 ( float  *f3 );
-bool IsNormalD3 ( double *d3 );
+bool IsNormalF3	  ( float  *f3 );
+bool IsNormalF3be ( float  *f3 ); // big endian!
+bool IsNormalD3   ( double *d3 );
 
 bool IsEqualD3 ( const double3 *a, const double3 *b,
 			double null_epsilon, double diff_epsilon );

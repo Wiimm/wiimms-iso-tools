@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -863,13 +863,13 @@ char * PrintEscapedString
 (
     // returns 'buf'
 
-    char	*buf,			// valid destination buffer
-    uint	buf_size,		// size of 'buf', >= 10
-    ccp		source,			// NULL string to print
-    int		len,			// length of string. if -1, str is null terminated
-    CharMode_t	char_mode,		// modes, bit field (CHMD_*)
-    char	quote,			// NULL or quotation char, that must be quoted
-    uint	*scanned_len		// not NULL: Store number of scanned 'str' bytes here
+    char	*buf,		// valid destination buffer
+    uint	buf_size,	// size of 'buf', >= 10
+    ccp		source,		// NULL string to print
+    int		len,		// length of string. if -1, str is null terminated
+    CharMode_t	char_mode,	// modes, bit field (CHMD_*)
+    char	quote,		// NULL or quotation char, that must be quoted
+    uint	*dest_len	// not NULL: Store length of result here
 )
 {
     DASSERT(buf);
@@ -943,8 +943,8 @@ char * PrintEscapedString
     }
  eos:
     *dest = 0;
-    if (scanned_len)
-	*scanned_len = str - source;
+    if (dest_len)
+	*dest_len = dest - buf;
     return buf;
 }
 
@@ -954,12 +954,13 @@ uint ScanEscapedString
 (
     // returns the number of valid bytes in 'buf' (NULL term not counted)
 
-    char	*buf,			// valid destination buffer, maybe source
-    uint	buf_size,		// size of 'buf'
-    ccp		source,			// string to scan
-    int		len,			// length of string. if -1, str is null terminated
-    bool	utf8,			// true: source and output is UTF-8
-    uint	*scanned_len		// not NULL: Store number of scanned 'source' bytes here
+    char	*buf,		// valid destination buffer, maybe source
+    uint	buf_size,	// size of 'buf'
+    ccp		source,		// string to scan
+    int		len,		// length of string. if -1, str is null terminated
+    bool	utf8,		// true: source and output is UTF-8
+    int		quote,		// 0:none, -1:auto, >0: quotation char
+    uint	*scanned_len	// not NULL: Store number of scanned 'source' bytes here
 )
 {
     DASSERT(buf);
@@ -972,15 +973,28 @@ uint ScanEscapedString
     ccp src = source;
     ccp src_end = src + ( len < 0 ? strlen(src) : len );
 
+    bool have_quote = quote > 0;
+    if ( quote == -1 && src < src_end && ( *src == '"' || *src == '\'' ))
+    {
+	quote = *src++;
+	have_quote = true;
+    }
+
     while ( dest < dest_end && src < src_end )
     {
 	uint code;
 	if ( *src == '\\' )
 	    src = ScanEscape(&code,src+1,src_end);
-	else if (utf8)
-	    code = ScanUTF8AnsiCharE(&src,src_end);
 	else
-	    code = *src++;
+	{
+	    if (utf8)
+		code = ScanUTF8AnsiCharE(&src,src_end);
+	    else
+		code = *src++;
+
+	    if ( code == quote && have_quote )
+		break;
+	}
 
 	if (utf8)
 	    dest = PrintUTF8Char(dest,code);
@@ -1197,6 +1211,33 @@ uint DecodeBase64
 
 ///////////////////////////////////////////////////////////////////////////////
 
+mem_t DecodeBase64Circ
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    ccp		source,			// NULL or string to decode
+    int		len,			// length of string. if -1, str is null terminated
+    const char	decode64[256]		// decoding table; if NULL: use TableDecode64default
+)
+{
+    char buf[CIRC_BUF_MAX_ALLOC+10];
+    mem_t mem;
+    mem.len = DecodeBase64(buf,sizeof(buf),source,len,decode64,false,0);
+    if ( mem.len < CIRC_BUF_MAX_ALLOC )
+	mem.ptr = CopyCircBuf0(buf,mem.len);
+    else
+    {
+	mem.ptr = 0;
+	mem.len = 0;
+    }
+    return mem;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
 uint EncodeBase64
 (
     // returns the number of scanned bytes of 'source'
@@ -1295,6 +1336,33 @@ uint EncodeBase64
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+mem_t EncodeBase64Circ
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    const void	*source,		// NULL or data to encode
+    int		source_len,		// length of 'source'; if <0: use strlen(source)
+    const char	encode64[64+1]		// encoding table; if NULL: use TableEncode64default
+)
+{
+    char buf[CIRC_BUF_MAX_ALLOC+10];
+    EncodeBase64(buf,sizeof(buf),source,source_len,encode64,false,0,0);
+    mem_t mem;
+    mem.len = strlen(buf);
+    if ( mem.len < CIRC_BUF_MAX_ALLOC )
+	mem.ptr = CopyCircBuf(buf,mem.len+1);
+    else
+    {
+	mem.ptr = 0;
+	mem.len = 0;
+    }
+    return mem;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 uint EncodeJSON
@@ -1354,6 +1422,100 @@ uint EncodeJSON
     return dest - buf;
 }
 
+//-----------------------------------------------------------------------------
+
+mem_t EncodeJSONCirc
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    const void	*source,		// NULL or data to encode
+    int		source_len		// length of 'source'; if <0: use strlen(source)
+)
+{
+    char buf[CIRC_BUF_MAX_ALLOC+10];
+    mem_t mem;
+    mem.len = EncodeJSON(buf,sizeof(buf),source,source_len);
+    if ( mem.len < CIRC_BUF_MAX_ALLOC )
+	mem.ptr = CopyCircBuf(buf,mem.len+1);
+    else
+    {
+	mem.ptr = 0;
+	mem.len = 0;
+    }
+    return mem;
+}
+
+//-----------------------------------------------------------------------------
+
+mem_t QuoteJSONCirc
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    const void	*source,		// NULL or data to encode
+    int		source_len,		// length of 'source'; if <0: use strlen(source)
+    int		null_if			// return 'null' without quotes ...
+					//	<=0: never
+					//	>=1: if source == NULL
+					//	>=2: if source_len == 0
+)
+{
+    if ( source_len < 0 )
+	source_len = source ? strlen(source) : 0;
+
+    mem_t mem;
+    if ( null_if > 0 && !source || null_if > 1 && !source_len )
+    {
+	mem.ptr = "null";
+	mem.len = 4;
+    }
+    else
+    {
+	char buf[CIRC_BUF_MAX_ALLOC+10];
+	mem.len = EncodeJSON(buf+1,sizeof(buf)-2,source,source_len) + 2;
+	if ( mem.len < CIRC_BUF_MAX_ALLOC - 2 )
+	{
+	    buf[0] = buf[mem.len-1] = '"';
+	    buf[mem.len] = 0;
+	    mem.ptr = CopyCircBuf(buf,mem.len+1);
+	}
+	else
+	{
+	    mem.ptr = 0;
+	    mem.len = 0;
+	}
+    }
+    return mem;
+}
+
+//-----------------------------------------------------------------------------
+
+mem_t DecodeJSONCirc
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    ccp		source,			// NULL or string to decode
+    int		source_len		// length of 'source'. If -1, str is NULL terminated
+)
+{
+    char buf[CIRC_BUF_MAX_ALLOC+10];
+    mem_t mem;
+    mem.len = DecodeJSON(buf,sizeof(buf),source,source_len,0);
+    if ( mem.len < CIRC_BUF_MAX_ALLOC )
+	mem.ptr = CopyCircBuf(buf,mem.len+1);
+    else
+    {
+	mem.ptr = 0;
+	mem.len = 0;
+    }
+    return mem;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1369,19 +1531,28 @@ uint DecodeByMode
 )
 {
     DASSERT(buf);
-    DASSERT( buf_size >= 3 );
+    DASSERT( buf_size >= 1 );
     DASSERT( source || !slen );
     DASSERT( (uint)emode < ENCODE__N );
 
     uint len = 0;
+    if ( buf_size < 4 )
+    {
+	char temp[4];
+	len = DecodeByMode(temp,sizeof(temp),source,slen,emode);
+	memcpy(buf,temp,buf_size);
+	goto term;
+    }
+
+    DASSERT( buf_size >= 3 );
     switch (emode)
     {
       case ENCODE_STRING:
-	len = ScanEscapedString(buf,buf_size,source,slen,false,0);
+	len = ScanEscapedString(buf,buf_size,source,slen,false,0,0);
 	break;
 
       case ENCODE_UTF8:
-	len = ScanEscapedString(buf,buf_size,source,slen,true,0);
+	len = ScanEscapedString(buf,buf_size,source,slen,true,0,0);
 	break;
 
       case ENCODE_BASE64:
@@ -1411,6 +1582,7 @@ uint DecodeByMode
 
     //--- terminate with NULL
 
+ term:;
     if ( len >= buf_size )
 	len = buf_size - 1;
     buf[len] = 0;
@@ -1455,7 +1627,7 @@ mem_t DecodeByModeMem
 
       //case ENCODE_JSON: // [[json]]
       default:
-	need = slen + 1;
+	need = slen + 3; // at least 3 bytes
 	break;
     }
 
@@ -1549,7 +1721,7 @@ uint EncodeByMode
 
 mem_t EncodeByModeMem
 (
-    // Returns the encode 'source'. Result is NULL-terminated.
+    // Returns the encoded 'source'. Result is NULL-terminated.
     // It points either to 'buf' or is alloced (on buf==NULL or to less space)
     // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
 
@@ -1617,8 +1789,9 @@ mem_t EncodeByModeMem
 ///////////////			    time			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-s64 timezone_adjust_sec  = -1;
-s64 timezone_adjust_usec = -1;
+s64 timezone_adjust_sec   = -1;
+s64 timezone_adjust_usec  = -1;
+int timezone_adjust_isdst = -1;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1626,14 +1799,7 @@ void SetupTimezone ( bool force )
 {
     if ( force || timezone_adjust_sec == -1 )
     {
-	tzset();
-	timezone_adjust_sec = timezone;
-
-	time_t tim = GetTimeSec(false);
-	struct tm *tm = localtime(&tim);
-	if (tm->tm_isdst)
-	    timezone_adjust_sec -= 3600;
-
+	timezone_adjust_sec  = GetTimezoneAdjust(GetTimeSec(false));
 	timezone_adjust_usec = 1000000ll * timezone_adjust_sec;
 	TRACE("TZ: %s,%s, %ld, %d => %lld %lld\n",
 		tzname[0], tzname[1], timezone, daylight,
@@ -1643,12 +1809,75 @@ void SetupTimezone ( bool force )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-u_sec_t GetTimeSec ( bool localtime )
+int GetTimezoneAdjust ( time_t tim )
 {
+    struct tm gmt, loc;
+    gmtime_r(&tim,&gmt);
+    localtime_r(&tim,&loc);
+    int delta = ( gmt.tm_hour - loc.tm_hour ) * 3600
+	      + ( gmt.tm_min  - loc.tm_min  ) *   60
+	      + ( gmt.tm_sec  - loc.tm_sec  );
+    if ( gmt.tm_yday != loc.tm_yday )
+    {
+	if ( gmt.tm_year < loc.tm_year
+	    || gmt.tm_year == loc.tm_year && gmt.tm_yday < loc.tm_yday )
+	{
+	    delta -= 24*3600;
+	}
+	else
+	{
+	    delta += 24*3600;
+	}
+    }
+    return delta;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+struct timeval GetTimeOfDay ( bool localtime )
+{
+    static uint last_hour = 0;
     struct timeval tval;
     gettimeofday(&tval,NULL);
     if (localtime)
+    {
+	const uint hour = tval.tv_sec / 3600;
+	if ( last_hour != hour )
+	{
+	    last_hour = hour;
+	    SetupTimezone(true);
+	}
 	tval.tv_sec -= timezone_adjust_sec;
+    }
+    return tval;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+DayTime_t GetDayTime ( bool localtime )
+{
+    struct timeval tval = GetTimeOfDay(localtime);
+    div_t d;
+
+    DayTime_t dt;
+    dt.time	= tval.tv_sec;
+    d		= div(tval.tv_sec,86400);
+    dt.day	= d.quot;
+    d		= div(d.rem,3600);
+    dt.hour	= d.quot;
+    d		= div(d.rem,60);
+    dt.min	= d.quot;
+    dt.sec	= d.rem;
+    dt.usec	= tval.tv_usec;
+
+    return dt;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+u_sec_t GetTimeSec ( bool localtime )
+{
+    struct timeval tval = GetTimeOfDay(localtime);
     return tval.tv_sec;
 }
 
@@ -1656,10 +1885,7 @@ u_sec_t GetTimeSec ( bool localtime )
 
 u_msec_t GetTimeMSec ( bool localtime )
 {
-    struct timeval tval;
-    gettimeofday(&tval,NULL);
-    if (localtime)
-	tval.tv_sec -= timezone_adjust_sec;
+    struct timeval tval = GetTimeOfDay(localtime);
     return (u64)(tval.tv_sec) * 1000ll + tval.tv_usec/1000;
 }
 
@@ -1667,10 +1893,7 @@ u_msec_t GetTimeMSec ( bool localtime )
 
 u_usec_t GetTimeUSec ( bool localtime )
 {
-    struct timeval tval;
-    gettimeofday(&tval,NULL);
-    if (localtime)
-	tval.tv_sec -= timezone_adjust_sec;
+    struct timeval tval = GetTimeOfDay(localtime);
     return (u64)(tval.tv_sec) * 1000000ll + tval.tv_usec;
 }
 
@@ -1703,6 +1926,133 @@ u_usec_t GetTimerUSec()
 	time_base = tval.tv_sec;
 
     return (u_usec_t)( tval.tv_sec - time_base ) * 1000000 + tval.tv_usec;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintTimeByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    time_t		time		// seconds since epoch -> time()
+)
+{
+    char buf[100];
+    struct tm *tm = localtime(&time);
+    const uint len = strftime(buf,sizeof(buf),format,tm);
+    return CopyCircBuf(buf,len+1);
+}
+
+//-----------------------------------------------------------------------------
+
+ccp PrintTimeByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    time_t		time		// seconds since epoch -> time()
+)
+{
+    char buf[100];
+    struct tm *tm = gmtime(&time);
+    const uint len = strftime(buf,sizeof(buf),format,tm);
+    return CopyCircBuf(buf,len+1);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintUsecByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    time_t		time,		// seconds since epoch -> time()
+    uint		usec		// micro second of second
+)
+{
+    char buf[100];
+    struct tm *tm = localtime(&time);
+    const uint len = strftime(buf,sizeof(buf),format,tm);
+    char *at = strchr(buf,'@');
+    if (at)
+    {
+	char ubuf[8];
+	snprintf(ubuf,sizeof(ubuf),"%06u",usec);
+	ccp src = ubuf;
+	while ( *at == '@' && *src )
+	    *at++ = *src++;
+    }
+
+    return CopyCircBuf(buf,len+1);
+}
+
+//-----------------------------------------------------------------------------
+
+ccp PrintUsecByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    time_t		time,		// seconds since epoch -> time()
+    uint		usec		// micro second of second
+)
+{
+    char buf[100];
+    struct tm *tm = gmtime(&time);
+    const uint len = strftime(buf,sizeof(buf),format,tm);
+    char *at = strchr(buf,'@');
+    if (at)
+    {
+	char ubuf[8];
+	snprintf(ubuf,sizeof(ubuf),"%06u",usec);
+	ccp src = ubuf;
+	while ( *at == '@' && *src )
+	    *at++ = *src++;
+    }
+
+    return CopyCircBuf(buf,len+1);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintTimevalByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    const struct timeval *tv		// time to print, if NULL use gettimeofday()
+)
+{
+    struct timeval temp;
+    if (!tv)
+    {
+	gettimeofday(&temp,0);
+	tv = &temp;
+    }
+
+    return PrintUsecByFormat(format,tv->tv_sec,tv->tv_usec);
+}
+
+//-----------------------------------------------------------------------------
+
+ccp PrintTimevalByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    const struct timeval *tv		// time to print, if NULL use gettimeofday()
+)
+{
+    struct timeval temp;
+    if (!tv)
+    {
+	gettimeofday(&temp,0);
+	tv = &temp;
+    }
+
+    return PrintUsecByFormatUTC(format,tv->tv_sec,tv->tv_usec);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1984,7 +2334,8 @@ ccp PrintTimer6
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     u64			sec,		// seconds to print
-    int			usec,		// 0...999999: usec fraction, otherwise suppress ms/us output
+    int			usec,		// 0...999999: usec fraction,
+					//    otherwise suppress ms/us output
     bool		aligned		// true: print aligned 6 character output
 )
 {
@@ -2433,6 +2784,252 @@ char * ScanDateTime64
     if (res_usec)
 	*res_usec = time * 1000000ull + usec;
     return src;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			Since 2001			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// hour support
+
+ccp hour2text
+(
+	int hour,	// hour to print
+	int fw,		// wanted field width assuming separators are 1 char
+	ccp sep_date,	// NULL or separator within date
+			// if NULL: use '-'
+	ccp sep_dt	// NULL or separator of between date and time
+			// if NULL: use ' '
+)
+{
+    time_t tim = hour2time(hour);
+    struct tm tm;
+    gmtime_r(&tim,&tm);
+
+    if (!sep_date)
+	sep_date = "-";
+
+    if (!sep_dt)
+	sep_dt = " ";
+
+    return fw >= 13
+	? PrintCircBuf("%04d%s%02u%s%02u%s%02u",
+		tm.tm_year + 1900, sep_date,
+		tm.tm_mon  +    1, sep_date,
+		tm.tm_mday, sep_dt,
+		tm.tm_hour
+		)
+	: fw >= 11
+	? PrintCircBuf("%02d%s%02u%s%02u%s%02u",
+		tm.tm_year % 100, sep_date,
+		tm.tm_mon  +   1, sep_date,
+		tm.tm_mday, sep_dt,
+		tm.tm_hour
+		)
+	: fw >= 10
+	? PrintCircBuf("%2u.%s%02u:xx",
+		tm.tm_mday, sep_dt,
+		tm.tm_hour
+		)
+	: PrintCircBuf("%02u%s%02u%s%02u",
+		tm.tm_mon  +   1, sep_date,
+		tm.tm_mday, sep_dt,
+		tm.tm_hour
+		);
+}
+
+///////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////
+// day support
+
+ccp day2text
+(
+	int day,	// day to print
+	int fw,		// wanted field width assuming separators are 1 char
+	ccp sep_date,	// NULL or separator within date
+			// if NULL: use '-'
+	ccp sep_dt	// ignored
+)
+{
+    time_t tim = day2time(day);
+    struct tm tm;
+    gmtime_r(&tim,&tm);
+
+    if (!sep_date)
+	sep_date = "-";
+
+    return fw >= 10
+	? PrintCircBuf("%04d%s%02u%s%02u",
+		tm.tm_year + 1900, sep_date,
+		tm.tm_mon  +    1, sep_date,
+		tm.tm_mday )
+	: PrintCircBuf("%02d%s%02u%s%02u",
+		tm.tm_year % 100, sep_date,
+		tm.tm_mon  +   1, sep_date,
+		tm.tm_mday );
+}
+
+///////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////
+// week support
+
+ccp week2text
+(
+	int week,	// week to print
+	int fw,		// wanted field width assuming separators are 1 char
+	ccp sep_date,	// NULL or separator within date
+			// if NULL: use 'w'
+	ccp sep_dt	// ignored
+)
+{
+    time_t tim = week2time(week) + 4*86400;
+    struct tm tm;
+    gmtime_r(&tim,&tm);
+
+    return PrintCircBuf("%04d%s%02u",
+		tm.tm_year + 1900,
+		sep_date ? sep_date : "w",
+		tm.tm_yday / 7 + 1 );
+}
+
+///////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////
+// month support
+
+int time2month ( time_t tim )
+{
+    struct tm tm;
+    gmtime_r(&tim,&tm);
+    return ( tm.tm_mon + 12 * tm.tm_year ) - 101*12;
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+time_t month2time ( int month )
+{
+    SetupTimezone(false);
+    struct tm tm = {0};
+
+    tm.tm_isdst	= -1;
+    tm.tm_year	= month / 12 + 101;
+    tm.tm_mon	= month % 12;
+    tm.tm_mday	= 1;
+
+    int delta = 43200-timezone_adjust_sec;
+    if ( delta < 0 )
+    {
+	delta += 86400;
+	tm.tm_mday++;
+    }
+
+    tm.tm_hour	= delta / 3600;
+    tm.tm_min	= delta / 60 % 60;
+    return mktime(&tm) / 86400 * 86400;
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+ccp month2text
+(
+	int month,	// month to print
+	int fw,		// wanted field width assuming separators are 1 char
+	ccp sep_date,	// NULL or separator within date
+			// if NULL: use '-'
+	ccp sep_dt	// ignored
+)
+{
+    month += 2001*12;
+    return PrintCircBuf("%4d%s%02u",
+		month/12,
+		sep_date ? sep_date : "-",
+		month%12 + 1 );
+}
+
+///////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////
+// quarter support
+
+int time2quarter ( time_t tim )
+{
+    struct tm tm;
+    gmtime_r(&tim,&tm);
+    return ( tm.tm_mon/3 + 4 * tm.tm_year ) - 101*4;
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+time_t quarter2time ( int quarter )
+{
+    SetupTimezone(false);
+    struct tm tm = {0};
+
+    tm.tm_isdst	= -1;
+    tm.tm_year	= quarter / 4 + 101;
+    tm.tm_mon	= quarter % 4 * 3;
+    tm.tm_mday	= 1;
+
+    int delta = 43200-timezone_adjust_sec;
+    if ( delta < 0 )
+    {
+	delta += 86400;
+	tm.tm_mday++;
+    }
+
+    tm.tm_hour	= delta / 3600;
+    tm.tm_min	= delta / 60 % 60;
+    return mktime(&tm) / 86400 * 86400;
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+ccp quarter2text
+(
+	int quarter,	// quarter to print
+	int fw,		// wanted field width assuming separators are 1 char
+	ccp sep_date,	// NULL or separator within date
+			// if NULL: use 'q'
+	ccp sep_dt	// ignored
+)
+{
+    quarter += 2001*4;
+    return PrintCircBuf("%4d%s%u",
+		quarter/4,
+		sep_date ? sep_date : "q",
+		quarter%4 + 1 );
+}
+
+///////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////
+// year support
+
+int time2year ( time_t tim )
+{
+    struct tm tm;
+    gmtime_r(&tim,&tm);
+    return tm.tm_year + 1900;
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+time_t year2time ( int year )
+{
+    SetupTimezone(false);
+    struct tm tm = {0};
+
+    tm.tm_isdst	= -1;
+    tm.tm_year	= year - 1900;
+    tm.tm_mday	= 1;
+
+    int delta = 43200-timezone_adjust_sec;
+    if ( delta < 0 )
+    {
+	delta += 86400;
+	tm.tm_mday++;
+    }
+
+    tm.tm_hour	= delta / 3600;
+    tm.tm_min	= delta / 60 % 60;
+    return mktime(&tm) / 86400 * 86400;
 }
 
 //
@@ -4413,7 +5010,7 @@ char * ScanSize
     double sum = 0.0;
     bool add = true;
     char * end = 0;
-    for (;;)
+    for(;;)
     {
 	double term;
 	end = ScanSizeTerm(&term,source,default_factor,force_base);
@@ -5415,7 +6012,7 @@ const u16 * GetCRC16Table ( u16 polynom )
 	CreateCRC16Table(table,polynom);
 	active_polynom = polynom;
     }
-    return table;    
+    return table;
 }
 
 //-----------------------------------------------------------------------------

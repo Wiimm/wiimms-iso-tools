@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -444,7 +444,7 @@ u32 GetIP4ByInterface
     struct ifreq ifr;
     memset(&ifr,0,sizeof(ifr));
     ifr.ifr_addr.sa_family = AF_INET;
-    strncpy(ifr.ifr_name,iface,sizeof(ifr.ifr_name));
+    strncpy(ifr.ifr_name,iface,sizeof(ifr.ifr_name)-1);
     int stat = ioctl(sock,SIOCGIFADDR,&ifr);
     close(sock);
     if ( stat == -1 )

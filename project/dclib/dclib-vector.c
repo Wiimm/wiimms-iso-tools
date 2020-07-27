@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -313,6 +313,24 @@ bool IsNormalF3 ( float *f3 )
 	if ( fpclass == FP_NORMAL || fpclass == FP_ZERO )
 	{
 	    const int fpclass = fpclassify(*f3);
+	    return fpclass == FP_NORMAL || fpclass == FP_ZERO;
+	}
+    }
+    return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool IsNormalF3be ( float *f3 )
+{
+    DASSERT(f3);
+    const int fpclass = fpclassify(bef4(f3));
+    if ( fpclass == FP_NORMAL || fpclass == FP_ZERO )
+    {
+	const int fpclass = fpclassify(bef4(++f3));
+	if ( fpclass == FP_NORMAL || fpclass == FP_ZERO )
+	{
+	    const int fpclass = fpclassify(bef4(++f3));
 	    return fpclass == FP_NORMAL || fpclass == FP_ZERO;
 	}
     }

@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -100,7 +100,7 @@ typedef enum GOPT_t
 	GOPT_RESERVED_END	= 0x02000000,	// end of reserved range
 
 	GOPT_M_INDEX		= 0x000000ff,	// mask to get the index
-	GOPT_N_PARAM		=         20,	// max used index+1 = num of params
+	GOPT_N_PARAM		=         25,	// max used index+1 = num of params
 	 GOPT_M_VALUE		= 0x0003ff00,	// mask for GOPT_T_PLUS|GOPT_T_MINUS
 	 GOPT_S_VALUE		=	   8,	// value is shifted by this num
 	GOPT_M_TYPE		= 0x00fc0000,	// mask to isolate option type
@@ -112,7 +112,7 @@ typedef enum GOPT_t
 
 	GOPT_IDX_NULL = 0,	// type undefined
 
-	GOPT_IDX_INC,		// increment 'sn'
+	GOPT_IDX_INC,		// increment 'sn', ptype := GOPT_T_INC
 	GOPT_IDX_INC0,		// increment 'sn', ptype := GOPT_T_INC
 	GOPT_IDX_DEC,		// decrement 'sn', ptype := GOPT_T_INC
 	GOPT_IDX_DEC0,		// decrement 'sn', ptype := GOPT_T_INC
@@ -337,6 +337,7 @@ enumError ScanGOptionsHelper
 (
     GOptions_t		*gopt,		// valid pointer
     GenericOpt_t	*go,		// NULL or list with options
+					//	=> ResetGenericOpt() is called at finish
     int			argc,		// argument counter
     char		**argv,		// list of arguments
     int			max_param,	// >=0: max allowed parameters
@@ -359,6 +360,7 @@ enumError ScanGOptionsHelperTN
 
     GOptions_t		*gopt,		// valid pointer
     GenericOpt_t	*go,		// NULL or list with options
+					//	=> ResetGenericOpt() is called at finish
     int			argc,		// argument counter
     char		**argv,		// list of arguments
     int			max_param,	// >=0: max allowed parameters

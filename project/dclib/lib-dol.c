@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -84,9 +84,10 @@ bool IsDolHeader ( const void *data, uint data_size, uint file_size )
 	return false;
 
     const dol_header_t *dol = data;
-    bool ok = true;
+    u64 total_size = 0;
+
     uint i;
-    for ( i = 0; ok && i < DOL_N_SECTIONS; i++ )
+    for ( i = 0; i < DOL_N_SECTIONS; i++ )
     {
 	const u32 off  = ntohl(dol->sect_off[i]);
 	const u32 size = ntohl(dol->sect_size[i]);
@@ -102,9 +103,11 @@ bool IsDolHeader ( const void *data, uint data_size, uint file_size )
 	    {
 		return false;
 	    }
+	    total_size += size;
 	}
     }
-    return true;
+
+    return total_size && total_size < 0x7fffffff;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -463,6 +466,74 @@ void DumpDolHeader
     ResetMemMap(&mm1);
     ResetMemMap(&mm2);
     ResetMemMap(&mm3);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int GetDolSectionAddr
+(
+    // returns dsa->section
+    dol_sect_addr_t	*dsa,		// result: section address info
+    const dol_header_t	*dol_head,	// valid DOL header
+    u32			addr,		// address to search
+    u32			size		// >0: wanted size
+)
+{
+    DASSERT(dsa);
+    DASSERT(dol_head);
+    memset(dsa,0,sizeof(*dsa));
+    dsa->addr = addr;
+    dsa->size = size;
+
+    int sect;
+    for ( sect = 0; sect < DOL_N_SECTIONS; sect++ )
+    {
+	const u32 sect_addr = ntohl(dol_head->sect_addr[sect]);
+	const u32 sect_size = ntohl(dol_head->sect_size[sect]);
+	if ( addr >= sect_addr && addr+size <= sect_addr + sect_size )
+	{
+	    dsa->sect_addr   = sect_addr;
+	    dsa->sect_offset = addr - sect_addr;
+	    dsa->sect_size   = sect_size;
+	    StringCopyS(dsa->sect_name,sizeof(dsa->sect_name),GetDolSectionName(sect));
+	    return dsa->section = sect;
+	}
+    }
+
+    //--- bss?
+
+    const u32 bss_addr = ntohl(dol_head->bss_addr);
+    const u32 bss_size = ntohl(dol_head->bss_size);
+    if ( addr >= bss_addr && addr+size <= bss_addr + bss_size )
+    {
+	dsa->sect_addr   = bss_addr;
+	dsa->sect_offset = addr - bss_addr;
+	dsa->sect_size   = bss_size;
+	StringCopyS(dsa->sect_name,sizeof(dsa->sect_name),"BSS");
+	return dsa->section = DOL_IDX_BSS;
+    }
+
+    //--- not found
+
+    return dsa->section = -1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetDolSectionAddrInfo
+(
+    // returns GetCircBuf() or EmptyString on error
+    const dol_header_t	*dol_head,	// valid DOL header
+    u32			addr,		// address to search
+    u32			size		// >0: wanted size
+)
+{
+    DASSERT(dol_head);
+    dol_sect_addr_t dsa;
+    if ( GetDolSectionAddr(&dsa,dol_head,addr,size) < 0 )
+	return EmptyString;
+
+    return PrintCircBuf(" (%s+%#x)",dsa.sect_name,dsa.sect_offset);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -834,7 +905,7 @@ char * ScanDolSectionName
 	    index = 0;
 	else if (!memcmp(namebuf,"DATA",np-namebuf))
 	    index = DOL_N_TEXT_SECTIONS;
-	else 
+	else
 	{
 	    if (!memcmp(namebuf,"BSS",np-namebuf))
 	    {
@@ -960,7 +1031,7 @@ uint CompressDOL
 	PrintMemMap(&mm,log,5,"DOL sections");
 
     u8 *temp = MALLOC(total_data_size);
-    
+
     uint i, new_off = 0;
     for ( i = 0; i < mm.used; i++ )
     {
@@ -1000,7 +1071,7 @@ uint RemoveDolSections
 	const u32 size = ntohl(dol->sect_size[s]);
 	if ( !off || !size )
 	    stay &= ~m;
-	    
+
 	if ( !(stay&m) && off )
 	{
 	    dol->sect_off[s] = dol->sect_size[s] = dol->sect_addr[s] = 0;
@@ -1067,7 +1138,7 @@ ccp DecodeWCH
     wc->wh.version = ntohl(wh->version);
     wc->wh.size	   = ntohl(wh->size);
     if ( wc->wh.magic != WCH_MAGIC_NUM || wc->wh.version > 1 )
-	return "Illegal WCH header";
+	return "Invalid WCH header";
 
     const wch_segment_t *ptr = wh->segment;
     if ( wc->wh.version == 1 && decompress )

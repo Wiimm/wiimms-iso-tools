@@ -32,99 +32,100 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef DCLIB_UTF8_H
-#define DCLIB_UTF8_H 1
-#ifndef WIN_DCLIB
+#ifndef DCLIB_REGEX_H
+#define DCLIB_REGEX_H 1
+
+#if DCLIB_USE_PCRE
+  #include <pcre.h>
+  #define DC_REGEX_TYPE pcre
+#else
+  #ifndef DCLIB_USE_REGEX
+    #define DCLIB_USE_REGEX 1
+  #endif
+  #if DCLIB_USE_REGEX
+    #include <regex.h>
+    #define DC_REGEX_TYPE regex_t
+  #else
+    #error Nn Regex Support!
+  #endif
+#endif
 
 #include "dclib-types.h"
-
-///////////////////////////////////////////////////////////////////////////////
-/////   this software is taken from dcLib2 and now publiced under GPL2.   /////
-///////////////////////////////////////////////////////////////////////////////
-
-typedef enum dcUnicodeConsts
-{
-    DCLIB_UNICODE_MAX_UTF8_1	= 0x7f,
-    DCLIB_UNICODE_MAX_UTF8_2	= 0x7ff,
-    DCLIB_UNICODE_MAX_UTF8_3	= 0xffff,
-    DCLIB_UNICODE_MAX_UTF8_4	= 0x1fffff,
-
-    DCLIB_UNICODE_CODE_MASK	= 0x1fffff,
-
-} dcUnicodeConsts;
-
-///////////////////////////////////////////////////////////////////////////////
-
-typedef enum dcUTF8Mode
-{
-    DC_UTF8_ILLEGAL		= 0x0000, // Illegale UTF8 Zeichen-Kombination
-
-    DC_UTF8_1CHAR		= 0x0001, // Das Zeichen ist ein Einzelzeichen
-
-    DC_UTF8_2CHAR		= 0x0002, // Beginn einer 2-Zeichen Sequenz
-    DC_UTF8_CONT_22		= 0x0004, // ein Fortsetzungszeichen an Pos 2 einer 2-er Sequenz
-
-    DC_UTF8_3CHAR		= 0x0008, // Beginn einer 3-Zeichen Sequenz
-    DC_UTF8_CONT_23		= 0x0010, // ein Fortsetzungszeichen an Pos 2 einer 3-er Sequenz
-    DC_UTF8_CONT_33		= 0x0020, // ein Fortsetzungszeichen an Pos 3 einer 3-er Sequenz
-
-    DC_UTF8_4CHAR		= 0x0040, // Beginn einer 4-Zeichen Sequenz
-    DC_UTF8_CONT_24		= 0x0080, // ein Fortsetzungszeichen an Pos 2 einer 4-er Sequenz
-    DC_UTF8_CONT_34		= 0x0100, // ein Fortsetzungszeichen an Pos 3 einer 4-er Sequenz
-    DC_UTF8_CONT_44		= 0x0200, // ein Fortsetzungszeichen an Pos 4 einer 4-er Sequenz
-
-    DC_UTF8_CONT_ANY		= 0x0400, // ein Fortsetzungszeichen an beliebger Stelle
-
-    DC_UTF8_1CHAR_POSSIBLE	= 0x0800, // als Einzelzeichen darstellbar
-    DC_UTF8_2CHAR_POSSIBLE	= 0x1000, // als 2-er Sequenz darstellbar
-    DC_UTF8_3CHAR_POSSIBLE	= 0x2000, // als 3-er Sequenz darstellbar
-    DC_UTF8_4CHAR_POSSIBLE	= 0x4000, // als 4-er Sequenz darstellbar
-
-} dcUTF8Mode;
-
-///////////////////////////////////////////////////////////////////////////////
-
-extern const unsigned short TableUTF8Mode[0x100];
-static inline dcUTF8Mode CheckUTF8Mode ( unsigned char ch )
-	{ return (dcUTF8Mode)TableUTF8Mode[ch]; }
-
-int	GetUTF8CharLength ( u32 code );
-char *	NextUTF8Char ( ccp str );
-char *	NextUTF8CharE ( ccp str, ccp end );
-char *	PrevUTF8Char ( ccp str );
-char *  PrevUTF8CharB ( ccp str, ccp begin );
-u32	GetUTF8Char ( ccp str );
-u32	ScanUTF8Char ( ccp * str );
-u32	ScanUTF8CharE ( ccp * str, ccp end );
-u32	ScanUTF8CharInc ( ccp * str );
-u32	ScanUTF8CharIncE ( ccp * str, ccp end );
-u32	GetUTF8AnsiChar ( ccp str );
-u32	ScanUTF8AnsiChar ( ccp * str );
-u32	ScanUTF8AnsiCharE ( ccp * str, ccp end );
-int	ScanUTF8Length ( ccp str, ccp end );
-int	CalcUTF8PrintFW ( ccp str, ccp end, uint wanted_fw );
-
-char *	PrintUTF8Char ( char * buf, u32 code );
-char *	PrintUTF8CharToCircBuf ( u32 code );
-
-///////////////////////////////////////////////////////////////////////////////
-
-typedef struct dcUnicodeTripel
-{
-	u32 code1;
-	u32 code2;
-	u32 code3;
-
-} dcUnicodeTripel;
-
-extern const dcUnicodeTripel TableUnicodeDecomp[];
-const dcUnicodeTripel * DecomposeUnicode ( u32 code );
+#include "dclib-debug.h"
+#include "dclib-basics.h"
 
 //
 ///////////////////////////////////////////////////////////////////////////////
-///////////////				END			///////////////
+///////////////			struct Regex_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[RegexReplace_t]]
+
+typedef struct RegexReplace_t
+{
+    mem_t	str;	// first:  string to replace (maybe 0 bytes)
+    int		ref;	// second: back reference to copy (if >=0)
+}
+RegexReplace_t;
+
+///////////////////////////////////////////////////////////////////////////////
+// [[RegexElem_t]]
+
+typedef struct RegexElem_t
+{
+    bool		valid;		// true: successfull compiled
+    bool		global;		// true: replace all ('g')
+    bool		icase;		// true: ignore case ('i')
+
+ #if DCLIB_USE_PCRE
+    DC_REGEX_TYPE	*regex;		// not NULL: compiled regular expression
+ #else
+    DC_REGEX_TYPE	regex;		// compiled regular expression
+ #endif
+
+    int			opt;		// compile options
+    ccp			pattern;	// pattern string, alloced
+    mem_t		replace;	// replace string, alloced
+
+    RegexReplace_t	*repl;		// replace data, use 'replace' as reference
+    uint		repl_used;	// number of used elements in 'repl'
+    uint		repl_size;	// number of available elements in 'repl'
+}
+RegexElem_t;
+
+///////////////////////////////////////////////////////////////////////////////
+// [[RegexMain_t]]
+
+typedef struct Regex_t
+{
+    bool		valid;		// true: succesfull initialized
+
+    RegexElem_t		*re_list;	// list; either 're_pool' or alloced
+    RegexElem_t		re_pool[3];	// pool for fast access
+    uint		re_used;	// number of used elements in 're_list'
+    uint		re_size;	// number of available elements in 're_list'
+}
+Regex_t;
+
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-#endif // WIN_DCLIB
-#endif // DCLIB_UTF8_H
+void InitializeRegex ( Regex_t *re );
+void ResetRegex ( Regex_t *re );
+
+enumError ScanRegex ( Regex_t *re, bool init_re, ccp regex );
+
+int ReplaceRegex
+(
+    Regex_t	*re,		// valid Regex_t
+    FastBuf_t	*res,		// return buffer, cleared
+    ccp		src,
+    int		src_len		// -1: use strlen()
+);
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			    E N D			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+#endif // DCLIB_REGEX_H
 

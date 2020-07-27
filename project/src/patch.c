@@ -461,7 +461,10 @@ static uint patch_main_helper ( u8 *data, uint size, ccp title )
 		found = next_n;
 		info  = "DOMAIN:";
 
-		char *dest = StringCopyS(next_n,nin_wifi_net_len,opt_domain);
+		const uint dom_len = strlen(opt_domain);
+		memcpy(next_n,opt_domain,dom_len);
+
+		char *dest = next_n + dom_len;
 		next_n += nin_wifi_net_len;
 		while (*next_n)
 		    *dest++ = *next_n++;
@@ -475,7 +478,8 @@ static uint patch_main_helper ( u8 *data, uint size, ccp title )
 	    const char ch = next_n[gamespy_com_len];
 	    if ( !ch || ch == '/' )
 	    {
-		if ( strlen(opt_domain) > gamespy_com_len )
+		const uint dom_len = strlen(opt_domain);
+		if ( dom_len > gamespy_com_len )
 		{
 		    static int count = 0;
 		    if (!count++)
@@ -488,7 +492,8 @@ static uint patch_main_helper ( u8 *data, uint size, ccp title )
 		    found = next_n;
 		    info  = "DOMAIN:";
 
-		    char *dest = StringCopyS(next_n,gamespy_com_len,opt_domain);
+		    memcpy(next_n,opt_domain,dom_len);
+		    char *dest = next_n + dom_len;
 		    next_n += gamespy_com_len;
 		    while (*next_n)
 			*dest++ = *next_n++;

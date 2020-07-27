@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -37,14 +37,37 @@
 
 #include "lib-bmg.h"
 #include "dclib-utf8.h"
+#include "dclib-xdump.h"
 
-//#include "lib-xbmg.h"
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			compiler options		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+#if 1
+  #define ENABLE_BMG_REGEX 1
+#else
+  #define ENABLE_BMG_REGEX 0
+#endif
+
+#if ENABLE_BMG_REGEX
+ #include "dclib-regex.h"
+#endif
+
+//-----------------------------------------------------------------------------
+
+#if defined(TEST) || defined(DEBUG) || HAVE_WIIMM_EXT
+  #define COMPARE_CREATE 1	// 0=off, 1=on
+#else
+  #define COMPARE_CREATE 0
+#endif
 
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////		    global bmg options			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+uint		opt_bmg_force_count	= 0;	// >0: force some operations
 uint		opt_bmg_align		= 0x20;	// alignment of raw-bg sections
 bool		opt_bmg_export		= 0;	// true: optimize for exports
 bool		opt_bmg_no_attrib	= 0;	// true: suppress attributes
@@ -52,20 +75,30 @@ bool		opt_bmg_x_escapes	= 0;	// true: use x-scapes insetad of z-escapes
 bool		opt_bmg_old_escapes	= 0;	// true: use only old escapes
 int		opt_bmg_single_line	= 0;	// >0: single line, >1: suppress atrributes
 bool		opt_bmg_support_mkw	= 0;	// true: support MKW specific extensions
-bool		opt_bmg_support_ctcode	= 0;	// true: support MKW/CTCODE specific extensions
+bool		opt_bmg_support_ctcode	= 0;	// true: support MKW/CT-CODE specific extensions
+bool		opt_bmg_support_lecode	= 0;	// true: support MKW/LE-CODE specific extensions
+uint		opt_bmg_rcup_fill_limit	= 0;	// >0: limit racing cups to reduce BMG size
+uint		opt_bmg_track_fill_limit= 0;	// >0: limit tracks to reduce BMG size
 bool		opt_bmg_inline_attrib	= true;	// true: print attrinbutes inline
 int		opt_bmg_colors		= 1;	// use c-escapss: 0:off, 1:auto, 2:on
 ColNameLevelBMG	opt_bmg_color_name	= BMG_CNL_ALL;
 uint		opt_bmg_max_recurse	= 10;	// max recurse depth
 bool		opt_bmg_allow_print	= 0;	// true: allow '$' to print a log message
+bool		opt_bmg_use_slots	= 0;	// true: use predifined slots
+bool		opt_bmg_use_raw_sections= 0;	// true: use raw sections
 
 //-----------------------------------------------------------------------------
 
-uint	opt_bmg_inf_size = 0;
-bool	opt_bmg_force_attrib = false;
-u8	bmg_force_attrib[BMG_ATTRIB_SIZE];
-bool	opt_bmg_def_attrib = false;
-u8	bmg_def_attrib[BMG_ATTRIB_SIZE];
+int		opt_bmg_encoding	= BMG_ENC__UNDEFINED;
+uint		opt_bmg_inf_size	= 0;
+OffOn_t		opt_bmg_mid		= OFFON_AUTO;
+bool		opt_bmg_force_attrib	= false;
+bool		opt_bmg_def_attrib	= false;
+
+u8		bmg_force_attrib[BMG_ATTRIB_SIZE];
+u8		bmg_def_attrib[BMG_ATTRIB_SIZE];
+
+bmg_t		*bmg_macros		= 0;
 
 //-----------------------------------------------------------------------------
 
@@ -78,6 +111,10 @@ const KeywordTab_t PatchKeysBMG[] =
 
 	{ BMG_PM_PRINT,		"PRINT",	0,		1 },
 	{ BMG_PM_FORMAT,	"FORMAT",	0,		2 },
+    #if ENABLE_BMG_REGEX
+	{ BMG_PM_REGEX,		"REGEXP",	0,		2 },
+	{ BMG_PM_RM_REGEX,	"RM-REGEXP",	"RMREGEXP",	2 },
+    #endif
 	{ BMG_PM_ID,		"ID",		0,		0 },
 	{ BMG_PM_ID_ALL,	"ID-ALL",	"IDALL",	0 },
 	{ BMG_PM_UNICODE,	"UNICODE",	0,		0 },
@@ -93,9 +130,21 @@ const KeywordTab_t PatchKeysBMG[] =
 
 	{ BMG_PM_GENERIC,	"GENERIC",	0,		0 },
 	{ BMG_PM_RM_CUPS,	"RM-CUPS",	"RMCUPS",	0 },
+
 	{ BMG_PM_CT_COPY,	"CT-COPY",	"CTCOPY",	0 },
 	{ BMG_PM_CT_FORCE_COPY,	"CT-FORCE-COPY","CTFORCECOPY",	0 },
 	{ BMG_PM_CT_FILL,	"CT-FILL",	"CTFILL",	0 },
+
+	{ BMG_PM_LE_COPY,	"LE-COPY",	"LECOPY",	0 },
+	{ BMG_PM_LE_FORCE_COPY,	"LE-FORCE-COPY","LEFORCECOPY",	0 },
+	{ BMG_PM_LE_FILL,	"LE-FILL",	"LEFILL",	0 },
+
+	{ BMG_PM_X_COPY,	"X-COPY",	"XCOPY",	0 },
+	{ BMG_PM_X_FORCE_COPY,	"X-FORCE-COPY",	"XFORCECOPY",	0 },
+	{ BMG_PM_X_FILL,	"X-FILL",	"XFILL",	0 },
+
+	{ BMG_PM_RM_FILLED,	"RM-FILLED",	"XFILLED",	0 },
+
 	{ 0,0,0,0 }
 };
 
@@ -142,7 +191,10 @@ uint GetWordLength16BMG ( const u16 *source )
 {
     DASSERT(source);
     u16 code = ntohs(*source);
-    return code != 0x1a ? 1 : ( ((u8*)source)[2] & 0xfe ) / 2;
+    if ( code != 0x1a )
+	return 1;
+    const uint len = ( ((u8*)source)[2] + 1 & 0xfe ) / 2;
+    return len ? len : 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -166,7 +218,7 @@ uint GetLength16BMG
 	if ( code == 0x1a )
 	{
 	    // nintendos special escape sequence!
-	    const uint len = *(u8*)src & 0xfe;
+	    const uint len = *(u8*)src+1 & 0xfe;
 	    if ( len > 0 )
 		src += len - 1;
 	}
@@ -177,12 +229,19 @@ uint GetLength16BMG
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+#undef TEST_MODE // 0:off, 1:compare, 2:replace
+#if HAVE_WIIMM_EXT
+  #define TEST_MODE 1
+#else
+  #define TEST_MODE 0
+#endif
+//--------------------------------------------------
 
 uint PrintString16BMG
 (
-    char		* buf,		// destination buffer
+    char		*buf,		// destination buffer
     uint		buf_size,	// size of 'buf'
-    const u16		* src,		// source
+    const u16		*src,		// source
     int			src_len,	// length of source in u16 words, -1:NULL term
     u16			utf8_max,	// max code printed as UTF-8
     uint		quote,		// 0:no quotes, 1:escape ", 2: print in quotes
@@ -193,8 +252,43 @@ uint PrintString16BMG
     DASSERT( buf_size >= 100 );
     DASSERT(src);
 
+ //--------------------------------------------------
+ #if TEST_MODE > 1
+ //--------------------------------------------------
+
+    if ( buf_size < 2 )
+    {
+	*buf = 0;
+	return 0;
+    }
+
+    struct { FastBuf_t b; char space[1000]; } fb;
+    InitializeFastBuf(&fb,sizeof(fb));
+    PrintFastBuf16BMG(&fb.b,src,src_len,utf8_max,quote,use_color);
+    mem_t mem = GetFastBufMem(&fb.b);
+
+    if ( mem.len >= buf_size )
+	mem.len = buf_size - 1;
+    memcpy(buf,mem.ptr,mem.len);
+    buf[mem.len] = 0;
+    ResetFastBuf(&fb.b);
+    return mem.len;
+
+ //--------------------------------------------------
+ #else // TEST_MODE <= 1
+ //--------------------------------------------------
+
+  #if TEST_MODE == 1
+    struct { FastBuf_t b; char space[1000]; } fb;
+    InitializeFastBuf(&fb,sizeof(fb));
+    PrintFastBuf16BMG(&fb.b,src,src_len,utf8_max,quote,use_color);
+  #endif
+
     if ( buf_size < 30 )
     {
+ #if TEST_MODE == 1
+    ResetFastBuf(&fb.b);
+ #endif
 	*buf = 0;
 	return 0;
     }
@@ -225,7 +319,7 @@ uint PrintString16BMG
 	if ( code == 0x1a )
 	{
 	    // nintendos special escape sequence!
-	    uint total_words = *(u8*)src >> 1;
+	    uint total_words = *(u8*)src+1 >> 1;
 	    if ( total_words >= 3 && src + total_words - 1 <= src_end )
 	    {
 		//HexDump(stdout,1,0,2,2*total_words,src-1,2*total_words);
@@ -357,17 +451,242 @@ uint PrintString16BMG
 	*dest++ = '"';
 
     *dest = 0;
+
+  #if TEST_MODE == 1
+    const mem_t mem	= GetFastBufMem(&fb.b);
+    if ( mem.len < buf_size )
+    {
+
+	XDump_t xd;
+	InitializeXDump(&xd);
+	xd.f		= stderr;
+	xd.indent	= 2;
+	xd.assumed_size	= mem.len;
+	XDiff( &xd, buf,dest-buf,true, mem.ptr,mem.len,true, 5,false );
+    }    
+    ResetFastBuf(&fb.b);
+  #endif
+
     return dest - buf;
+
+ //--------------------------------------------------
+ #endif // TEST_MODE <= 1
+ //--------------------------------------------------
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+uint PrintFastBuf16BMG
+(
+    // return the number of appended bytes
+
+    FastBuf_t		*fb,		// destination buffer (data appended)
+    const u16		*src,		// source
+    int			src_len,	// length of source in u16 words, -1:NULL term
+    u16			utf8_max,	// max code printed as UTF-8
+    uint		quote,		// 0:no quotes, 1:escape ", 2: print in quotes
+    int			use_color	// >0: use \c{...}
+)
+{
+    DASSERT(fb);
+    DASSERT(src);
+
+    #undef PRINT_UTF8_MAX
+    //#define PRINT_UTF8_MAX 0xdb7f
+
+    if ( utf8_max < 0x7f )
+	utf8_max = 0x7f;
+ #ifdef PRINT_UTF8_MAX
+    else if ( utf8_max > PRINT_UTF8_MAX )
+	utf8_max = PRINT_UTF8_MAX;
+ #endif
+
+    const uint start_len = GetFastBufLen(fb);
+
+    char buf[1300];
+    char *dest		= buf;
+    char *dest_term	= dest + sizeof(buf) - 1; 
+    char *dest_end	= dest_term - 270; // escape sequence with 256 bytes possible
+    char *last_u	= 0;
+
+    if ( src_len < 0 )
+	src_len = GetLength16BMG(src,1000000);
+    const u16 * src_end = src + src_len;
+
+    if (quote>1)
+	*dest++ = '"';
+
+    while ( src < src_end )
+    {
+	if ( dest >= dest_end )
+	{
+	    AppendFastBuf(fb,buf,dest-buf);
+	    dest = buf;
+	    last_u = 0;
+	}
+
+	u16 code = ntohs(*src++);
+	if ( !code && src_len < 0 )
+	    break;
+
+	if ( code == 0x1a )
+	{
+	    // nintendos special escape sequence!
+	    uint total_words = *(u8*)src+1 >> 1;
+	    if ( total_words >= 3 && src + total_words - 1 <= src_end )
+	    {
+		//HexDump(stdout,1,0,2,2*total_words,src-1,2*total_words);
+		const u16 code2 = ntohs(*src++);
+		if ( code2 == 0x800 && use_color > 0 && be16(src) == 1 )
+		{
+		    const u16 color = be16(src+1);
+		    const KeywordTab_t *kt;
+		    for ( kt = bmg_color; kt->name1 && kt->id != color; kt++ )
+			;
+		    if ( kt->name1 && opt_bmg_color_name >= kt->opt )
+		    {
+			*dest++ = '\\';
+			*dest++ = 'c';
+			*dest++ = '{';
+			ccp name = kt->name1;
+			while (*name)
+			    *dest++ = tolower((int)*name++);
+			*dest++ = '}';
+		    }
+		    else
+			dest += sprintf(dest,"\\c{%x}",color);
+		    src += 2;
+		    continue;
+		}
+
+		if ( code2 == 0x801 )
+		{
+		    if ( opt_bmg_old_escapes || last_u != dest )
+			dest = snprintfE(dest,dest_term,"\\u{%x}",be32(src));
+		    else
+			dest = snprintfE(dest-1,dest_term,",%x}",be32(src));
+		    last_u = dest;
+		    src += 2;
+		    continue;
+		}
+
+		if ( ( total_words > 6 || opt_bmg_x_escapes ) && opt_bmg_old_escapes )
+		{
+		    src -= 2;
+		    while ( total_words-- > 0 )
+			dest = snprintfE(dest,dest_term,"\\x{%x}",ntohs(*src++));
+		    continue;
+		}
+		else if ( opt_bmg_x_escapes )
+		{
+		    if ( dest < dest_term )
+		    {
+			dest = StringCopyE(dest,dest_term,"\\x{1a");
+			src--;
+			while ( total_words-- > 1 )
+			    dest = snprintfE(dest,dest_term,",%x",ntohs(*src++));
+		    }
+		    *dest++ = '}';
+		    continue;
+		}
+
+		u64 xcode = 0;
+		switch( total_words & 3 )
+		{
+		    case 3 & 3: xcode = be16(src); src += 1; break;
+		    case 4 & 3: xcode = be32(src); src += 2; break;
+		    case 5 & 3: xcode = be48(src); src += 3; break;
+		    case 6 & 3: xcode = be64(src); src += 4; break;
+		}
+
+		dest = snprintfE(dest,dest_term,"\\z{%x,%llx",code2,xcode);
+		while ( total_words > 6 )
+		{
+		    dest = snprintfE(dest,dest_term,",%llx",be64(src));
+		    src += 4;
+		    total_words -= 4;
+		}
+		*dest++ = '}';
+		continue;
+	    }
+	}
+
+	if ( code < ' ' || code == 0x7f || code == 0xff )
+	{
+	    *dest++ = '\\';
+	    switch(code)
+	    {
+		case '\\': *dest++ = '\\'; break;
+		case '\a': *dest++ = 'a'; break;
+		case '\b': *dest++ = 'b'; break;
+		case '\f': *dest++ = 'f'; break;
+		case '\n': *dest++ = 'n'; break;
+		case '\r': *dest++ = 'r'; break;
+		case '\t': *dest++ = 't'; break;
+		case '\v': *dest++ = 'v'; break;
+
+		default:
+		    *dest++ = ( code >> 6 & 3 ) | '0';
+		    *dest++ = ( code >> 3 & 7 ) | '0';
+		    *dest++ = ( code      & 7 ) | '0';
+	    }
+	}
+     #ifdef PRINT_UTF8_MAX
+	else if ( code > utf8_max )
+	    dest += sprintf(dest,"\\x{%x}",code);
+     #else
+	else if ( quote && code == '"' )
+	{
+	    *dest++ = '\\';
+	    *dest++ = '"';
+	}
+	else if ( code > utf8_max
+		|| code >= 0xdb80 && code <= 0xf8ff	// surrogates & private use
+		|| ( code & 0xffff ) >= 0xfffe		// invalid
+		)
+	{
+	    dest = snprintfE(dest,dest_term,"\\x{%x}",code);
+	}
+     #endif
+	else
+	    dest = PrintUTF8Char(dest,code);
+    }
+
+    if ( dest > buf && dest[-1] == ' ' )
+    {
+	dest[-1] = '\\';
+	*dest++ = '0';
+	*dest++ = '4';
+	*dest++ = '0';
+    }
+
+    if (quote>1)
+	*dest++ = '"';
+
+    AppendFastBuf(fb,buf,dest-buf);
+    return GetFastBufLen(fb) - start_len;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#if 0
+uint ScanFastBuf16BMG
+(
+
+    FastBuf_t		*fb,		// destination buffer
+    ccp			src,		// UTF-8 source
+    int			src_len,	// length of source, -1: determine with strlen()
+    const bmg_t		*bmg		// NULL or support for \m{...}
+);
+#endif
 
 uint ScanString16BMG
 (
     u16			* buf,		// destination buffer
     uint		buf_size,	// size of 'buf' in u16 words
     ccp			src,		// UTF-8 source
-    int			src_len		// length of source, -1: determine with strlen()
+    int			src_len,	// length of source, -1: determine with strlen()
+    const bmg_t		*bmg		// NULL or support for \m{...}
 )
 {
     DASSERT(buf);
@@ -393,14 +712,60 @@ uint ScanString16BMG
 		case 't':  *dest++ = htons('\t'); break;
 		case 'v':  *dest++ = htons('\v'); break;
 
+		case 'm':
+		case 'M':
+		    if ( src < src_end && *src == '{' )
+		    {
+			const char mode = src[-1];
+			src++;
+			bmg_scan_mid_t scan;
+			for(;;)
+			{
+			    while ( src < src_end && *src == ',' )
+				src++;
+			    if ( ScanBMGMID(&scan,0,src,src_end) < 1 )
+				break;
+			    src = scan.scan_end;
+
+			    PRINT("\\M{%x} : bmg=%d\n",scan.mid[0],bmg!=0);
+
+			    const bmg_item_t *dptr = 0;
+			    if ( bmg && mode == 'm' )
+				dptr = FindItemBMG(bmg,scan.mid[0]);
+			    if ( !dptr && bmg_macros )
+				dptr = FindItemBMG(bmg_macros,scan.mid[0]);
+
+			    if (!dptr)
+			    {
+				char buf[16];
+				snprintf(buf,sizeof(buf),"\\%c{%x}",mode,scan.mid[0]);
+				ccp src = buf;
+				while ( *src && dest < dest_end )
+				    *dest++ = htons(*src++);
+			    }
+			    else if ( dptr->text )
+			    {
+				const u16 *copy = dptr->text;
+				const u16 *copy_end = copy + dptr->len;
+				while ( copy < copy_end && dest < dest_end )
+				    *dest++ = *copy++;
+			    }
+			    if ( *src != ',' )
+				break;
+			}
+			if ( *src == '}' )
+			    src++;
+		    }
+		    break;
+
 		case 'x':
 		    {
 			const bool have_brace = *src == '{';
 			if (have_brace)
 			    src++;
-			for(;;)		// >>>>>  comma list support since v1.44  <<<<<
+			for(;;)
 			{
-			    char * end;
+			    char *end;
 			    u16 code = strtoul(src,&end,16);
 			    src = end;
 			    if ( dest < dest_end )
@@ -420,9 +785,9 @@ uint ScanString16BMG
 			if (have_brace)
 			    src++;
 			char * end;
-			const u16 code1 = strtoul(src,&end,16) & 0xfeff;
+			const u16 code1 = strtoul(src,&end,16);
 			src = end;
-			uint total_words = code1 >> 9;
+			uint total_words = code1+0x100 >> 9;
 			if ( dest + total_words <= dest_end )
 			{
 			    *dest++ = htons(0x1a);
@@ -701,20 +1066,411 @@ static u16 * ScanRange16U32
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			ScanSectionsBMG()		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+bmg_sect_list_t * ScanSectionsBMG ( cvp data, uint size )
+{
+    //--- initialize
+
+    if ( !data || size < sizeof(bmg_header_t) || memcmp(data,BMG_MAGIC,8) )
+	return 0;
+
+    bmg_sect_list_t sl;
+    memset(&sl,0,sizeof(sl));
+    sl.header		= (bmg_header_t*)data;
+    sl.source_size	= ntohl(sl.header->size);
+    sl.n_sections	= ntohl(sl.header->n_sections);
+
+    FastBuf_t fb;
+    InitializeFastBufAlloc(&fb,10*sizeof(bmg_sect_info_t));
+
+    bmg_sect_info_t si;
+
+
+    //--- scan sections
+
+    u8 *data_end = (u8*)data + size;
+    bmg_section_t *sect = (bmg_section_t*)(sl.header+1);
+    for(;;)
+    {
+	if ( (u8*)sect + sizeof(*sect) > data_end )
+	    break;
+
+	memset(&si,0,sizeof(si));
+	si.offset = (u8*)sect - (u8*)data;
+	si.sect_size = si.real_size = ntohl(sect->size);
+	if ( (u8*)sect + si.real_size > data_end )
+	    si.real_size = data_end - (u8*)sect;
+
+	si.sect = sect;
+	si.info = "?";
+
+	if (!memcmp(sect->magic,BMG_INF_MAGIC,sizeof(sect->magic)))
+	{
+	    sl.pinf		= (bmg_inf_t*)sect;
+	    si.head_size	= sizeof(bmg_inf_t);
+	    si.elem_size	= ntohs(sl.pinf->inf_size);
+	    si.n_elem_head	= ntohs(sl.pinf->n_msg);
+	    si.known		= true;
+	    si.supported	= true;
+	    si.info		= "offset & attributes";
+	}
+	else if (!memcmp(sect->magic,BMG_DAT_MAGIC,sizeof(sect->magic)))
+	{
+	    sl.pdat		= (bmg_dat_t*)sect;
+	    si.head_size	= sizeof(bmg_dat_t);
+	    si.known		= true;
+	    si.supported	= true;
+	    si.info		= "string pool";
+	}
+	else if (!memcmp(sect->magic,BMG_STR_MAGIC,sizeof(sect->magic)))
+	{
+	    sl.pstr		= (bmg_str_t*)sect;
+	    si.head_size	= sizeof(bmg_str_t);
+	    si.known		= true;
+	    si.supported	= false;
+	    si.info		= "secondary string pool";
+	}
+	else if (!memcmp(sect->magic,BMG_MID_MAGIC,sizeof(sect->magic)))
+	{
+	    sl.pmid		= (bmg_mid_t*)sect;
+	    si.head_size	= sizeof(bmg_mid_t);
+	    si.elem_size	= sizeof(u32);
+	    si.n_elem_head	= ntohs(sl.pinf->n_msg);
+	    si.known		= true;
+	    si.supported	= true;
+	    si.info		= "message ids";
+	}
+	else if (!memcmp(sect->magic,BMG_FLW_MAGIC,sizeof(sect->magic)))
+	{
+	    sl.pflw		= (bmg_flw_t*)sect;
+	    si.known		= true;
+	}
+	else if (!memcmp(sect->magic,BMG_FLI_MAGIC,sizeof(sect->magic)))
+	{
+	    sl.pfli		= (bmg_fli_t*)sect;
+	    si.known		= true;
+	}
+
+	if (si.elem_size)
+	{
+	    si.n_elem = ( si.real_size - si.head_size ) / si.elem_size;
+	    if ( si.n_elem_head && si.n_elem > si.n_elem_head )
+		si.n_elem = si.n_elem_head;
+	}
+
+	if ( si.head_size && si.head_size < si.real_size )
+	{
+	    si.is_empty = true;
+	    const u8 *ptr = (u8*)sect + si.head_size;
+	    const u8 *end = (u8*)sect + si.real_size;
+	    while ( ptr < end )
+		if ( *ptr++ )
+		{
+		    si.is_empty = false;
+		    break;
+		}
+	}
+
+	sect = (bmg_section_t*)( (u8*)sect + si.real_size );
+	AppendFastBuf(&fb,&si,sizeof(si));
+	sl.n_info++;
+    }
+
+
+    //--- finalize
+
+    memset(&si,0,sizeof(si));
+    AppendFastBuf(&fb,&si,sizeof(si));
+
+    mem_t mem			= GetFastBufMem(&fb);
+    sl.this_size		= sizeof(sl) + mem.len;
+    bmg_sect_list_t *dest	= MALLOC(sl.this_size);
+    memcpy(dest,&sl,sizeof(sl));
+    memcpy(dest->info,mem.ptr,mem.len);
+    ResetFastBuf(&fb);
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+const bmg_sect_info_t * SearchSectionBMG
+(
+    const bmg_sect_list_t *sl,	// valid, created by ScanSectionsBMG()
+    cvp			search,	// magic to search
+    bool		abbrev,	// if not found: allow abbreviations _> strcmp()
+    bool		icase	// if not found: ignore case and try again
+)
+{
+    DASSERT(sl);
+
+    // make sure, that magic is null terminated
+    char magic[5];
+    memcpy(magic,search,4);
+    magic[4] = 0;
+
+
+    //--- search exact
+
+    const bmg_sect_info_t *si;
+    for ( si = sl->info; si->sect; si++ )
+	if (!memcmp(magic,si->sect->magic,4))
+	    return si;
+
+
+    //--- search abbrev
+
+    const uint mlen = strlen(magic);
+    if (!mlen)
+	abbrev = false;
+
+    if (abbrev)
+    {
+	for ( si = sl->info; si->sect; si++ )
+	    if (!memcmp(magic,si->sect->magic,mlen))
+		return si;
+    }
+
+
+    //--- search icase
+
+    if (icase)
+    {
+	uint i;
+	for ( i = 0; i < 4; i++ )
+	    magic[i] = tolower((int)magic[i]);
+
+	const bmg_sect_info_t *abbrev_found = 0;
+	char buf[5];
+
+	for ( si = sl->info; si->sect; si++ )
+	{
+	    for ( i = 0; i < 4; i++ )
+		buf[i] = tolower((int)si->sect->magic[i]);
+
+	    if (!memcmp(magic,buf,4))
+		return si;
+	    if ( abbrev && !memcmp(magic,buf,mlen) )
+		abbrev_found = si;
+	}
+	return abbrev_found;
+    }
+
+    return 0;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////		    struct bmg_raw_section_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+bmg_raw_section_t * GetRawSectionBMG ( bmg_t *bmg, cvp magic )
+{
+    DASSERT(bmg);
+    DASSERT(magic);
+
+    bmg_raw_section_t *raw;
+    for ( raw = bmg->first_raw; raw; raw = raw->next )
+	if (!memcmp(raw->magic,magic,sizeof(raw->magic)))
+	{
+	    PRINT("GetRawSectionBMG(%s), found\n",PrintID(magic,4,0));
+	    return raw;
+	}
+
+    PRINT("GetRawSectionBMG(%s), not found\n",PrintID(magic,4,0));
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bmg_raw_section_t * CreateRawSectionBMG ( bmg_t *bmg, cvp magic )
+{
+    bmg_raw_section_t **raw;
+    for ( raw = &bmg->first_raw; *raw; raw = &(*raw)->next )
+	if (!memcmp((*raw)->magic,magic,sizeof((*raw)->magic)))
+	{
+	    PRINT("CreateRawSectionBMG(%s), found\n",PrintID(magic,4,0));
+	    return (*raw);
+	}
+
+    DASSERT(raw);
+    PRINT("CreateRawSectionBMG(%s), create\n",PrintID(magic,4,0));
+    bmg_raw_section_t *p = CALLOC(1,sizeof(*p));
+    memcpy(p->magic,magic,sizeof(p->magic));
+    InitializeFastBuf(&p->data,sizeof(p->data));
+    return *raw = p;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			attribute helpers		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void ResetAttribBMG
+(
+    const bmg_t		* bmg,		// pointer to bmg
+    bmg_item_t		* item		// dest item
+)
+{
+    DASSERT(bmg);
+    DASSERT(item);
+
+    item->slot = BMG_NO_PREDEF_SLOT;
+    item->attrib_used = bmg->attrib_used;
+    memcpy(item->attrib,bmg->attrib,sizeof(item->attrib));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void CopyAttribBMG
+(
+    const bmg_t		* dest,		// pointer to destination bmg
+    bmg_item_t		* dptr,		// dest item
+    const bmg_item_t	* sptr		// source item
+)
+{
+    DASSERT(dest);
+    DASSERT(dptr);
+    DASSERT(sptr);
+
+    DASSERT( dest->attrib_used <= BMG_ATTRIB_SIZE );
+    DASSERT( sptr->attrib_used <= BMG_ATTRIB_SIZE );
+
+    if ( sptr->slot != BMG_NO_PREDEF_SLOT )
+	dptr->slot = sptr->slot;
+
+    if ( opt_bmg_force_attrib )
+    {
+	//dptr->attrib_used = dest->attrib_used;
+	memcpy(dptr->attrib,bmg_force_attrib,dptr->attrib_used);
+    }
+    else if ( sptr->attrib_used )
+    {
+	if ( dest->attrib_used <= sptr->attrib_used )
+	    dptr->attrib_used = dest->attrib_used;
+	else
+	{
+	    dptr->attrib_used = sptr->attrib_used;
+	    memset( dptr->attrib+dptr->attrib_used, 0, BMG_ATTRIB_SIZE - sptr->attrib_used );
+	}
+	memcpy(dptr->attrib,sptr->attrib,dptr->attrib_used);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static char * scan_attrib ( u8 *dest, uint size, ccp src )
+{
+    DASSERT(dest);
+    DASSERT( size <= BMG_ATTRIB_SIZE );
+    memset(dest,0,BMG_ATTRIB_SIZE);
+
+    while ( *src ==  ' ' || *src == '\t' )
+	src++;
+    const bool have_brackets = *src == '[';
+    if ( have_brackets )
+	src++;
+
+    int idx = 0, add_idx = 0;
+    for(;;)
+    {
+	while ( *src ==  ' ' || *src == '\t' )
+	    src++;
+
+	if ( *src == ',' )
+	{
+	    src++;
+	    idx++;
+	    add_idx = 0;
+	}
+	else if ( *src == '/' )
+	{
+	    src++;
+	    idx = ALIGN32(idx+1,4);
+	    add_idx = 0;
+	}
+	else if ( *src == '%' )
+	{
+	    src++;
+	    char *end;
+	    u32 num = str2ul(src,&end,16);
+	    if ( src == end )
+		break;
+
+	    idx = ALIGN32(idx+add_idx,4);
+	    noPRINT("U32[0x%02x/%02x]: %8x\n",idx,size,num);
+
+	    char buf[4];
+	    write_be32(buf,num);
+	    const int max_copy = (int)size - (int)idx;
+	    if ( max_copy > 0 )
+		memcpy(dest+idx,buf, max_copy < 4 ? max_copy : 4 );
+	    idx += 3;
+	    add_idx = 1;
+	    src = end;
+	}
+	else
+	{
+	    char *end;
+	    u8 num = str2ul(src,&end,16);
+	    if ( src == end )
+		break;
+
+	    idx += add_idx;
+	    noPRINT("U8[0x%02x/%02x]: %8x\n",idx,size,num);
+	    if ( idx < size )
+		dest[idx] = num;
+	    add_idx = 1;
+	    src = end;
+	}
+    }
+    //HexDump16(stderr,0,0,dest,size);
+
+    if ( have_brackets && *src == ']' )
+	src++;
+    return (char*)src;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void copy_param
+(
+    bmg_t		* dest,		// pointer to destination bmg
+    const bmg_t		* src		// pointer to source bmg
+)
+{
+    DASSERT(dest);
+    DASSERT(src);
+
+    if ( !dest->param_defined && src->param_defined )
+    {
+	memcpy(dest->attrib,src->attrib,sizeof(dest->attrib));
+	dest->inf_size		= src->inf_size;
+	dest->have_mid		= src->have_mid;
+	dest->attrib_used	= src->attrib_used;
+	dest->use_color_names	= src->use_color_names;
+	dest->use_mkw_messages	= src->use_mkw_messages;
+	dest->param_defined	= true;
+    }
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct bmg_item_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-// special value for bmg_item_t::text
+// special values for bmg_item_t::text
 u16 bmg_null_entry[] = {0};
 
-///////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
 
 void FreeItemBMG( bmg_item_t * bi )
 {
     DASSERT(bi);
     if (bi->text)
     {
-	if ( bi->text != bmg_null_entry && bi->alloced_size )
+	if ( bi->alloced_size && !isSpecialEntryBMG(bi->text) )
 	    FREE( bi->text);
 	bi->text = bmg_null_entry;
     }
@@ -733,7 +1489,7 @@ void AssignItemText16BMG
 )
 {
     DASSERT(bi);
-    if ( !text16 || text16 == bmg_null_entry )
+    if ( !text16 || isSpecialEntryBMG(text16) )
     {
 	FreeItemBMG(bi);
 	bi->text = (u16*)text16;
@@ -784,7 +1540,7 @@ void AssignItemScanTextBMG
     {
 	const uint bufsize = 10000;
 	u16 buf[bufsize];
-	len = ScanString16BMG(buf,bufsize,utf8,len);
+	len = ScanString16BMG(buf,bufsize,utf8,len,0);
 	AssignItemText16BMG(bi,buf,len);
     }
 }
@@ -850,7 +1606,6 @@ bool IsItemEqualBMG
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-
 
 static uint find_item_helper ( const bmg_t * bmg, u32 mid, bool * found )
 {
@@ -963,6 +1718,7 @@ bmg_item_t * InsertItemBMG
     DASSERT( idx < bmg->item_used );
     memset(item,0,sizeof(*item));
     item->mid = mid;
+    item->slot = BMG_NO_PREDEF_SLOT;
 
     memcpy(item->attrib,bmg->attrib,sizeof(item->attrib));
     if ( attrib && attrib_used )
@@ -971,6 +1727,37 @@ bmg_item_t * InsertItemBMG
 	memcpy(item->attrib,attrib,attrib_used);
     }
     return item;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool DeleteItemBMG ( bmg_t *bmg, u32 mid )
+{
+    DASSERT(bmg);
+
+    bmg_item_t *dptr = FindItemBMG(bmg,mid);
+    if (dptr)
+    {
+	FreeItemBMG(dptr);
+	dptr->text = 0;
+	ResetAttribBMG(bmg,dptr);
+	return true;
+    }
+
+    return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool HavePredifinedSlots ( bmg_t *bmg )
+{
+    DASSERT(bmg);
+
+    bmg_item_t *bi, *bi_end = bmg->item + bmg->item_used;
+    for ( bi = bmg->item; bi < bi_end; bi++ )
+	if ( bi->text && bi->slot != BMG_NO_PREDEF_SLOT )
+	    return bmg->have_predef_slots = true;
+    return bmg->have_predef_slots = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1034,7 +1821,61 @@ int (*GetArenaIndexBMG) ( uint idx, int result_on_invalid ) = GetArenaIndexBMG0;
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			bmg encoding support		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+const KeywordTab_t TabEncodingBMG[] =
+{
+					// if opt==1: not implemented yet
+	{ BMG_ENC_CP1252,	"CP-1252",	"CP1252",	0 },
+	{ BMG_ENC_CP1252,	"1",		0,		0 },
+
+	{ BMG_ENC_UTF16BE,	"UTF-16BE",	"UTF16BE",	0 },
+	{ BMG_ENC_UTF16BE,	"2",		0,		0 },
+
+	{ BMG_ENC_SHIFT_JIS,	"SHIFT-JIS",	"SHIFTJIS",	0 },
+	{ BMG_ENC_SHIFT_JIS,	"3",		"SJIS",		0 },
+
+	{ BMG_ENC_UTF8,		"UTF-8",	"UTF8",		0 },
+	{ BMG_ENC_UTF8,		"4",		0,		0 },
+
+	{ BMG_ENC__UNDEFINED,	"AUTO",		"UNDEFINED",	0 },
+	{ 0,0,0,0 }
+};
+
+//-----------------------------------------------------------------------------
+
+ccp GetEncodingNameBMG ( int encoding, ccp return_if_invalid )
+{
+    switch (encoding)
+    {
+	case BMG_ENC_CP1252:	return "CP1252";
+	case BMG_ENC_UTF16BE:	return "UTF-16/be";
+	case BMG_ENC_SHIFT_JIS:	return "Shift-JIS";
+	case BMG_ENC_UTF8:	return "UTF-8";
+    }
+    return return_if_invalid;
+}
+
+//-----------------------------------------------------------------------------
+
+int CheckEncodingBMG ( int encoding, int return_if_invalid )
+{
+    return encoding >= BMG_ENC__MIN && encoding <= BMG_ENC__MAX
+		? encoding : return_if_invalid;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			setup/reset bmg_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void AssignEncodingBMG ( bmg_t * bmg, int encoding )
+{
+    if ( encoding >= BMG_ENC__MIN && encoding <= BMG_ENC__MAX )
+	bmg->encoding = encoding;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 void AssignInfSizeBMG ( bmg_t * bmg, uint inf_size )
@@ -1081,7 +1922,14 @@ void InitializeBMG ( bmg_t * bmg )
 
     DASSERT(bmg);
     memset(bmg,0,sizeof(*bmg));
+    bmg->have_mid		= 1;
+    bmg->encoding		= BMG_ENC__DEFAULT;
+    bmg->use_slots		= opt_bmg_use_slots;
+    bmg->use_raw_sections	= opt_bmg_use_raw_sections;
 
+    bmg->unknown_inf_0c		= BMG_INF_DEFAULT_0C;
+    bmg->unknown_mid_0a		= BMG_MID_DEFAULT_0A;
+    bmg->unknown_mid_0c		= BMG_MID_DEFAULT_0C;
 
     //-- setup for MKW
 
@@ -1106,11 +1954,23 @@ void ResetBMG ( bmg_t * bmg )
     bmg_item_t * bi_end = bi + bmg->item_used;
     while ( bi < bi_end )
 	FreeItemBMG(bi++);
+
     FREE(bmg->item);
 
     if (bmg->data_alloced)
 	FREE(bmg->data);
     FREE(bmg->raw_data);
+    FreeString(bmg->fname);
+
+    bmg_raw_section_t *raw = bmg->first_raw;
+    while (raw)
+    {
+	ResetFastBuf(&raw->data);
+	bmg_raw_section_t *del = raw;
+	raw = raw->next;
+	FREE(del);
+    }
+
     memset(bmg,0,sizeof(*bmg));
 }
 
@@ -1166,71 +2026,257 @@ static u32 FindMajority32 ( cvp first, uint n_elem, uint delta )
 
 ///////////////////////////////////////////////////////////////////////////////
 
+static void scan_raw_cp1252
+	( bmg_item_t *bi, const u8 *start, const u8 *end, FastBuf_t *fb )
+{
+    u8 buf[4];
+    const u8 *ptr;
+    for ( ptr = start; ptr < end && *ptr; )
+    {
+	u16 code = *ptr++;
+	if ( code >= 0x80 && code < 0xa0 )
+	    code = TableCP1252_80[code-0x80];
+	if ( code == 0x1a )
+	{
+	    const uint len = *ptr++;
+	    if ( len > 2 )
+	    {
+		buf[0] = 0;
+		buf[1] = 0x1a;
+		buf[2] = len+1;
+		AppendFastBuf(fb,buf,3);
+		AppendFastBuf(fb,ptr,len-2);
+		if (!(len&1))
+		    AppendFastBuf(fb,buf,1);
+		ptr += len - 2;
+	    }
+	}
+	else
+	{
+	    code = htons(code);
+	    AppendFastBuf(fb,&code,2);
+	}
+    }
+
+    const mem_t mem = GetFastBufMem(fb);
+    AssignItemText16BMG(bi,(u16*)mem.ptr,mem.len/2);
+}
+
+//-----------------------------------------------------------------------------
+
+static void scan_raw_utf16 ( bmg_item_t *bi, const u8 *start, const u8 *end )
+{
+    const u8 *ptr;
+    for ( ptr = start; ptr < end; ptr += 2 )
+    {
+	if (!ptr[0])
+	{
+	    if (!ptr[1])
+		break;
+	    if ( ptr[1] == 0x1a )
+	    {
+		ptr += 2;
+		const uint skip = *ptr + 1 & 0x1e;
+		if ( skip > 4 )
+		    ptr += skip - 4;
+	    }
+	}
+    }
+
+    AssignItemText16BMG( bi, (u16*)start, ( ptr - start )/2 );
+}
+
+//-----------------------------------------------------------------------------
+
+static void scan_raw_shift_jis
+	( bmg_item_t *bi, const u8 *start, const u8 *end, FastBuf_t *fb )
+{
+    u8 buf[4];
+    const u8 *ptr;
+    for ( ptr = start; ptr < end; )
+    {
+	int code = ScanShiftJISChar(&ptr);
+	if (!code)
+	    break;
+	if ( code == 0x1a )
+	{
+	    const uint len = *ptr++;
+	    if ( len > 2 )
+	    {
+		buf[0] = 0;
+		buf[1] = 0x1a;
+		buf[2] = len+1;
+		AppendFastBuf(fb,buf,3);
+		AppendFastBuf(fb,ptr,len-2);
+		if (!(len&1))
+		    AppendFastBuf(fb,buf,1);
+		ptr += len - 2;
+	    }
+	}
+	else if ( code >= 0 )
+	{
+	    code = htons(code);
+	    AppendFastBuf(fb,&code,2);
+	}
+    }
+
+    const mem_t mem = GetFastBufMem(fb);
+    AssignItemText16BMG(bi,(u16*)mem.ptr,mem.len/2);
+}
+
+//-----------------------------------------------------------------------------
+
+static void scan_raw_utf8
+	( bmg_item_t *bi, const u8 *start, const u8 *end, FastBuf_t *fb )
+{
+    u8 buf[4];
+    const u8 *ptr;
+    for ( ptr = start; ptr < end && *ptr; )
+    {
+	u32 code = ScanUTF8AnsiCharE((ccp*)&ptr,(ccp)end);
+	if ( code >= 0x80 && code < 0xa0 )
+	    code = TableCP1252_80[code -0x80];
+	if ( code == 0x1a )
+	{
+	    const uint len = *ptr++;
+	    if ( len > 2 )
+	    {
+		buf[0] = 0;
+		buf[1] = 0x1a;
+		buf[2] = len+1;
+		AppendFastBuf(fb,buf,3);
+		AppendFastBuf(fb,ptr,len-2);
+		if (!(len&1))
+		    AppendFastBuf(fb,buf,1);
+		ptr += len - 2;
+	    }
+	}
+	else
+	{
+	    code = htons(code);
+	    AppendFastBuf(fb,&code,2);
+	}
+    }
+
+    const mem_t mem = GetFastBufMem(fb);
+    AssignItemText16BMG(bi,(u16*)mem.ptr,mem.len/2);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 enumError ScanRawBMG ( bmg_t * bmg )
 {
     DASSERT(bmg);
-    TRACE("SCAN BMG/RAW: %s\n",bmg->fname);
+    DASSERT(bmg->data);
 
     const bmg_header_t * bh = (bmg_header_t*)bmg->data;
     DASSERT(!memcmp(bh->magic,BMG_MAGIC,sizeof(bh->magic)));
-    const u32 data_size = ntohl(bh->size);
-    DASSERT( data_size <= bmg->data_size);
-    bmg->is_text_src = false;
 
-    bmg_inf_t * pinf = 0;
-    bmg_dat_t * pdat = 0;
-    bmg_mid_t * pmid = 0;
-
-    const u8 * data_end = bmg->data + data_size;
-    const bmg_section_t *sect = (bmg_section_t*)(bh+1);
-    for(;;)
+    u32 data_size = ntohl(bh->size);
+    bmg->encoding = bh->encoding;
+    if ( !bmg->encoding && data_size*BMG_LEGACY_BLOCK_SIZE <= bmg->data_size )
     {
-	const u32 sect_size = ntohl(sect->size);
-	noPRINT(" |%.4s| sect=%zx+%x=%zx/%x/%x\n",
-		sect->magic,
-		(u8*)sect - bmg->data, sect_size, (u8*)sect - bmg->data + sect_size,
-		data_size, bmg->data_size );
-
-	if ( (u8*)sect >= data_end || (u8*)sect + sect_size > data_end )
-	{
-	    const u8 * bmg_end = bmg->data + bmg->data_size;
-	    if ( data_end < bmg_end && ( !pinf || !pdat || !pmid ))
-	    {
-		ERROR0(ERR_WARNING,
-			"BMG internal size too small, use file size instead: %s\n",
-			bmg->fname );
-		data_end = bmg_end;
-		continue;
-	    }
-	    break;
-	}
-
-	if      (!memcmp(sect->magic,BMG_INF_MAGIC,sizeof(sect->magic)))
-	    pinf = (bmg_inf_t*)sect;
-	else if (!memcmp(sect->magic,BMG_DAT_MAGIC,sizeof(sect->magic)))
-	    pdat = (bmg_dat_t*)sect;
-	else if (!memcmp(sect->magic,BMG_MID_MAGIC,sizeof(sect->magic)))
-	    pmid = (bmg_mid_t*)sect;
-
-	sect = (bmg_section_t*)( (u8*)sect + sect_size );
+	bmg->legacy = true;
+	bmg->encoding = BMG_ENC_CP1252;
+	data_size *= BMG_LEGACY_BLOCK_SIZE;
     }
 
-    bmg->inf = pinf;
-    bmg->dat = pdat;
-    bmg->mid = pmid;
+    if ( data_size > bmg->data_size )
+    {
+	ERROR0(ERR_WARNING,
+		"BMG is %u bytes shorter than announced: %s",
+		data_size - bmg->data_size, bmg->fname );
+	data_size = bmg->data_size;
+    }
 
-    if ( !pinf || !pdat || !pmid )
+    const bmg_sect_list_t *sl = ScanSectionsBMG(bmg->data,data_size);
+    if ( !sl || !sl->header )
+	return ERROR0(ERR_INVALID_DATA,"Invalid BMG data: %s",bmg->fname);
+
+
+    //--- check encoding
+
+    switch (bmg->encoding)
+    {
+     case BMG_ENC_CP1252:
+     case BMG_ENC_UTF16BE:
+     case BMG_ENC_SHIFT_JIS:
+     case BMG_ENC_UTF8:
+	//>>> ok! <<<
+	break;
+
+     default:
+	if (!opt_bmg_force_count)
+	    return ERROR0(ERR_ERROR,
+			"Can't read BMG with encoding #%u (%s): %s\n",
+			bmg->encoding, GetEncodingNameBMG(bmg->encoding,"?"),
+			bmg->fname );
+	ERROR0(ERR_WARNING,
+			"Try to read BMG with unsupported encoding #%u (%s): %s\n",
+			bmg->encoding, GetEncodingNameBMG(bmg->encoding,"?"),
+			bmg->fname );
+    }
+
+
+    //--- iterate sections
+
+    const bmg_sect_info_t *si;
+    for ( si = sl->info; si->sect; si++ )
+    {
+	if ( si->real_size < si->sect_size )
+	    ERROR0(ERR_WARNING,
+			"Size of BMG section %s set to %u bytes (%u lesser than announced): %s\n",
+			PrintID(si->sect->magic,4,0),
+			si->real_size, si->sect_size - si->real_size, bmg->fname );
+
+	if ( !si->supported )
+	{
+	    bmg_raw_section_t *raw = CreateRawSectionBMG(bmg,si->sect->magic);
+	    DASSERT(raw);
+	    AssignFastBuf( &raw->data, si->sect->data,
+				si->real_size - sizeof(bmg_section_t) );
+	    raw->total_size = si->real_size;
+	    PRINT("SCAN/RAW SECTION »%s« data: %u = 0x%x, total: %u = 0x%x\n",
+			PrintID(raw->magic,4,0),
+			GetFastBufLen(&raw->data), GetFastBufLen(&raw->data),
+			raw->total_size, raw->total_size );
+	}
+    }
+
+    PRINT("%p %p %p\n",sl->pinf,sl->pdat,sl->pmid);
+    const bmg_inf_t *pinf = bmg->inf = sl->pinf;
+    const bmg_dat_t *pdat = bmg->dat = sl->pdat;
+    const bmg_mid_t *pmid = bmg->mid = sl->pmid;
+
+    if ( !sl->pinf || !sl->pdat )
 	return ERROR0(ERR_INVALID_DATA,"Corrupted BMG file: %s\n",bmg->fname);
+
+    bmg->unknown_inf_0c = ntohl(pinf->unknown_0c);
+
+    uint max_item;
+    bmg->have_mid = pmid != 0;
+    if (bmg->have_mid)
+    {
+	bmg->unknown_mid_0a = ntohs(pmid->unknown_0a);
+	bmg->unknown_mid_0c = ntohl(pmid->unknown_0c);
+
+	max_item = ( ntohl(pmid->size) - sizeof(*pmid) ) / sizeof(*pmid->mid);
+	if ( max_item > ntohs(pmid->n_msg) )
+	     max_item = ntohs(pmid->n_msg);
+	PRINT("BMG with MID1: N=%u [inf=%u,mid=%u], %s\n",
+		max_item, ntohs(pinf->n_msg), ntohs(pmid->n_msg), bmg->fname );
+    }
+    else
+    {
+	max_item = ntohs(pinf->n_msg);
+	PRINT("BMG without MID1: N=%u, %s\n",max_item,bmg->fname);
+    }
 
     const uint max_offset = ( ntohl(pdat->size) - sizeof(*pdat) )
 			  / sizeof(*pdat->text_pool);
-    u8 *text_end = pdat->text_pool + max_offset;
+    const u8 *text_end = pdat->text_pool + max_offset;
 
-    uint max_item = ( ntohl(pmid->size) - sizeof(*pmid) ) / sizeof(*pmid->mid);
-    if ( max_item > ntohs(pmid->n_msg) )
-	 max_item = ntohs(pmid->n_msg);
-
-    u8 *raw_inf = (u8*)pinf->list;
+    const u8 *raw_inf = (u8*)pinf->list;
     const uint src_inf_size = ntohs(pinf->inf_size);
     AssignInfSizeBMG(bmg,src_inf_size);
 
@@ -1252,338 +2298,117 @@ enumError ScanRawBMG ( bmg_t * bmg )
 
     //--- decode raw files
 
-    uint idx;
-    for ( idx = 0; idx < max_item; idx++, raw_inf += src_inf_size )
-    {
-	u32 mid = ntohl(pmid->mid[idx]);
-	bmg_inf_item_t *item = (bmg_inf_item_t*)raw_inf;
+    struct { FastBuf_t b; char space[500]; } fb_mgr;
+    InitializeFastBuf(&fb_mgr,sizeof(fb_mgr));
+ #if HAVE_PRINT
+    uint ins_count = 0, empty_count = 0;
+ #endif
 
+    uint prev_mid = 0;
+    uint slot, unsort_count = 0, ffff_count = 0;
+    for ( slot = 0; slot < max_item; slot++, raw_inf += src_inf_size )
+    {
+	bmg_inf_item_t *item = (bmg_inf_item_t*)raw_inf;
 	const u32 offset = ntohl(item->offset);
+
+	u32 mid = pmid ? ntohl(pmid->mid[slot]) : slot;
+	if ( mid == 0xffff && !offset )
+	    ffff_count++;
+	if ( mid < prev_mid )
+	    unsort_count++;
+	prev_mid = mid;
 
  #ifdef TEST
 	if ( offset >= max_offset )
 	    return ERROR0(ERR_INVALID_DATA,
 		"Invalid pointer at file offset 0x%zx (INF item #%u): %s\n",
-			(u8*)&pinf->list[idx].offset - bmg->data, idx, bmg->fname);
+			(u8*)&pinf->list[slot].offset - bmg->data, slot, bmg->fname);
  #else
 	if ( offset >= max_offset )
 	    return ERROR0(ERR_INVALID_DATA,"Corrupted BMG file: %s\n",bmg->fname);
  #endif
 
-	bmg_item_t * bi = InsertItemBMG(bmg,mid,item->attrib,bmg->attrib_used,0);
+ #if HAVE_PRINT0
+	{
+	    bmg_item_t *bi = FindItemBMG(bmg,mid);
+	    if (bi)
+		PRINT("MID EXISTS: %x, slot:%x\n",mid,slot);
+	}
+ #endif
+
+	bmg_item_t *bi = InsertItemBMG(bmg,mid,item->attrib,bmg->attrib_used,0);
 	DASSERT(bi);
+	bi->slot = slot < BMG_NO_PREDEF_SLOT ? slot : BMG_NO_PREDEF_SLOT;
 
 	if (!offset)
 	{
+	 #if HAVE_PRINT
+	    empty_count++;
+	 #endif
 	    AssignItemText16BMG(bi,bmg_null_entry,0);
 	    continue;
 	}
 
-	u8 *ptr, *start = pdat->text_pool + offset;
-	for ( ptr = start; ptr < text_end; ptr += 2 )
+	switch (bmg->encoding)
 	{
-	    if (!ptr[0])
-	    {
-		if (!ptr[1])
-		    break;
-		if ( ptr[1] == 0x1a )
-		{
-		    ptr += 2;
-		    const uint skip = *ptr & 0x1e;
-		    if ( skip > 4 )
-			ptr += skip - 4;
-		}
-	    }
+	 case BMG_ENC_CP1252:
+	    ClearFastBuf(&fb_mgr.b);
+	    scan_raw_cp1252( bi, pdat->text_pool + offset, text_end, &fb_mgr.b );
+	    break;
+
+	 case BMG_ENC_UTF16BE:
+	    scan_raw_utf16( bi, pdat->text_pool + offset, text_end );
+	    break;
+
+	 case BMG_ENC_SHIFT_JIS:
+	    ClearFastBuf(&fb_mgr.b);
+	    scan_raw_shift_jis( bi, pdat->text_pool + offset, text_end, &fb_mgr.b );
+	    break;
+
+	 case BMG_ENC_UTF8:
+	    ClearFastBuf(&fb_mgr.b);
+	    scan_raw_utf8( bi, pdat->text_pool + offset, text_end, &fb_mgr.b );
+	    break;
+
+	 default:
+	    // fallback for cast opt_bmg_force_count>0
+	    DASSERT(opt_bmg_force_count);
+	    ClearFastBuf(&fb_mgr.b);
+	    scan_raw_cp1252( bi, pdat->text_pool + offset, text_end, &fb_mgr.b );
+	    break;
 	}
 
-	u16 * text = (u16*)( pdat->text_pool + offset );
-	const int text_len = ( ptr - start )/2;
-	AssignItemText16BMG( bi, text, text_len );
+     #if HAVE_PRINT
+	ins_count++;
+     #endif
+    }
+
+ #if HAVE_PRINT
+    PRINT("BMG: %u+%u=%u/%u messages inserted => %u | n(unsort)=%d, n(ffff)=%d\n",
+		empty_count, ins_count, empty_count+ins_count,
+		max_item, bmg->item_used,
+		unsort_count, ffff_count );
+ #endif
+    ResetFastBuf(&fb_mgr.b);
+
+    bmg->have_predef_slots = pmid && max_item > 1
+				&& ( unsort_count > 1 || ffff_count > 1 );
+
+    if (bmg->have_predef_slots)
+    {
+	bmg_item_t *bi = FindItemBMG(bmg,0xffff);
+	if ( bi && isSpecialEntryBMG(bi->text) )
+	    AssignItemText16BMG(bi,0,0);
+    }
+    else
+    {
+	// clear slots settings
+	bmg_item_t *bi, *bi_end = bmg->item + bmg->item_used;
+	for ( bi = bmg->item; bi < bi_end; bi++ )
+	    bi->slot = BMG_NO_PREDEF_SLOT;
     }
 
     return ERR_OK;
-}
-
-//
-///////////////////////////////////////////////////////////////////////////////
-///////////////			attribute helpers		///////////////
-///////////////////////////////////////////////////////////////////////////////
-
-static inline void reset_attrib
-(
-    const bmg_t		* bmg,		// pointer to bmg
-    bmg_item_t		* item		// dest item
-)
-{
-    DASSERT(bmg);
-    DASSERT(item);
-
-    item->attrib_used = bmg->attrib_used;
-    memcpy(item->attrib,bmg->attrib,sizeof(item->attrib));
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-static void copy_attrib
-(
-    const bmg_t		* dest,		// pointer to destination bmg
-    bmg_item_t		* dptr,		// dest item
-    const bmg_item_t	* sptr		// source item
-)
-{
-    DASSERT(dest);
-    DASSERT(dptr);
-    DASSERT(sptr);
-
-    DASSERT( dest->attrib_used <= BMG_ATTRIB_SIZE );
-    DASSERT( sptr->attrib_used <= BMG_ATTRIB_SIZE );
-
-    if ( opt_bmg_force_attrib )
-    {
-	dptr->attrib_used = dest->attrib_used;
-	memcpy(dptr->attrib,bmg_force_attrib,dptr->attrib_used);
-    }
-    else if ( sptr->attrib_used )
-    {
-	if ( dest->attrib_used <= sptr->attrib_used )
-	    dptr->attrib_used = dest->attrib_used;
-	else
-	{
-	    dptr->attrib_used = sptr->attrib_used;
-	    memset( dptr->attrib+dptr->attrib_used, 0, BMG_ATTRIB_SIZE - sptr->attrib_used );
-	}
-	memcpy(dptr->attrib,sptr->attrib,dptr->attrib_used);
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-static char * scan_attrib ( u8 *dest, uint size, ccp src )
-{
-    DASSERT(dest);
-    DASSERT( size <= BMG_ATTRIB_SIZE );
-    memset(dest,0,BMG_ATTRIB_SIZE);
-
-    while ( *src ==  ' ' || *src == '\t' )
-	src++;
-    const bool have_brackets = *src == '[';
-    if ( have_brackets )
-	src++;
-
-    int idx = 0, add_idx = 0;
-    for(;;)
-    {
-	while ( *src ==  ' ' || *src == '\t' )
-	    src++;
-
-	if ( *src == ',' )
-	{
-	    src++;
-	    idx++;
-	    add_idx = 0;
-	}
-	else if ( *src == '/' )
-	{
-	    src++;
-	    idx = ALIGN32(idx+1,4);
-	    add_idx = 0;
-	}
-	else if ( *src == '%' )
-	{
-	    src++;
-	    char *end;
-	    u32 num = str2ul(src,&end,16);
-	    if ( src == end )
-		break;
-
-	    idx = ALIGN32(idx+add_idx,4);
-	    noPRINT("U32[0x%02x/%02x]: %8x\n",idx,size,num);
-
-	    char buf[4];
-	    write_be32(buf,num);
-	    const int max_copy = (int)size - (int)idx;
-	    if ( max_copy > 0 )
-		memcpy(dest+idx,buf, max_copy < 4 ? max_copy : 4 );
-	    idx += 3;
-	    add_idx = 1;
-	    src = end;
-	}
-	else
-	{
-	    char *end;
-	    u8 num = str2ul(src,&end,16);
-	    if ( src == end )
-		break;
-
-	    idx += add_idx;
-	    noPRINT("U8[0x%02x/%02x]: %8x\n",idx,size,num);
-	    if ( idx < size )
-		dest[idx] = num;
-	    add_idx = 1;
-	    src = end;
-	}
-    }
-    //HexDump16(stderr,0,0,dest,size);
-
-    if ( have_brackets && *src == ']' )
-	src++;
-    return (char*)src;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-static void copy_param
-(
-    bmg_t		* dest,		// pointer to destination bmg
-    const bmg_t		* src		// pointer to source bmg
-)
-{
-    DASSERT(dest);
-    DASSERT(src);
-
-    if ( !dest->param_defined && src->param_defined )
-    {
-	memcpy(dest->attrib,src->attrib,sizeof(dest->attrib));
-	dest->inf_size		= src->inf_size;
-	dest->attrib_used	= src->attrib_used;
-	dest->use_color_names	= src->use_color_names;
-	dest->use_mkw_messages	= src->use_mkw_messages;
-	dest->param_defined	= true;
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-int ScanMidBMG
-(
-    // returns:
-    //	-1: invalid MID
-    //	 0: empty line
-    //   1: single mid found
-    //   2: double mid found (track or arena)
-    //   3: triple mid found (track or arena, CTCODE)
-
-    bmg_t	*bmg,		// NULL or bmg to update parameters
-    u32		*ret_mid1,	// return value: pointer to first MID
-    u32		*ret_mid2,	// return value: pointer to second MID
-    u32		*ret_mid3,	// return value: pointer to third MID
-    ccp		src,		// source pointer
-    ccp		src_end,	// NULL or end of source
-    char	**scan_end	// return value: NULL or end of scanned 'source'
-)
-{
-    //---- setup
-
-    u32 mid1 = 0, mid2 = 0, mid3 = 0;
-    int stat = 0;
-    ccp ptr = src;
-
-    if (!src)
-	goto abort;
-    if (!src_end)
-	src_end = src + strlen(src);
-
-
-    //--- skip blanks and controls
-
-    while ( ptr < src_end && (uchar)*ptr <= ' ' )
-	ptr++;
-    if ( ptr == src_end )
-	goto abort;
-
-
-    //--- find keyword
-
-    ccp key = ptr;
-    while ( ptr < src_end && isalnum((int)*ptr) )
-	ptr++;
-    const uint keylen = ptr - key;
-
-    if ( keylen == 3 )
-    {
-	if ( ( *key == 'T' || *key == 't' )
-		&& key[1] >= '1' && key[1] <= '8'
-		&& key[2] >= '1' && key[2] <= '4' )
-	{
-	    int idx = 4 * ( key[1] - '1' )+ ( key[2] - '1' );
-	    DASSERT(GetTrackIndexBMG);
-	    idx = GetTrackIndexBMG(idx,-1);
-	    if ( idx >= 0 )
-	    {
-		mid1 = MID_TRACK1_BEG + idx;
-		mid2 = MID_TRACK2_BEG + idx;
-		stat = 2;
-		if (opt_bmg_support_ctcode)
-		{
-		    mid3 = MID_TRACK3_BEG + idx;
-		    stat++;
-		}
-		if ( bmg && bmg->use_mkw_messages == 1 )
-		    bmg->use_mkw_messages = 2;
-	    }
-	}
-	else if ( ( *key == 'U' || *key == 'u' )
-		&& key[1] >= '1' && key[1] <= '2'
-		&& key[2] >= '1' && key[2] <= '5' )
-	{
-	    int idx = 5 * ( key[1] - '1' ) + ( key[2] - '1' );
-	    DASSERT(GetArenaIndexBMG);
-	    idx = GetArenaIndexBMG(idx,-1);
-	    if ( idx >= 0 )
-	    {
-		mid1 = MID_ARENA1_BEG + idx;
-		mid2 = MID_ARENA2_BEG + idx;
-		stat = 2;
-		if (opt_bmg_support_ctcode)
-		{
-		    mid3 = MID_ARENA2_BEG + idx;
-		    stat++;
-		}
-		if ( bmg && bmg->use_mkw_messages == 1 )
-		    bmg->use_mkw_messages = 2;
-	    }
-	}
-	else if ( *key == 'M' || *key == 'm' )
-	{
-	    char *end;
-	    u32 num = strtoul(key+1,&end,10);
-	    if ( num > 0 && num <= BMG_N_CHAT && end == ptr )
-	    {
-		mid1 = MID_CHAT_BEG + num - 1;
-		stat = 1;
-		if ( bmg && bmg->use_mkw_messages == 1 )
-		    bmg->use_mkw_messages = 2;
-	    }
-	}
-    }
-
-    if ( !stat && keylen )
-    {
-	char *end;
-	uint num = strtoul(key,&end,16);
-	if ( end == ptr )
-	{
-	    mid1 = num;
-	    stat = 1;
-	}
-	else
-	    stat = -1;
-    }
-
-    if ( stat > 0 )
-	while ( ptr < src_end && ( *ptr == ' ' || *ptr == '\t' ) )
-	    ptr++;
-
- abort:
-    if (ret_mid1)
-	*ret_mid1 = mid1;
-    if (ret_mid2)
-	*ret_mid2 = mid2;
-    if (ret_mid3)
-	*ret_mid3 = mid3;
-    if (scan_end)
-	*scan_end = stat > 0 ? (char*)ptr : (char*)src;
-    return stat;
 }
 
 //
@@ -1600,12 +2425,13 @@ static char * GetNext ( ccp ptr, ccp end )
     DASSERT(ptr);
     DASSERT(end);
 
-    while ( ptr < end && ( *ptr == ' ' || *ptr == '\t' ) )
+    while ( ptr < end && ( *ptr == ' ' || *ptr == '\t' || *ptr == '\r' ) )
 	ptr++;
     return (char*)ptr;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[xbuf]] GetText ( FastBuf_t *fb ccp ptr, ccp end, uint *len )
 
 static char * GetText ( char *buf, uint bufsize, ccp ptr, ccp end, uint *len )
 {
@@ -1658,26 +2484,24 @@ enumError ScanTextBMG ( bmg_t * bmg )
     ptr += GetTextBOMLen(ptr,bmg->data_size);
 
     ccp bmg_name = 0;
+// [[xbuf]]
     char xbuf[2*BMG_MSG_BUF_SIZE];
     enumError err_stat = ERR_OK;
     u32 cond = 0;
+
+    ParamField_t assign;
+    InitializeParamField(&assign);
+    assign.free_data = true;
 
     for(;;)
     {
 	while ( ptr < end && (uchar)*ptr <= ' ' )
 	    ptr++;
-
-	u32 mid1 = 0, mid2 = 0, mid3 = 0;
-	noPRINT("PTR 1: %p '%s'\n",ptr,PrintID(ptr,10,0));
-	const int mid_stat
-	    = ScanMidBMG(bmg,&mid1,&mid2,&mid3,ptr,end,(char**)&ptr);
-	noPRINT("    2: %p '%s' -> %d : %x %x %x\n",
-		ptr,PrintID(ptr,10,0),mid_stat,mid1,mid2,mid3);
 	if ( ptr >= end )
 	    break;
 
 	ccp start = ptr = GetNext(ptr,end);
-	while ( ptr < end && *ptr != '\n' )
+	while ( ptr < end && *ptr != '\r' && *ptr != '\n' )
 	    ptr++;
 
 	if ( *start == '@' )
@@ -1716,9 +2540,11 @@ enumError ScanTextBMG ( bmg_t * bmg )
 		// SYNTAX/MATCH: '@=' PATTERN [':'] LINE
 
 		uint len;
+// [[xbuf]]
 		start = GetText(xbuf,sizeof(xbuf),start+1,ptr,&len);
 		if (len)
 		{
+// [[xbuf]]
 		    PRINT("MATCH |%s|\n",xbuf);
 		    if (!bmg_name)
 		    {
@@ -1726,6 +2552,7 @@ enumError ScanTextBMG ( bmg_t * bmg )
 			PRINT("NAME |%s|\n",bmg_name);
 		    }
 
+// [[xbuf?]]
 		    if (MatchPattern(xbuf,bmg_name,'/'))
 		    {
 			ptr = GetNext(start,ptr);
@@ -1755,11 +2582,13 @@ enumError ScanTextBMG ( bmg_t * bmg )
 		// SYNTAX/INCLUDE: '@' ['!'] '<' FILE
 
 		uint len;
+// [[xbuf]]
 		start = GetText(xbuf,sizeof(xbuf),start+1,ptr,&len);
 		if ( len && bmg->recurse_depth < opt_bmg_max_recurse )
 		{
 		    PRINT("BMG/%s: %s\n",close_current?"GOTO":"INCLUDE",xbuf);
 		    bmg_t bmg2;
+// [[xbuf?]]
 		    const enumError err
 			= LoadBMG(&bmg2,true,bmg->fname,xbuf,silent?FM_SILENT:0);
 		    if ( err == ERR_OK )
@@ -1780,11 +2609,81 @@ enumError ScanTextBMG ( bmg_t * bmg )
 	    }
 	    *nptr = 0;
 	    start = GetNext(start,ptr);
-	    if ( *start != '=' || ++start >= ptr )
+
+
+	    //--- settings without mandatory '='
+
+	    const bool have_equal = start < ptr && *start == '=';
+	    if (have_equal)
+		start = GetNext(start+1,ptr);
+
+	    if (!strcmp(namebuf,"SECTION"))
+	    {
+		bmg->current_raw = 0;
+		uint len = ScanEscapedString(namebuf,sizeof(namebuf),
+				start, ptr-start, false, -1, 0 );
+		if (!len)
+		    continue;
+		if ( len > 4 )
+		{
+		    ERROR0(ERR_WARNING,
+			"@SECTION name exceeds 4 [%u] characters: %s\n",
+			len, namebuf );
+		    continue;
+		}
+		while ( len < 4 )
+		    namebuf[len++] = 0;
+		PRINT("@SECTION »%s« %02x %02x %02x %02x\n",
+			PrintID(namebuf,4,0),
+			namebuf[0], namebuf[1], namebuf[2], namebuf[3] );
+		bmg->current_raw = CreateRawSectionBMG(bmg,namebuf);
+		DASSERT(bmg->current_raw);
+		ClearFastBuf(&bmg->current_raw->data);
+		continue;
+	    }
+
+	    if (!strcmp(namebuf,"X"))
+	    {
+		if (!bmg->current_raw)
+		    continue;
+
+		// skip addr
+
+		ccp p = start;
+		while (isalnum((int)*p))
+		    p++;
+		if ( p > start && *p == ':' )
+		    start = p+1;
+
+		for (;;)
+		{
+		    start = GetNext(start,ptr);
+		    if ( start >= ptr || *start == ':' )
+			break;
+		    char *end;
+		    uint num = str2ul(start,&end,16);
+		    if ( end == start )
+			break;
+		    start = end;
+		    AppendCharFastBuf(&bmg->current_raw->data,num);
+		}
+		continue;
+	    }
+
+
+	    //--- settings with mandatory '='
+
+	    if ( !have_equal || start >= ptr )
 		continue;
 
 	    noPRINT("PARAM: %s = |%.*s|\n",namebuf,(int)(ptr-start),start);
-	    if (!strcmp(namebuf,"INF-SIZE"))
+	    if (!strcmp(namebuf,"LEGACY"))
+		bmg->legacy = str2l(start,0,10) > 0;
+	    else if (!strcmp(namebuf,"ENCODING"))
+		AssignEncodingBMG(bmg,str2l(start,0,10));
+	    else if (!strcmp(namebuf,"BMG-MID"))
+		bmg->have_mid = str2ul(start,0,10) > 0;
+	    else if (!strcmp(namebuf,"INF-SIZE"))
 		AssignInfSizeBMG(bmg,str2ul(start,0,10));
 	    else if (!strcmp(namebuf,"DEFAULT-ATTRIBS"))
 	    {
@@ -1792,11 +2691,40 @@ enumError ScanTextBMG ( bmg_t * bmg )
 		scan_attrib(bmg->attrib,bmg->attrib_used,start);
 		//HEXDUMP16(0,0,bmg->attrib,bmg->attrib_used);
 	    }
+	    else if (!strcmp(namebuf,"UNKNOWN-INF32-0C"))
+		bmg->unknown_inf_0c = str2ul(start,0,10);
+	    else if (!strcmp(namebuf,"UNKNOWN-MID16-0A"))
+		bmg->unknown_mid_0a = str2ul(start,0,10);
+	    else if (!strcmp(namebuf,"UNKNOWN-MID32-0C"))
+		bmg->unknown_mid_0c = str2ul(start,0,10);
 	    continue;
 	}
 
+
+	//--- scan message ids
+
+	u32 mid1 = 0, mid2 = 0, mid3 = 0;
+	const int mid_stat
+	    = ScanMidBMG(bmg,&mid1,&mid2,&mid3,start,end,(char**)&start);
+
 	if ( mid_stat <= 0 ) // not a valid message line
 	    continue;
+
+	//--- scan predifined slot
+
+	bmg_slot_t slot = BMG_NO_PREDEF_SLOT;
+	if ( *start == '@' )
+	{
+	    char *end;
+	    uint num = str2l(++start,&end,16);
+	    PRINT0("SLOT[%#x] = %#x\n",mid1,num);
+	    if ( end > start && num < BMG_NO_PREDEF_SLOT )
+		slot = num;
+	    start = GetNext(end,ptr);
+	}
+
+
+	//--- scan attributes
 
 	u8 attrib_buf[BMG_ATTRIB_SIZE];
 	memcpy(attrib_buf,bmg->attrib,sizeof(attrib_buf));
@@ -1832,18 +2760,49 @@ enumError ScanTextBMG ( bmg_t * bmg )
 
 	    bmg_item_t * bi = InsertItemBMG(bmg,mid1,attrib_buf,attrib_used,0);
 	    DASSERT(bi);
+	    bi->slot = slot;
 	    AssignItemText16BMG(bi,bmg_null_entry,0);
 	    if (mid2)
 	    {
 		bi = InsertItemBMG(bmg,mid2,attrib_buf,attrib_used,0);
 		DASSERT(bi);
+		bi->slot = slot;
 		AssignItemText16BMG(bi,bmg_null_entry,0);
 	    }
 	    if (mid3)
 	    {
 		bi = InsertItemBMG(bmg,mid3,attrib_buf,attrib_used,0);
 		DASSERT(bi);
+		bi->slot = slot;
 		AssignItemText16BMG(bi,bmg_null_entry,0);
+	    }
+	    continue;
+	}
+
+	if ( *start == ':' )
+	{
+	    start = GetNext(start+1,end);
+	    ccp ptr = start;
+	    while ( ptr < end && isalnum((int)*ptr) )
+		ptr++;
+
+	    if ( ptr > start )
+	    {
+		u32 *tab[] = { &mid1, &mid2, &mid3, 0 }, **tptr;
+		for ( tptr = tab; *tptr; tptr++ )
+		{
+		    const u32 mid = **tptr;
+		    if (mid)
+		    {
+			DeleteItemBMG(bmg,mid);
+
+			char midbuf[20];
+			snprintf(midbuf,sizeof(midbuf),"%x",mid);
+			noPRINT("BMG ASSIGN: %5s = |%.*s|\n",
+				midbuf,(int)(ptr-start),start);
+			InsertParamField(&assign,midbuf,false,mid,MEMDUP(start,ptr-start));
+		    }
+		}
 	    }
 	    continue;
 	}
@@ -1851,9 +2810,11 @@ enumError ScanTextBMG ( bmg_t * bmg )
 	if ( *start != '=' ) // not a valid line
 	    continue;
 
+// [[xbuf]]
 	// assume that xbuf is large enough
 	//   => make only simple and silent buffer overrun tests
 
+// [[xbuf?]]
 	char * in_beg = xbuf + sizeof(xbuf)/2;
 	char * in_end = xbuf + sizeof(xbuf) - 0x10;
 	DASSERT( in_beg < in_end );
@@ -1888,19 +2849,22 @@ enumError ScanTextBMG ( bmg_t * bmg )
 
 	const int in_len = in_ptr - in_beg;
 	noPRINT("%x,%x,%x |%.*s|\n",mid1,mid2,mid3,in_len,in_beg);
+// [[xbuf]] ScanFastBuf16BMG();
 	u16 * dest_buf = (u16*)xbuf;
 	const uint len16
-	    = ScanString16BMG( dest_buf, sizeof(xbuf)/sizeof(u16), in_beg, in_len );
+	    = ScanString16BMG( dest_buf, sizeof(xbuf)/sizeof(u16), in_beg, in_len, bmg );
 
 	bmg_item_t * bi = InsertItemBMG(bmg,mid1,attrib_buf,attrib_used,0);
 	DASSERT(bi);
 	bi->cond = cond;
+	bi->slot = slot;
 	AssignItemText16BMG(bi,dest_buf,len16);
 	if (mid2)
 	{
 	    bi = InsertItemBMG(bmg,mid2,attrib_buf,attrib_used,0);
 	    DASSERT(bi);
 	    bi->cond = cond;
+	    bi->slot = slot;
 	    AssignItemText16BMG(bi,dest_buf,len16);
 	}
 	if (mid3)
@@ -1908,9 +2872,71 @@ enumError ScanTextBMG ( bmg_t * bmg )
 	    bi = InsertItemBMG(bmg,mid3,attrib_buf,attrib_used,0);
 	    DASSERT(bi);
 	    bi->cond = cond;
+	    bi->slot = slot;
 	    AssignItemText16BMG(bi,dest_buf,len16);
 	}
     }
+
+
+    //--- manage assignments
+
+    bool dirty = assign.used > 0;
+    while (dirty)
+    {
+	dirty = false;
+	ParamFieldItem_t *pfi = assign.field, *end;
+	for ( end = pfi + assign.used; pfi < end; pfi++ )
+	{
+	    if (!pfi->num)
+		continue;
+
+	    bmg_item_t *bi = FindItemBMG(bmg,pfi->num);
+	    noPRINT("## %5x = %5s = |%s| -> found=%d, len=%d\n",
+			pfi->num, pfi->key, (ccp)pfi->data, bi!=0, bi ? bi->len : -1 );
+	    pfi->key = 0;
+	    if ( bi && bi->len )
+	    {
+		pfi->num = 0;
+		continue;
+	    }
+
+	    bmg_scan_mid_t scan;
+	    ScanBMGMID(&scan,bmg,(ccp)pfi->data,0);
+	    if ( scan.status < 1 )
+	    {
+		pfi->num = 0;
+		continue;
+	    }
+
+	    uint i;
+	    for ( i = 0; i < scan.n_mid; i++ )
+	    {
+		bmg_item_t *src = FindItemBMG(bmg,scan.mid[i]);
+		if ( src && src->text )
+		{
+		    bmg_item_t *dest
+			= InsertItemBMG(bmg,pfi->num,src->attrib,src->attrib_used,0);
+		    DASSERT(dest);
+
+		    // src is invalid now => search again
+		    src = FindItemBMG(bmg,scan.mid[i]);
+		    if (src)
+		    {
+			AssignItemText16BMG(dest,src->text,src->len);
+			dest->attrib_used = src->attrib_used;
+			memcpy(dest->attrib,src->attrib,dest->attrib_used);
+			dirty = true;
+			pfi->num = 0;
+		    }
+		    break;
+		}
+	    }
+	}
+    }
+    ResetParamField(&assign);
+
+
+    //--- terminate
 
     if (bmg->data_alloced)
 	FREE(bmg->data);
@@ -2020,7 +3046,318 @@ enumError LoadBMG
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			struct bmg_create_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static void grow_bi_list ( bmg_create_t *bc, uint slot )
+{
+    if ( bc->bi_size <= slot )
+    {
+	const uint esize = sizeof(*bc->bi_list);
+	const uint old_size = bc->bi_size;
+	const uint byte_size = ( slot + slot/8 + 10 ) * esize;
+	bc->bi_size = GetGoodAllocSize(byte_size) / esize;
+	bc->bi_list = REALLOC( bc->bi_list, bc->bi_size * esize );
+	memset( bc->bi_list + old_size, 0, ( bc->bi_size - old_size ) * esize );
+	PRINT("GROW BI-LIST: %u/%u/%u\n",slot,bc->bi_used,bc->bi_size);
+    }
+}
+
+//-----------------------------------------------------------------------------
+
+void InitializeCreateBMG ( bmg_create_t *bc, bmg_t *bmg )
+{
+    DASSERT(bc);
+    DASSERT(bmg);
+
+    memset(bc,0,sizeof(*bc));
+    bc->bmg	 = bmg;
+    bc->have_mid = opt_bmg_mid == OFFON_AUTO
+		 ? bmg->have_mid : opt_bmg_mid >= OFFON_ON;
+
+    uint n_predef = 0, other_count = 0;
+    bmg_item_t *bi, *bi_end = bmg->item + bmg->item_used;
+    for ( bi = bmg->item; bi < bi_end; bi++ )
+	if (bi->text)
+	{
+	    if ( bi->slot == BMG_NO_PREDEF_SLOT )
+		other_count++;
+	    else if ( n_predef <= bi->slot )
+		n_predef = bi->slot + 1;
+	}
+
+    bmg->have_predef_slots = n_predef >= 0;
+    if (n_predef)
+    {
+	grow_bi_list( bc, n_predef + other_count );
+
+	uint next = n_predef;
+	for ( bi = bc->bmg->item; bi < bi_end; bi++ )
+	    if (bi->text)
+	    {
+		uint slot = bi->slot;
+		if ( slot >= n_predef || bc->bi_list[slot] )
+		{
+		    slot = next++;
+		    grow_bi_list(bc,slot);
+		}
+		PRINT0(">>> ASSIGN %4x = %4x\n",slot,bi->mid);
+		bc->bi_list[slot] = bi;
+	    }
+
+	bc->bi_used = next;
+	PRINT("BI-LIST: %u/%u/%u\n",next,bc->bi_used,bc->bi_size);
+    }
+
+    uint n_item = bc->bi_used;
+    if ( n_item < bmg->item_used )
+	 n_item = bmg->item_used;
+
+    InitializeFastBufAlloc( &bc->inf, n_item * bmg->inf_size );
+    InitializeFastBufAlloc( &bc->dat, n_item * 50 );
+    InitializeFastBufAlloc( &bc->mid, n_item * sizeof(u32) );
+
+    if (bc->have_mid)
+    {
+	uint i;
+	for ( i = 0; i < bc->bi_used; i++ )
+	    AppendBE32FastBuf(&bc->mid,0xffff);
+    }
+}
+
+//-----------------------------------------------------------------------------
+
+void ResetCreateBMG ( bmg_create_t *bc )
+{
+    DASSERT(bc);
+
+    FREE(bc->bi_list);
+    ResetFastBuf(&bc->inf);
+    ResetFastBuf(&bc->dat);
+    ResetFastBuf(&bc->mid);
+    memset(bc,0,sizeof(0));
+}
+
+//-----------------------------------------------------------------------------
+
+bmg_item_t * GetFirstBI ( bmg_create_t *bc )
+{
+    DASSERT(bc);
+    DASSERT(bc->bmg);
+
+    bc->bi	= bc->bmg->item;
+    bc->bi_end	= bc->bi + bc->bmg->item_used;
+    bc->slot	= -1;
+    return GetNextBI(bc);
+}
+
+//-----------------------------------------------------------------------------
+
+bmg_item_t * GetNextBI ( bmg_create_t *bc )
+{
+    DASSERT(bc);
+    DASSERT(bc->bmg);
+
+    bmg_t *bmg = bc->bmg;
+
+    bmg_item_t *bi = 0;
+    int slot = bc->slot + 1;
+    if (bc->bi_list)
+    {
+	while ( slot < bc->bi_used && !bc->bi_list[slot] )
+	    slot++;
+	if ( slot < bc->bi_used )
+	{
+	    bi = bc->bi_list[slot];
+	    PRINT0(">>> BI/LIST: %4x: %04x\n",slot,bi->mid);
+	}
+    }
+    else if ( bc->bi < bc->bi_end )
+    {
+	bi = bc->bi++;
+	PRINT0(">>> BI/DIRECT: %4x: %04x\n",slot,bi->mid);
+    }
+
+    if (!bi)
+    {
+	bc->slot = -1;
+	return 0;
+    }
+
+    //--- found: assign data
+
+    bc->slot = slot;
+
+    u32 *pmid = (u32*)WriteFastBuf( &bc->mid, bc->slot*sizeof(u32),
+				    0, sizeof(u32) );
+    DASSERT(pmid);
+    *pmid = htonl(bi->mid);
+
+    const uint inf_size = bmg->inf_size;
+    bmg_inf_item_t *ii = (bmg_inf_item_t*)WriteFastBuf
+		    ( &bc->inf, bc->slot * inf_size, 0, inf_size );
+    DASSERT(ii);
+    if ( !isSpecialEntryBMG(bi->text) )
+	ii->offset = htonl(GetFastBufLen(&bc->dat));
+    memcpy(ii->attrib,bi->attrib,bmg->attrib_used);
+
+    if ( bc->n_msg <= bc->slot )
+	 bc->n_msg  = bc->slot + 1;
+    return bi;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			CreateRawBMG()			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static void create_raw_cp1252 ( bmg_create_t *bc )
+{
+    DASSERT(bc);
+    DASSERT(bc->bmg);
+    DASSERT(!GetFastBufLen(&bc->dat));
+
+    AppendCharFastBuf(&bc->dat,0);
+
+    bmg_item_t *bi;
+    for ( bi = GetFirstBI(bc); bi; bi = GetNextBI(bc) )
+    {
+	if ( !isSpecialEntryBMG(bi->text) )
+	{
+	    const u16 *ptr = bi->text;
+	    const u16 *end = ptr + bi->len;
+	    while ( ptr < end )
+	    {
+		u16 code = ntohs(*ptr++);
+		if ( code == 0x1a )
+		{
+		    AppendCharFastBuf(&bc->dat,code);
+		    uint len = *(u8*)ptr;
+		    AppendCharFastBuf(&bc->dat,len-1);
+		    AppendFastBuf(&bc->dat,(u8*)ptr+1,len-3);
+		    ptr += (len-1)/2;
+		}
+		else if (code)
+		{
+		    if ( code >= 0x100 )
+		    {
+			uint i;
+			for ( i = 0; i < 0x20; i++ )
+			    if ( TableCP1252_80[i] == code )
+			    {
+				code = i + 0x80;
+				break;
+			    }
+		    }
+		    if ( code < 0x100 )
+			AppendCharFastBuf(&bc->dat,code);
+		}
+	    }
+	    AppendCharFastBuf(&bc->dat,0);
+	}
+    }
+}
+
+//-----------------------------------------------------------------------------
+
+static void create_raw_utf16 ( bmg_create_t *bc )
+{
+    DASSERT(bc);
+    DASSERT(bc->bmg);
+    DASSERT(!GetFastBufLen(&bc->dat));
+
+    AppendBE16FastBuf(&bc->dat,0);
+
+    bmg_item_t *bi;
+    for ( bi = GetFirstBI(bc); bi; bi = GetNextBI(bc) )
+    {
+	if ( !isSpecialEntryBMG(bi->text) )
+	{
+	    AppendFastBuf( &bc->dat, bi->text, bi->len*2 );
+	    AppendBE16FastBuf(&bc->dat,0);
+	}
+    }
+}
+
+//-----------------------------------------------------------------------------
+
+static void create_raw_shift_jis ( bmg_create_t *bc )
+{
+    DASSERT(bc);
+    DASSERT(bc->bmg);
+    DASSERT(!GetFastBufLen(&bc->dat));
+
+    AppendCharFastBuf(&bc->dat,0);
+
+    bmg_item_t *bi;
+    for ( bi = GetFirstBI(bc); bi; bi = GetNextBI(bc) )
+    {
+	if ( !isSpecialEntryBMG(bi->text) )
+	{
+	    const u16 *ptr = bi->text;
+	    const u16 *end = ptr + bi->len;
+	    while ( ptr < end )
+	    {
+		const u16 code = ntohs(*ptr++);
+		if ( code == 0x1a )
+		{
+		    AppendCharFastBuf(&bc->dat,code);
+		    uint len = *(u8*)ptr;
+		    AppendCharFastBuf(&bc->dat,len-1);
+		    AppendFastBuf(&bc->dat,(u8*)ptr+1,len-3);
+		    ptr += (len-1)/2;
+		}
+		else
+		{
+		    const int val = GetShiftJISChar(code);
+		    if ( val >= 0x100 )
+			AppendBE16FastBuf(&bc->dat,val);
+		    else if ( val > 0 )
+			AppendCharFastBuf(&bc->dat,val);
+		}
+	    }
+	    AppendCharFastBuf(&bc->dat,0);
+	}
+    }
+}
+
+//-----------------------------------------------------------------------------
+
+static void create_raw_utf8 ( bmg_create_t *bc )
+{
+    DASSERT(bc);
+    DASSERT(bc->bmg);
+    DASSERT(!GetFastBufLen(&bc->dat));
+
+    AppendCharFastBuf(&bc->dat,0);
+
+    bmg_item_t *bi;
+    for ( bi = GetFirstBI(bc); bi; bi = GetNextBI(bc) )
+    {
+	if ( !isSpecialEntryBMG(bi->text) )
+	{
+	    const u16 *ptr = bi->text;
+	    const u16 *end = ptr + bi->len;
+	    while ( ptr < end )
+	    {
+		u16 code = ntohs(*ptr++);
+		if ( code == 0x1a )
+		{
+		    AppendCharFastBuf(&bc->dat,code);
+		    uint len = *(u8*)ptr;
+		    AppendCharFastBuf(&bc->dat,len-1);
+		    AppendFastBuf(&bc->dat,(u8*)ptr+1,len-3);
+		    ptr += (len-1)/2;
+		}
+		else if (code)
+		    AppendUTF8CharFastBuf(&bc->dat,code);
+	    }
+	    AppendCharFastBuf(&bc->dat,0);
+	}
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 enumError CreateRawBMG
@@ -2032,39 +3369,81 @@ enumError CreateRawBMG
     TRACE("CreateRawBMG()\n");
 
 
-    //--- count messages
+    //--- setup bmg_create_t
 
-    bmg_item_t *bi, *bi_end = bmg->item + bmg->item_used;
-    u32 n_msg = 0;
-    u32 textpool_size = 1;
+    bmg_create_t bc;
+    InitializeCreateBMG(&bc,bmg);
+    PRINT("fb:inf: %s\n", GetFastBufStatus(&bc.inf) );
+    PRINT("fb:dat: %s\n", GetFastBufStatus(&bc.dat) );
+    PRINT("fb:mid: %s\n", GetFastBufStatus(&bc.mid) );
 
-    for ( bi = bmg->item; bi < bi_end; bi++ )
+
+    //--- check encoding
+
+    const int encoding = bmg->legacy
+		? BMG_ENC_CP1252
+		: CheckEncodingBMG(opt_bmg_encoding,bmg->encoding);
+    switch (encoding)
     {
-	if ( bi->text == bmg_null_entry )
-	    n_msg++;
-	else if ( bi->text )
+     case BMG_ENC_CP1252:
+	create_raw_cp1252(&bc);
+	break;
+
+     case BMG_ENC_UTF16BE:
+	create_raw_utf16(&bc);
+	break;
+
+     case BMG_ENC_SHIFT_JIS:
+	SetupGetShiftJISCache();
+	create_raw_shift_jis(&bc);
+	break;
+
+     case BMG_ENC_UTF8:
+	create_raw_utf8(&bc);
+	break;
+
+     default:
+	return ERROR0(ERR_ERROR,
+			"Can't create BMG with encoding #%u (%s): %s\n",
+			encoding, GetEncodingNameBMG(encoding,"?"), bmg->fname );
+    }
+
+
+    //--- count size of raw sections
+
+    uint total_raw_size = 0, raw_count = 0;
+    if (bmg->use_raw_sections)
+    {
+	bmg_raw_section_t *raw;
+	for ( raw = bmg->first_raw; raw; raw = raw->next )
 	{
-	    n_msg++;
-	    textpool_size += bi->len + 1;
+	    const uint good_size = sizeof(bmg_section_t) + GetFastBufLen(&raw->data);
+	    if ( raw->total_size < good_size )
+		raw->total_size = ALIGN32(good_size, raw->next ? opt_bmg_align : 4 );
+	    total_raw_size += raw->total_size;
+	    raw_count++;
 	}
     }
-    textpool_size *= 2;
 
 
     //--- calculate sizes
 
-    const u32 inf_size
-	= ALIGN32( sizeof(bmg_inf_t) + n_msg * bmg->inf_size, opt_bmg_align );
-    const u32 dat_size
-	= ALIGN32( sizeof(bmg_dat_t) + textpool_size, opt_bmg_align );
-    const u32 mid_size
-	= ALIGN32( sizeof(bmg_mid_t) + n_msg * sizeof(u32), opt_bmg_align );
+    const mem_t inf = GetFastBufMem(&bc.inf);
+    const mem_t mid = GetFastBufMem(&bc.mid);
+    const mem_t dat = GetFastBufMem(&bc.dat);
+
+    const int align	= bmg->legacy ? BMG_LEGACY_BLOCK_SIZE : opt_bmg_align;
+    const u32 inf_size	= ALIGN32( sizeof(bmg_inf_t) + inf.len, align );
+    const u32 dat_size	= ALIGN32( sizeof(bmg_dat_t) + dat.len, align );
+    const u32 mid_size	= bc.have_mid
+			? ALIGN32( sizeof(bmg_mid_t) + mid.len, align ) : 0;
 
     const u32 total_size = sizeof(bmg_header_t)
-			 + inf_size + dat_size + mid_size;
+			 + inf_size + dat_size + mid_size
+			 + total_raw_size;
 
     PRINT("SIZE(%u msg): %zx + %x[/%x] + %x + %x = %x\n",
-		n_msg, sizeof(bmg_header_t),
+		bc.n_msg, sizeof(bmg_header_t),
 		inf_size,  bmg->inf_size, dat_size, mid_size, total_size );
 
 
@@ -2075,68 +3454,92 @@ enumError CreateRawBMG
     bmg->raw_data_size = total_size;
 
 
-    //--- setup pointers
-
-    bmg_header_t* bh	= (bmg_header_t*)bmg->raw_data;
-    bmg_inf_t	* pinf	= (bmg_inf_t*)(bh+1);
-    bmg_dat_t	* pdat	= (bmg_dat_t*)( (u8*)pinf + inf_size );
-    bmg_mid_t	* pmid	= (bmg_mid_t*)( (u8*)pdat + dat_size );
-
-
     //---- setup bmg header
 
+    bmg_header_t *bh	= (bmg_header_t*)bmg->raw_data;
+    bh->size		= htonl( bmg->legacy ? total_size/BMG_LEGACY_BLOCK_SIZE: total_size );
+    bh->n_sections	= htonl( ( bc.have_mid ? 3 : 2 ) + raw_count );
+    bh->encoding	= bmg->legacy ? 0 : encoding;
     memcpy(bh->magic,BMG_MAGIC,sizeof(bh->magic));
-    bh->size		= htonl(total_size);
-    bh->n_sections	= htonl(3);
-    bh->unknown1	= htonl(0x02000000);
+
+    u8 *dest = (u8*)(bh+1);
+    DASSERT( dest <= bmg->raw_data + total_size );
 
 
-    //---- setup inf header
+    //---- setup inf section
 
-    memcpy(pinf->magic,BMG_INF_MAGIC,sizeof(pinf->magic));
+    bmg_inf_t *pinf	= (bmg_inf_t*)dest;
     pinf->size		= htonl(inf_size);
-    pinf->n_msg		= htons(n_msg);
+    pinf->n_msg		= htons(bc.n_msg);
     pinf->inf_size	= htons(bmg->inf_size);
+    pinf->unknown_0c	= htonl(bmg->unknown_inf_0c);
+    memcpy(pinf->magic,BMG_INF_MAGIC,sizeof(pinf->magic));
+    memcpy(pinf->list,inf.ptr,inf.len);
+
+    dest += inf_size;
+    DASSERT( dest <= bmg->raw_data + total_size );
 
 
-    //---- setup dat header
+    //---- setup dat section
 
-    memcpy(pdat->magic,BMG_DAT_MAGIC,sizeof(pdat->magic));
+    bmg_dat_t	* pdat	= (bmg_dat_t*)dest;
     pdat->size		= htonl(dat_size);
+    memcpy(pdat->magic,BMG_DAT_MAGIC,sizeof(pdat->magic));
+    memcpy(pdat->text_pool,dat.ptr,dat.len);
+
+    dest += dat_size;
+    DASSERT( dest <= bmg->raw_data + total_size );
 
 
-    //---- setup mid header
+    //---- setup mid section
 
-    memcpy(pmid->magic,BMG_MID_MAGIC,sizeof(pmid->magic));
-    pmid->size		= htonl(mid_size);
-    pmid->n_msg		= htons(n_msg);
-    pmid->unknown1	= htons(0x1000);
-
-
-    //---- main loop
-
-    u32 offset = 2;
-    u32 * mid_ptr = pmid->mid;
-    bmg_inf_item_t *inf_list = pinf->list;
-
-    for ( bi = bmg->item; bi < bi_end; bi++ )
+    if (bc.have_mid)
     {
-	if (!bi->text)
-	    continue;
+	bmg_mid_t *pmid		= (bmg_mid_t*)dest;
+	pmid->size		= htonl(mid_size);
+	pmid->n_msg		= htons(bc.n_msg);
+	pmid->unknown_0a	= htons(bmg->unknown_mid_0a);
+	pmid->unknown_0c	= htonl(bmg->unknown_mid_0c);
+	memcpy(pmid->magic,BMG_MID_MAGIC,sizeof(pmid->magic));
+	memcpy(pmid->mid,mid.ptr,mid.len);
 
-	*mid_ptr++ = htonl(bi->mid);
-	memcpy(inf_list->attrib,bi->attrib,bmg->attrib_used);
-
-	if ( bi->text != bmg_null_entry )
-	{
-	    inf_list->offset = htonl(offset);
-	    memcpy( pdat->text_pool + offset, bi->text, bi->len * 2 );
-	    offset += (bi->len+1) * 2;
-	}
-
-	inf_list = (bmg_inf_item_t*)( (u8*)inf_list + bmg->inf_size );
+	dest += mid_size;
+	DASSERT( dest <= bmg->raw_data + total_size );
     }
 
+
+    //---- copy raw sections
+
+    if (total_raw_size)
+    {
+	bmg_raw_section_t *raw;
+	for ( raw = bmg->first_raw; raw; raw = raw->next )
+	{
+	    PRINT("SAVE/RAW SECTION »%s« data: %u = 0x%x, total: %u = 0x%x\n",
+			PrintID(raw->magic,4,0),
+			GetFastBufLen(&raw->data), GetFastBufLen(&raw->data),
+			raw->total_size, raw->total_size );
+
+	    bmg_section_t *sect = (bmg_section_t*)dest;
+	    memcpy(sect->magic,raw->magic,sizeof(sect->magic));
+	    sect->size = htonl(raw->total_size);
+	    const mem_t mem = GetFastBufMem(&raw->data);
+	    memcpy(sect->data,mem.ptr,mem.len);
+
+	    dest += raw->total_size;
+	    DASSERT( dest <= bmg->raw_data + total_size );
+	}
+    }
+
+
+    //--- clean
+
+    DASSERT( dest == bmg->raw_data + total_size );
+
+    PRINT("fb:inf: %s\n", GetFastBufStatus(&bc.inf) );
+    PRINT("fb:mid: %s\n", GetFastBufStatus(&bc.mid) );
+    PRINT("fb:dat: %s\n", GetFastBufStatus(&bc.dat) );
+    ResetCreateBMG(&bc);
     return ERR_OK;
 }
 
@@ -2203,7 +3606,8 @@ char * PrintAttribBMG
 
     if ( !attrib
 	|| !attrib_used
-	|| def_attrib && !memcmp(attrib,def_attrib,BMG_ATTRIB_SIZE) )
+// [[BMG_ATTRIB_SIZE]]
+	|| def_attrib && !memcmp(attrib,def_attrib,attrib_used) )
     {
 	if (force)
 	{
@@ -2217,7 +3621,8 @@ char * PrintAttribBMG
     char *buf_end = buf + buf_size - 2;
     *buf++ = '[';
 
-    if (!memcmp(attrib,all0,BMG_ATTRIB_SIZE))
+// [[BMG_ATTRIB_SIZE]]
+    if (!memcmp(attrib,all0,attrib_used))
 	*buf++ = '0';
     else
     {
@@ -2262,7 +3667,20 @@ static void print_message
 	fprintf(F->f,"@? %x\n",bmg->active_cond);
     }
 
-    char buf[100+BMG_ATTRIB_BUF_SIZE];
+    ccp slot;
+    char slot_buf[10];
+    if (!bmg->have_predef_slots)
+	slot = EmptyString;
+    else if ( bi->slot == BMG_NO_PREDEF_SLOT )
+	slot = "      ";
+    else
+    {
+	snprintf(slot_buf,sizeof(slot_buf)," @%04x",bi->slot);
+	slot = slot_buf;
+    }
+
+    char attrib[100+BMG_ATTRIB_BUF_SIZE];
+// [[xbuf]]
     char xbuf[BMG_MSG_BUF_SIZE];
 
     const bool print_attrib
@@ -2276,39 +3694,44 @@ static void print_message
 	if ( bmg->attrib_used == 4 )
 	{
 	    // classic, compatible with all versions
-	    fprintf(F->f,"%s\t~ 0x%08x\r\n",mid_name,be32(bi->attrib));
+	    fprintf(F->f,"%s\t~%s 0x%08x\r\n",mid_name,slot,be32(bi->attrib));
 	}
 	else
 	{
 	    // use new attrib vector
-	    PrintAttribBMG( buf, sizeof(buf),
+	    PrintAttribBMG( attrib, sizeof(attrib),
 				bi->attrib, bi->attrib_used, bmg->attrib, true );
-	    fprintf(F->f,"%s\t~ %s\r\n",mid_name,buf);
+	    fprintf(F->f,"%s\t~%s %s\r\n",mid_name,slot,attrib);
 	}
     }
 
     if ( print_attrib && opt_bmg_inline_attrib )
     {
-	char *dest = buf + snprintfS(buf,sizeof(buf),"%s ",mid_name);
-	dest = PrintAttribBMG( dest, buf+sizeof(buf)-dest,
+	char *dest = attrib + snprintfS(attrib,sizeof(attrib),"%s%s ",mid_name,slot);
+	dest = PrintAttribBMG( dest, attrib+sizeof(attrib)-dest,
 				bi->attrib, bi->attrib_used, bmg->attrib, false );
 	*dest++ = ' ';
 	*dest = 0;
-	DASSERT( dest < buf + sizeof(buf) - 1 );
+	DASSERT( dest < attrib + sizeof(attrib) - 1 );
     }
     else
-	snprintf(buf,sizeof(buf),"%s\t",mid_name);
+	if (*slot)
+	    snprintf(attrib,sizeof(attrib),"%s%s ",mid_name,slot);
+	else
+	    snprintf(attrib,sizeof(attrib),"%s\t",mid_name);
 
     if ( bi->text == bmg_null_entry )
-	fprintf(F->f,"%s/\r\n",buf);
+	fprintf(F->f,"%s/\r\n",attrib);
     else if ( bi->text )
     {
-	fputs(buf,F->f);
+	fputs(attrib,F->f);
 	const int use_colors = opt_bmg_colors != 1
 				? opt_bmg_colors
 				: bmg->use_color_names > 0;
+// [[xbuf?]]
 	uint len = PrintString16BMG( xbuf, sizeof(xbuf), bi->text, bi->len,
 					BMG_UTF8_MAX, 0, use_colors );
+// [[xbuf?]]
 	ccp ptr = xbuf;
 	ccp end = ptr + len;
 	ccp sep = "=";
@@ -2397,6 +3820,9 @@ enumError SaveTextBMG
     char mid_name[10], abuf[BMG_ATTRIB_BUF_SIZE];
 
 
+    static ccp param_announce =
+	"# All parameters begin with '@'. Unknown parameters are ignored on scanning.\r\n";
+
     static const char text_head[] =
     {
       "#BMG  <<<  The first 4 characters '#BMG' are the magic for a BMG text file.\r\n"
@@ -2406,18 +3832,29 @@ enumError SaveTextBMG
       "#  * Syntax and Semantics: https://szs.wiimm.de/doc/bmg/text\r\n"
       "#  * The BMG file format:  https://szs.wiimm.de/r/wiki/BMG\r\n"
       "#\r\n"
+      "#\f\r\n"
       "#------------------------------------------------------------------------------\r\n"
     };
 
     static const char text_param[] =
     {
-      "# Parameters begin with '@'. Unknown parameters are ignored on scanning.\r\n"
+      "%s"
       "\r\n"
-      "# Size of each element of section 'INF0' (MKW: 8).\r\n"
-      "# Set it first, because it defines defaults for other parameters.\r\n"
+      "# If 1, then enable legacy (GameCube) mode for old binary BMG files.\r\n"
+      "# If enabled, ENCODING is always CP1252.\r\n"
+      "@LEGACY = %u\r\n"
+      "\r\n"
+      "# Define encoding of BMG: 1=CP1252, 2=UTF-16/be, 3=Shift-JIS, 4=UTF-8\r\n"
+      "@ENCODING = %u\r\n"
+      "\r\n"
+      "# Create »MID1« section: 0:off, 1=on\r\n"
+      "@BMG-MID = %u\r\n"
+      "\r\n"
+      "# Size of each element of section 'INF1' (MKW=8).\r\n"
+      "# This setting has impact to attributes and MKW features.\r\n"
       "@INF-SIZE = 0x%02x\r\n"
       "\r\n"
-      "# Default attribute values for this BMG (MKW: [1])\r\n"
+      "# Default attribute values for this BMG (MKW=[1])\r\n"
       "@DEFAULT-ATTRIBS = %s\r\n"
       "\r\n"
       "# Use MKW specific color names: 0=off, 1=auto, 2=on\r\n"
@@ -2426,6 +3863,20 @@ enumError SaveTextBMG
       "# Use MKW messages and track names: 0=off, 1=auto, 2=on\r\n"
       "@MKW-MESSAGES = %u\r\n"
       "\r\n"
+      "#\f\r\n"
+      "#------------------------------------------------------------------------------\r\n"
+    };
+
+    static const char unknown_param[] =
+    {
+      "%s"
+      "\r\n"
+      "# This part define values for unknown parameters of section headers.\r\n"
+      "@UNKNOWN-INF32-0C = %#10x	# 32 bit value of section INF1 offset 0x0c\r\n"
+      "@UNKNOWN-MID16-0A = %#10x	# 16 bit value of section MID1 offset 0x0a\r\n"
+      "@UNKNOWN-MID32-0C = %#10x	# 32 bit value of section MID1 offset 0x0c\r\n"
+      "\r\n"
+      "#\f\r\n"
       "#------------------------------------------------------------------------------\r\n"
     };
 
@@ -2438,35 +3889,87 @@ enumError SaveTextBMG
 	return err;
     SetFileAttrib(&F.fatt,&bmg->fatt,0);
 
-    if ( brief_count == BRIEF_ALL && !opt_bmg_export )
+    const bool print_full = brief_count == BRIEF_ALL && !opt_bmg_export;
+    if (print_full)
 	fwrite(text_head,1,sizeof(text_head)-1,F.f);
     else if ( brief_count < BRIEF_NO_MAGIC )
-	fprintf(F.f,"%s\r\n",BMG_TEXT_MAGIC);
+	fprintf(F.f,"%s\r\n\r\n",BMG_TEXT_MAGIC);
 
-    if ( bmg->attrib_used != 4
-	|| be32(bmg->attrib) != BMG_INF_STD_ATTRIB
-	|| !bmg->use_color_names
-	|| !bmg->use_mkw_messages
-    )
+    HavePredifinedSlots(bmg);
+    bmg->legacy = bmg->legacy != 0;
+    const int encoding = bmg->legacy
+		? BMG_ENC_CP1252
+		: CheckEncodingBMG(opt_bmg_encoding,bmg->encoding);
+
+    const bool print_settings // print only, if unusual
+		=  encoding != BMG_ENC__DEFAULT
+		|| bmg->attrib_used != 4
+		|| be32(bmg->attrib) != BMG_INF_STD_ATTRIB
+		|| !bmg->have_mid
+		|| !bmg->use_color_names
+		|| !bmg->use_mkw_messages
+		;
+
+    if	(print_settings)
     {
 	PrintAttribBMG(abuf,sizeof(abuf),bmg->attrib,bmg->attrib_used,0,true);
-	if ( brief_count == BRIEF_ALL && !opt_bmg_export )
+	if (print_full)
+	{
 	    fprintf(F.f,text_param,
-			bmg->inf_size, abuf,
+			param_announce,
+			bmg->legacy, encoding, bmg->have_mid, bmg->inf_size, abuf,
 			bmg->use_color_names, bmg->use_mkw_messages );
+	    param_announce = "";
+	}
 	else if ( brief_count < BRIEF_NO_MAGIC )
-	    fprintf(F.f,"@INF-SIZE        = 0x%02x\n"
-			"@DEFAULT-ATTRIBS = %s\n"
-			"@COLOR-NAMES     = %u\n"
-			"@MKW-MESSAGES    = %u\n",
-			bmg->inf_size, abuf,
+	    fprintf(F.f,"@LEGACY          = %u\r\n"
+			"@ENCODING        = %u\r\n"
+			"@BMG-MID         = %u\r\n"
+			"@INF-SIZE        = 0x%02x\r\n"
+			"@DEFAULT-ATTRIBS = %s\r\n"
+			"@COLOR-NAMES     = %u\r\n"
+			"@MKW-MESSAGES    = %u\r\n"
+			"\r\n",
+			bmg->legacy, encoding, bmg->have_mid, bmg->inf_size, abuf,
 			bmg->use_color_names, bmg->use_mkw_messages );
     }
+
+    if ( print_settings
+	|| bmg->unknown_inf_0c != BMG_INF_DEFAULT_0C
+	|| bmg->unknown_mid_0a != BMG_MID_DEFAULT_0A
+	|| bmg->unknown_mid_0c != BMG_MID_DEFAULT_0C
+    )
+    {
+	if (print_full)
+	    fprintf(F.f,unknown_param,
+			param_announce,
+			bmg->unknown_inf_0c,
+			bmg->unknown_mid_0a, bmg->unknown_mid_0c );
+	else if ( brief_count < BRIEF_NO_MAGIC )
+	    fprintf(F.f,"@UNKNOWN-INF32-0C = %#x\r\n"
+			"@UNKNOWN-MID16-0A = %#x\r\n"
+			"@UNKNOWN-MID32-0C = %#x\r\n"
+			"\r\n",
+			bmg->unknown_inf_0c,
+			bmg->unknown_mid_0a, bmg->unknown_mid_0c );
+    }
+
+
+    //--- messages
 
     ccp intro = "\r\n";
     static const char intro_other[] = "\r\n#--- other messages\r\n\r\n";
 
-    if ( opt_bmg_support_mkw && !force_numeric && !opt_bmg_export )
+    const bool support_mkw
+		=  opt_bmg_support_mkw
+		&& !force_numeric
+		&& !opt_bmg_export
+		&& bmg->attrib_used == 4
+		&& be32(bmg->attrib) == BMG_INF_STD_ATTRIB
+		&& bmg->have_mid
+		&& !bmg->have_predef_slots;
+
+    if (support_mkw)
     {
 	//--- find track names
 
@@ -2502,9 +4005,15 @@ enumError SaveTextBMG
 		    already_printed[ bi1->mid - MID__VIP_BEG ] = true;
 		    already_printed[ bi2->mid - MID__VIP_BEG ] = true;
 
-		    if (opt_bmg_support_ctcode)
+		    if (opt_bmg_support_lecode)
 		    {
-			bi2 = FindItemBMG(bmg,MID_TRACK3_BEG+tidx);
+			bi2 = FindItemBMG(bmg,MID_LE_TRACK_BEG+tidx);
+			if ( bi2 && IsItemEqualBMG(bi1,bi2) )
+			    already_printed[ bi2->mid - MID__VIP_BEG ] = true;
+		    }
+		    else if (opt_bmg_support_ctcode)
+		    {
+			bi2 = FindItemBMG(bmg,MID_CT_TRACK_BEG+tidx);
 			if ( bi2 && IsItemEqualBMG(bi1,bi2) )
 			    already_printed[ bi2->mid - MID__VIP_BEG ] = true;
 		    }
@@ -2546,9 +4055,15 @@ enumError SaveTextBMG
 		    already_printed[ bi1->mid - MID__VIP_BEG ] = true;
 		    already_printed[ bi2->mid - MID__VIP_BEG ] = true;
 
-		    if (opt_bmg_support_ctcode)
+		    if (opt_bmg_support_lecode)
 		    {
-			bi2 = FindItemBMG(bmg,MID_ARENA3_BEG+tidx);
+			bi2 = FindItemBMG(bmg,MID_LE_ARENA_BEG+tidx);
+			if ( bi2 && IsItemEqualBMG(bi1,bi2) )
+			    already_printed[ bi2->mid - MID__VIP_BEG ] = true;
+		    }
+		    else if (opt_bmg_support_ctcode)
+		    {
+			bi2 = FindItemBMG(bmg,MID_CT_ARENA_BEG+tidx);
 			if ( bi2 && IsItemEqualBMG(bi1,bi2) )
 			    already_printed[ bi2->mid - MID__VIP_BEG ] = true;
 		    }
@@ -2583,21 +4098,25 @@ enumError SaveTextBMG
     //--- print messages not already printed
 
     struct sep_t { u32 mid; ccp info; };
-    static const struct sep_t sep_tab[] =
+
+    static const struct sep_t sep_std_tab[] =
+    {
+	{0,0}
+    };
+
+    static const struct sep_t sep_mkw_tab[] =
     {
 	{ MID_ENGINE_BEG,		"engines" },
 	{ MID_ENGINE_END,		0 },
 	{ MID_CHAT_BEG,			"online chat" },
 	{ MID_CHAT_END,			0 },
 
-	{ MID_RACING_CUP_BEG,		"racing cups" },
-	{ MID_RACING_CUP_END,		0 },
+	{ MID_RCUP_BEG,			"racing cup names" },
+	{ MID_RCUP_END,			0 },
 	{ MID_TRACK1_BEG,		"track names, 1. copy" },
 	{ MID_TRACK1_END,		0 },
-
-	{ MID_BATTLE_CUP_BEG,		"battle cups" },
-	{ MID_BATTLE_CUP_END,		0 },
-
+	{ MID_BCUP_BEG,			"battle cup names" },
+	{ MID_BCUP_END,			0 },
 	{ MID_TRACK2_BEG,		"track names, 2. copy" },
 	{ MID_TRACK2_END,		0 },
 
@@ -2606,6 +4125,9 @@ enumError SaveTextBMG
 	{ MID_ARENA2_BEG,		"arena names, 2. copy" },
 	{ MID_ARENA2_END,		0 },
 
+	{ MID_PARAM_IDENTIFY,		"identification for third party tools" },
+	{ MID_PARAM_IDENTIFY,		0 },
+
 	{ MID_PARAM_BEG,		"parameters for mkw-ana" },
 	{ MID_PARAM_END,		0 },
 
@@ -2613,8 +4135,18 @@ enumError SaveTextBMG
 	{ MID_CT_TRACK_END,		0 },
 	{ MID_CT_CUP_BEG,		"CT-CODE: cup names" },
 	{ MID_CT_CUP_END,		0 },
-	{ MID_CT_TRACK_CUP_BEG,		"CT-CODE: cup index for each track" },
-	{ MID_CT_TRACK_CUP_END,		0 },
+	{ MID_CT_CUP_REF_BEG,		"CT-CODE: track-to-cup reference" },
+	{ MID_CT_CUP_REF_END,		0 },
+
+	{ MID_X_MESSAGE_BEG,		"new messages for CT/LE-CODE" },
+	{ MID_X_MESSAGE_END,		0 },
+
+	{ MID_LE_CUP_BEG,		"LE-CODE: cup names" },
+	{ MID_LE_CUP_END,		0 },
+	{ MID_LE_TRACK_BEG,		"LE-CODE: track names" },
+	{ MID_LE_TRACK_END,		0 },
+	{ MID_LE_CUP_REF_BEG,		"LE-CODE: track-to-cup reference" },
+	{ MID_LE_CUP_REF_END,		0 },
 
 	{0,0}
     };
@@ -2623,17 +4155,22 @@ enumError SaveTextBMG
     {
 	fflush(stdout);
 	const struct sep_t *sep;
-	for ( sep = sep_tab+1; sep->mid; sep++ )
+	for ( sep = sep_std_tab+1; sep->mid; sep++ )
 	    if ( sep[-1].mid > sep->mid )
 		fprintf(stderr,
-		    "Wrong order in sep_tab[%zu]:\n\t%04x %s\n\t%04x %s\n",
-			sep-sep_tab, sep[-1].mid, sep[-1].info, sep->mid, sep->info );
+		    "Wrong order in sep_std_tab[%zu]:\n\t%04x %s\n\t%04x %s\n",
+			sep-sep_std_tab, sep[-1].mid, sep[-1].info, sep->mid, sep->info );
+	for ( sep = sep_mkw_tab+1; sep->mid; sep++ )
+	    if ( sep[-1].mid > sep->mid )
+		fprintf(stderr,
+		    "Wrong order in sep_mkw_tab[%zu]:\n\t%04x %s\n\t%04x %s\n",
+			sep-sep_mkw_tab, sep[-1].mid, sep[-1].info, sep->mid, sep->info );
 	fflush(stderr);
     }
     #endif
 
-    const struct sep_t *sep = sep_tab;
-    const bool use_sep = opt_bmg_support_mkw && brief_count < BRIEF_NO_COMMENT;
+    const struct sep_t *sep_tab = support_mkw ? sep_mkw_tab : sep_std_tab;
+    const struct sep_t *sep = brief_count < BRIEF_NO_COMMENT ? sep_tab : 0;
 
     bmg_item_t * bi  = bmg->item;
     bmg_item_t * bi_end = bi + bmg->item_used;
@@ -2645,12 +4182,14 @@ enumError SaveTextBMG
 	   || !already_printed[mid-MID__VIP_BEG]
 	   )
 	{
-	    if ( use_sep && sep->mid && mid >= sep->mid )
+	    if ( sep && sep->mid && mid >= sep->mid )
 	    {
 		sep++;
 		while ( sep->mid && mid >= sep->mid )
 		    sep++;
-		if ( sep[-1].info )
+		if ( sep > sep_tab+1 && sep[-2].mid == mid && sep[-2].info )
+		    fprintf(F.f,"\r\n#--- [%x] %s\r\n", mid, sep[-2].info );
+		else if ( sep[-1].info )
 		    fprintf(F.f,"\r\n#--- [%x:%x] %s\r\n",
 			sep[-1].mid, sep->mid-1,  sep[-1].info );
 		else
@@ -2668,10 +4207,348 @@ enumError SaveTextBMG
 	}
     }
 
+
+    //--- raw sections
+
+    if ( bmg->use_raw_sections && bmg->first_raw )
+    {
+	XDump_t xd;
+	InitializeXDump(&xd);
+	SetupXDump(&xd,XDUMPC_DUMP);
+	xd.f		= F.f;
+	xd.indent	= 1;
+	xd.prefix	= "@X";
+	xd.eol		= "\r\n";
+	xd.format	= XDUMPF_INT_1;
+	xd.print_format	= false;
+	xd.print_summary= false;
+
+	bmg_raw_section_t *raw;
+	for ( raw = bmg->first_raw; raw; raw = raw->next )
+	{
+	    PRINT("HEXDUMP SECTION »%s« data: %u = 0x%x, total: %u = 0x%x\n",
+			PrintID(raw->magic,4,0),
+			GetFastBufLen(&raw->data), GetFastBufLen(&raw->data),
+			raw->total_size, raw->total_size );
+
+	    char name[20];
+	    fprintf(F.f,"\r\n#\f\r\n#--------------------------------------"
+		    "----------------------------------------\r\n\r\n"
+		    "@SECTION \"%s\"\r\n\r\n",
+		    PrintEscapedString( name, sizeof(name),
+				raw->magic, sizeof(raw->magic),
+				CHMD_ESC, '"',  0) );
+
+	    const mem_t data = GetFastBufMem(&raw->data);
+	    xd.assumed_size = data.len;
+	    XDump(&xd,data.ptr,data.len,true);
+	}
+    }
+
+
+    //--- terminate
+
     if ( brief_count < 2 )
 	fputs("\r\n",F.f);
     ResetFile(&F,set_time);
     return ERR_OK;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			ScanBMGMID()			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+int ScanBMGMID
+(
+    // returns 'scan->status'
+
+    bmg_scan_mid_t	*scan,		// result, never NULL
+    bmg_t		*bmg,		// NULL or bmg to update parameters
+    ccp			src,		// source pointer
+    ccp			src_end		// NULL or end of source
+)
+{
+    DASSERT(scan);
+
+    //---- setup
+
+    memset(scan,0,sizeof(*scan));
+
+    ccp ptr = src;
+    if (!src)
+	return 0;
+    if (!src_end)
+	src_end = src + strlen(src);
+
+
+    //--- skip blanks and controls
+
+    while ( ptr < src_end && (uchar)*ptr <= ' ' )
+	ptr++;
+    if ( ptr == src_end )
+	goto abort;
+
+
+    //--- find keyword
+
+    ccp key = ptr;
+    while ( ptr < src_end && isalnum((int)*ptr) )
+	ptr++;
+    const uint keylen = ptr - key;
+
+    if ( keylen == 3 )
+    {
+	if ( ( *key == 'T' || *key == 't' )
+		&& key[1] >= '1' && key[1] <= '8'
+		&& key[2] >= '1' && key[2] <= '4' )
+	{
+	    int idx = 4 * ( key[1] - '1' ) + ( key[2] - '1' );
+	    DASSERT(GetTrackIndexBMG);
+	    idx = GetTrackIndexBMG(idx,-1);
+	    if ( idx >= 0 )
+	    {
+		scan->mid[0] = MID_TRACK1_BEG + idx;
+		scan->mid[1] = MID_TRACK2_BEG + idx;
+		scan->n_mid = 2;
+		if (opt_bmg_support_lecode)
+		{
+		    scan->mid[2] = MID_LE_TRACK_BEG + idx;
+		    scan->n_mid++;
+		}
+		else if (opt_bmg_support_ctcode)
+		{
+		    scan->mid[2] = MID_CT_TRACK_BEG + idx;
+		    scan->n_mid++;
+		}
+		if ( bmg && bmg->use_mkw_messages == 1 )
+		    bmg->use_mkw_messages = 2;
+	    }
+	}
+	else if ( ( *key == 'U' || *key == 'u' )
+		&& key[1] >= '1' && key[1] <= '2'
+		&& key[2] >= '1' && key[2] <= '5' )
+	{
+	    int idx = 5 * ( key[1] - '1' ) + ( key[2] - '1' );
+	    DASSERT(GetArenaIndexBMG);
+	    idx = GetArenaIndexBMG(idx,-1);
+	    if ( idx >= 0 )
+	    {
+		scan->mid[0] = MID_ARENA1_BEG + idx;
+		scan->mid[1] = MID_ARENA2_BEG + idx;
+		scan->n_mid = 2;
+		if (opt_bmg_support_lecode)
+		{
+		    scan->mid[2] = MID_LE_ARENA_BEG + idx;
+		    scan->n_mid++;
+		}
+		else if (opt_bmg_support_ctcode)
+		{
+		    scan->mid[2] = MID_CT_ARENA_BEG + idx;
+		    scan->n_mid++;
+		}
+		if ( bmg && bmg->use_mkw_messages == 1 )
+		    bmg->use_mkw_messages = 2;
+	    }
+	}
+	else if ( *key == 'M' || *key == 'm' )
+	{
+	    char *end;
+	    u32 num = strtoul(key+1,&end,10);
+	    if ( num > 0 && num <= BMG_N_CHAT && end == ptr )
+	    {
+		scan->mid[0] = MID_CHAT_BEG + num - 1;
+		scan->n_mid = 1;
+		if ( bmg && bmg->use_mkw_messages == 1 )
+		    bmg->use_mkw_messages = 2;
+	    }
+	}
+    }
+
+    if ( !scan->n_mid && keylen )
+    {
+	char *end;
+	uint num = strtoul(key,&end,16);
+	if ( end == ptr )
+	{
+	    scan->mid[0] = num;
+	    scan->n_mid = 1;
+	}
+	else
+	    scan->status = -1;
+    }
+
+    if ( scan->n_mid > 0 )
+	while ( ptr < src_end && ( *ptr == ' ' || *ptr == '\t' ) )
+	    ptr++;
+
+ abort:
+    if (!scan->status)
+	scan->status = scan->n_mid;
+    scan->scan_end = scan->status > 0 ? (char*)ptr : (char*)src;
+    return scan->status;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int ScanMidBMG
+(
+    // returns:
+    //	-1: invalid MID
+    //	 0: empty line
+    //   1: single mid found
+    //   2: double mid found (track or arena)
+    //   3: triple mid found (track or arena, CTCODE)
+
+    bmg_t	*bmg,		// NULL or bmg to update parameters
+    u32		*ret_mid1,	// return value: pointer to first MID
+    u32		*ret_mid2,	// return value: pointer to second MID
+    u32		*ret_mid3,	// return value: pointer to third MID
+    ccp		src,		// source pointer
+    ccp		src_end,	// NULL or end of source
+    char	**scan_end	// return value: NULL or end of scanned 'source'
+)
+{
+// [[2do]]
+ #if defined(TEST) || defined(DEBUG) || 1
+
+    bmg_scan_mid_t scan;
+    ScanBMGMID(&scan,bmg,src,src_end);
+
+    if (ret_mid1)
+	*ret_mid1 = scan.n_mid > 0 ? scan.mid[0] : 0;
+    if (ret_mid2)
+	*ret_mid2 = scan.n_mid > 1 ? scan.mid[1] : 0;
+    if (ret_mid3)
+	*ret_mid3 = scan.n_mid > 2 ? scan.mid[2] : 0;
+    if (scan_end)
+	*scan_end = scan.scan_end;
+    return scan.status;
+
+ #else
+    //---- setup
+
+    u32 mid1 = 0, mid2 = 0, mid3 = 0;
+    int stat = 0;
+    ccp ptr = src;
+
+    if (!src)
+	goto abort;
+    if (!src_end)
+	src_end = src + strlen(src);
+
+
+    //--- skip blanks and controls
+
+    while ( ptr < src_end && (uchar)*ptr <= ' ' )
+	ptr++;
+    if ( ptr == src_end )
+	goto abort;
+
+
+    //--- find keyword
+
+    ccp key = ptr;
+    while ( ptr < src_end && isalnum((int)*ptr) )
+	ptr++;
+    const uint keylen = ptr - key;
+
+    if ( keylen == 3 )
+    {
+	if ( ( *key == 'T' || *key == 't' )
+		&& key[1] >= '1' && key[1] <= '8'
+		&& key[2] >= '1' && key[2] <= '4' )
+	{
+	    int idx = 4 * ( key[1] - '1' )+ ( key[2] - '1' );
+	    DASSERT(GetTrackIndexBMG);
+	    idx = GetTrackIndexBMG(idx,-1);
+	    if ( idx >= 0 )
+	    {
+		mid1 = MID_TRACK1_BEG + idx;
+		mid2 = MID_TRACK2_BEG + idx;
+		stat = 2;
+		if (opt_bmg_support_lecode)
+		{
+		    mid3 = MID_LE_TRACK_BEG + idx;
+		    stat++;
+		}
+		else if (opt_bmg_support_ctcode)
+		{
+		    mid3 = MID_CT_TRACK_BEG + idx;
+		    stat++;
+		}
+		if ( bmg && bmg->use_mkw_messages == 1 )
+		    bmg->use_mkw_messages = 2;
+	    }
+	}
+	else if ( ( *key == 'U' || *key == 'u' )
+		&& key[1] >= '1' && key[1] <= '2'
+		&& key[2] >= '1' && key[2] <= '5' )
+	{
+	    int idx = 5 * ( key[1] - '1' ) + ( key[2] - '1' );
+	    DASSERT(GetArenaIndexBMG);
+	    idx = GetArenaIndexBMG(idx,-1);
+	    if ( idx >= 0 )
+	    {
+		mid1 = MID_ARENA1_BEG + idx;
+		mid2 = MID_ARENA2_BEG + idx;
+		stat = 2;
+		if (opt_bmg_support_lecode)
+		{
+		    mid3 = MID_LE_ARENA_BEG + idx;
+		    stat++;
+		}
+		else if (opt_bmg_support_ctcode)
+		{
+		    mid3 = MID_CT_ARENA_BEG + idx;
+		    stat++;
+		}
+		if ( bmg && bmg->use_mkw_messages == 1 )
+		    bmg->use_mkw_messages = 2;
+	    }
+	}
+	else if ( *key == 'M' || *key == 'm' )
+	{
+	    char *end;
+	    u32 num = strtoul(key+1,&end,10);
+	    if ( num > 0 && num <= BMG_N_CHAT && end == ptr )
+	    {
+		mid1 = MID_CHAT_BEG + num - 1;
+		stat = 1;
+		if ( bmg && bmg->use_mkw_messages == 1 )
+		    bmg->use_mkw_messages = 2;
+	    }
+	}
+    }
+
+    if ( !stat && keylen )
+    {
+	char *end;
+	uint num = strtoul(key,&end,16);
+	if ( end == ptr )
+	{
+	    mid1 = num;
+	    stat = 1;
+	}
+	else
+	    stat = -1;
+    }
+
+    if ( stat > 0 )
+	while ( ptr < src_end && ( *ptr == ' ' || *ptr == '\t' ) )
+	    ptr++;
+
+ abort:
+    if (ret_mid1)
+	*ret_mid1 = mid1;
+    if (ret_mid2)
+	*ret_mid2 = mid2;
+    if (ret_mid3)
+	*ret_mid3 = mid3;
+    if (scan_end)
+	*scan_end = stat > 0 ? (char*)ptr : (char*)src;
+    return stat;
+ #endif
 }
 
 //
@@ -2751,6 +4628,7 @@ static bool format_message
     DASSERT(dptr);
     DASSERT(format);
 
+
     //--- line support
 
     typedef struct line_t
@@ -2793,7 +4671,7 @@ static bool format_message
 	    continue;
 	}
 
-	noPRINT("%04x = %c\n",be16(source), be16(source) & 0xff );
+	PRINT("%04x = %c\n",be16(source), be16(source) & 0xff );
 	const u16 *start = source++;
 
 	u32 p1, p2, stat;
@@ -3020,7 +4898,7 @@ bool PatchFormatBMG
 
     const uint form_size = 2000;
     u16 form_buf[form_size];
-    uint form_len = ScanString16BMG(form_buf,form_size,format,-1);
+    uint form_len = ScanString16BMG(form_buf,form_size,format,-1,bmg_dest);
 
     format_message_t fm;
     memset(&fm,0,sizeof(fm));
@@ -3032,6 +4910,120 @@ bool PatchFormatBMG
 	format_message(&fm,dptr,form_buf,form_len);
 
     return fm.mod_count > 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool PatchRegexBMG
+(
+    bmg_t		* bmg,			// pointer to destination bmg
+    ccp			regex			// format parameter
+)
+{
+ #if ENABLE_BMG_REGEX
+    DASSERT(bmg);
+    DASSERT(regex);
+
+    PRINT("REGEX=%s\n",regex);
+
+    Regex_t re;
+    enumError err = ScanRegex(&re,true,regex);
+    if ( err || !re.valid )
+    {
+	ResetRegex(&re);
+	return false;
+    }
+
+    char buf1[1000];
+    struct { FastBuf_t b; char space[500]; } res;
+    InitializeFastBuf(&res,sizeof(res));
+
+    bool dirty = false;
+    bmg_item_t * iptr = bmg->item;
+    bmg_item_t * iend = iptr + bmg->item_used;
+
+    for ( ; iptr < iend; iptr++ )
+    {
+	uint len1 = PrintString16BMG( buf1, sizeof(buf1), iptr->text, iptr->len,
+			BMG_UTF8_MAX, 0, true );
+// printf("-> [%d] %s\n",len1,buf1);
+
+	const int stat = ReplaceRegex(&re,&res.b,buf1,len1);
+	if ( stat >= 0 )
+	{
+// printf("{%d] %.*s\n",stat,stat,GetFastBufString(&res.b));
+	    AssignItemScanTextBMG(iptr,GetFastBufString(&res.b),stat);
+	    dirty = true;
+	}
+    }
+
+    ResetFastBuf(&res.b);
+    ResetRegex(&re);
+    return dirty;
+
+ #else
+    return false;
+ #endif
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool PatchRmRegexBMG
+(
+    bmg_t		* bmg,			// pointer to destination bmg
+    ccp			regex			// format parameter
+)
+{
+ #if ENABLE_BMG_REGEX
+    DASSERT(bmg);
+    DASSERT(regex);
+
+    PRINT("REGEX=%s\n",regex);
+
+    Regex_t re;
+    enumError err = ScanRegex(&re,true,regex);
+    if ( err || !re.valid )
+    {
+	ResetRegex(&re);
+	return false;
+    }
+
+    char buf1[1000];
+    struct { FastBuf_t b; char space[500]; } res;
+    InitializeFastBuf(&res,sizeof(res));
+
+    bool dirty = false;
+    bmg_item_t * iptr = bmg->item;
+    bmg_item_t * iend = iptr + bmg->item_used;
+
+    for ( ; iptr < iend; iptr++ )
+    {
+	uint len1 = PrintString16BMG( buf1, sizeof(buf1), iptr->text, iptr->len,
+			BMG_UTF8_MAX, 0, true );
+	//printf("-> [%d] %s\n",len1,buf1);
+
+	int stat = ReplaceRegex(&re,&res.b,buf1,len1);
+	if ( stat >= 0 )
+	{
+	    if (stat)
+		AssignItemScanTextBMG(iptr,GetFastBufString(&res.b),stat);
+	    else
+	    {
+		FreeItemBMG(iptr);
+		iptr->text = 0;
+		ResetAttribBMG(bmg,iptr);
+	    }
+	    dirty = true;
+	}
+    }
+
+    ResetFastBuf(&res.b);
+    ResetRegex(&re);
+    return dirty;
+
+ #else
+    return false;
+ #endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3079,7 +5071,7 @@ bool PatchReplaceBMG
 	    FreeItemBMG(dptr);
 	    DASSERT( dptr->mid == sptr->mid );
 
-	    copy_attrib(dest,dptr,sptr);
+	    CopyAttribBMG(dest,dptr,sptr);
 	    dptr->len	= sptr->len;
 	    dptr->text	= sptr->text;
 	    dirty = true;
@@ -3124,7 +5116,7 @@ bool PatchInsertBMG
 	    FreeItemBMG(dptr);
 	    DASSERT( dptr->mid == sptr->mid );
 
-	    copy_attrib(dest,dptr,sptr);
+	    CopyAttribBMG(dest,dptr,sptr);
 	    dptr->len	= sptr->len;
 	    dptr->text	= sptr->text;
 	    dirty = true;
@@ -3177,7 +5169,7 @@ bool PatchOverwriteBMG
 	    }
 	    DASSERT( dptr->mid == sptr->mid );
 
-	    copy_attrib(dest,dptr,sptr);
+	    CopyAttribBMG(dest,dptr,sptr);
 	    dirty = true;
 	}
     }
@@ -3216,7 +5208,7 @@ bool PatchDeleteBMG
 	    FreeItemBMG(dptr);
 	    DASSERT( dptr->mid == sptr->mid );
 	    dptr->text = 0;
-	    reset_attrib(dest,dptr);
+	    ResetAttribBMG(dest,dptr);
 	    dirty = true;
 	}
     }
@@ -3254,7 +5246,7 @@ bool PatchMaskBMG
 	{
 	    FreeItemBMG(dptr);
 	    dptr->text = 0;
-	    reset_attrib(dest,dptr);
+	    ResetAttribBMG(dest,dptr);
 	    dirty = true;
 	}
     }
@@ -3299,7 +5291,7 @@ bool PatchEqualBMG
 	{
 	    FreeItemBMG(dptr);
 	    dptr->text = 0;
-	    reset_attrib(dest,dptr);
+	    ResetAttribBMG(dest,dptr);
 	    dirty = true;
 	}
     }
@@ -3344,7 +5336,7 @@ bool PatchNotEqualBMG
 	{
 	    FreeItemBMG(dptr);
 	    dptr->text = 0;
-	    reset_attrib(dest,dptr);
+	    ResetAttribBMG(dest,dptr);
 	    dirty = true;
 	}
     }
@@ -3563,20 +5555,15 @@ bool PatchRmEscapesBMG
 		}
 	    }
 
-//DEL	    HexDump16(stdout,0,0x300,sp,(iptr->text+iptr->len-sp)*2);
 	    const uint esc_len = ((u8*)sp)[2] & 0xfe;
-//DEL	    HexDump16(stdout,0,0x400,sp,esc_len);
 	    if (!rm_escapes)
 	    {
-//DEL		HexDump16(stdout,0,0x500,iptr->text,(dp-iptr->text)*2);
 		memmove(dp,sp,esc_len);
-//DEL		HexDump16(stdout,0,0x600+(dp-iptr->text)*2,dp,esc_len);
 		dp += esc_len/2;
 	    }
 	    sp += esc_len/2;
 	}
 	iptr->len = dp - iptr->text;
-//DEL	HexDump16(stdout,0,0,iptr->text,iptr->len*2);
     }
     return dirty;
 }
@@ -3591,7 +5578,7 @@ bool PatchRmCupsBMG
     DASSERT(bmg);
     bool dirty = false;
     uint mid;
-    for ( mid = MID_RACING_CUP_BEG; mid < MID_RACING_CUP_END; mid++ )
+    for ( mid = MID_RCUP_BEG; mid < MID_RCUP_END; mid++ )
     {
 	bmg_item_t * ptr = FindItemBMG(bmg,mid);
 	if (ptr)
@@ -3599,13 +5586,14 @@ bool PatchRmCupsBMG
 	    FreeItemBMG(ptr);
 	    DASSERT( ptr->mid == mid );
 	    ptr->text = 0;
-	    reset_attrib(bmg,ptr);
+	    ResetAttribBMG(bmg,ptr);
 	    dirty = true;
 	}
     }
     return dirty;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 static uint bmg_copy_helper
@@ -3614,6 +5602,7 @@ static uint bmg_copy_helper
     bool		force,		// true: force replace
     uint		mid_src_1,	// first source message id
     uint		mid_src_2,	// NULL or second source message id
+    uint		mid_src_3,	// NULL or third source message id
     uint		mid_dest,	// destination message id
     uint		n_mid		// numbers of messages to procced
 )
@@ -3625,7 +5614,12 @@ static uint bmg_copy_helper
     {
 	bmg_item_t * sptr = FindItemBMG(bmg,mid_src_1+i);
 	if ( !sptr && mid_src_2 )
+	{
 	    sptr = FindItemBMG(bmg,mid_src_2+i);
+	    if ( !sptr && mid_src_3 )
+		sptr = FindItemBMG(bmg,mid_src_3+i);
+	}
+
 	if (sptr)
 	{
 	    bool old_item;
@@ -3633,7 +5627,7 @@ static uint bmg_copy_helper
 	    if ( force || !old_item || !dptr->len )
 	    {
 		AssignItemText16BMG(dptr,sptr->text,sptr->len);
-		copy_attrib(bmg,dptr,sptr);
+		CopyAttribBMG(bmg,dptr,sptr);
 		count++;
 	    }
 	}
@@ -3642,70 +5636,164 @@ static uint bmg_copy_helper
     return count;
 }
 
-//-----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
 
-bool PatchCtCopyBMG
+bool PatchCTCopyBMG
 (
     bmg_t		* bmg		// pointer to destination bmg
 )
 {
     uint dirty_count
-	= bmg_copy_helper( bmg, false, MID_TRACK1_BEG, MID_TRACK2_BEG,
-				MID_TRACK3_BEG, BMG_N_TRACK )
-	+ bmg_copy_helper( bmg, false, MID_ARENA1_BEG, MID_ARENA2_BEG,
-				MID_ARENA3_BEG, BMG_N_ARENA )
-	+ bmg_copy_helper( bmg, false, MID_RACING_CUP_BEG, 0,
+	= bmg_copy_helper( bmg, false, MID_TRACK1_BEG, MID_TRACK2_BEG, 0,
+				MID_CT_TRACK_BEG, BMG_N_TRACK )
+	+ bmg_copy_helper( bmg, false, MID_ARENA1_BEG, MID_ARENA2_BEG, 0,
+				MID_CT_ARENA_BEG, BMG_N_ARENA )
+	+ bmg_copy_helper( bmg, false, MID_RCUP_BEG, 0, 0,
 				MID_CT_CUP_BEG,
-				MID_RACING_CUP_END - MID_RACING_CUP_BEG )
-	+ bmg_copy_helper( bmg, false, MID_BATTLE_CUP_BEG, 0,
-				MID_CT_BATTLE_CUP_BEG,
-				MID_BATTLE_CUP_END - MID_BATTLE_CUP_BEG );
+				MID_RCUP_END - MID_RCUP_BEG )
+	+ bmg_copy_helper( bmg, false, MID_BCUP_BEG, 0, 0,
+				MID_CT_BCUP_BEG,
+				MID_BCUP_END - MID_BCUP_BEG );
     return dirty_count > 0;
 }
 
 //-----------------------------------------------------------------------------
 
-bool PatchCtForceCopyBMG
+bool PatchLECopyBMG
 (
     bmg_t		* bmg		// pointer to destination bmg
 )
 {
     uint dirty_count
-	= bmg_copy_helper( bmg, true, MID_TRACK1_BEG, MID_TRACK2_BEG,
-				MID_TRACK3_BEG, BMG_N_TRACK )
-	+ bmg_copy_helper( bmg, true, MID_ARENA1_BEG, MID_ARENA2_BEG,
-				MID_ARENA3_BEG, BMG_N_ARENA )
-	+ bmg_copy_helper( bmg, true, MID_RACING_CUP_BEG, 0,
-				MID_CT_CUP_BEG,
-				MID_RACING_CUP_END - MID_RACING_CUP_BEG )
-	+ bmg_copy_helper( bmg, true, MID_BATTLE_CUP_BEG, 0,
-				MID_CT_BATTLE_CUP_BEG,
-				MID_BATTLE_CUP_END - MID_BATTLE_CUP_BEG );
+	= bmg_copy_helper( bmg, false, MID_ARENA1_BEG, MID_ARENA2_BEG, MID_CT_ARENA_BEG,
+				MID_LE_ARENA_BEG, BMG_N_ARENA )
+	+ bmg_copy_helper( bmg, false, MID_TRACK1_BEG, MID_TRACK2_BEG, MID_CT_TRACK_BEG,
+				MID_LE_TRACK_BEG, BMG_N_TRACK )
+	+ bmg_copy_helper( bmg, false, MID_RCUP_BEG, MID_CT_CUP_BEG, 0,
+				MID_LE_CUP_BEG,
+				MID_RCUP_END - MID_RCUP_BEG )
+	+ bmg_copy_helper( bmg, false, MID_BCUP_BEG, MID_CT_BCUP_BEG, 0,
+				MID_LE_BCUP_BEG,
+				MID_BCUP_END - MID_BCUP_BEG );
     return dirty_count > 0;
+}
+
+//-----------------------------------------------------------------------------
+
+bool PatchXCopyBMG
+(
+    bmg_t		* bmg		// pointer to destination bmg
+)
+{
+    if (opt_bmg_support_lecode)
+	return PatchLECopyBMG(bmg);
+    if (opt_bmg_support_ctcode)
+	return PatchCTCopyBMG(bmg);
+    return false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool PatchCtFillBMG
+bool PatchCTForceCopyBMG
 (
     bmg_t		* bmg		// pointer to destination bmg
 )
 {
-    char buf[100];
-    bool dirty = false, found = false;
+    uint dirty_count
+	= bmg_copy_helper( bmg, true, MID_TRACK1_BEG, MID_TRACK2_BEG, 0,
+				MID_CT_TRACK_BEG, BMG_N_TRACK )
+	+ bmg_copy_helper( bmg, true, MID_ARENA1_BEG, MID_ARENA2_BEG, 0,
+				MID_CT_ARENA_BEG, BMG_N_ARENA )
+	+ bmg_copy_helper( bmg, true, MID_RCUP_BEG, 0, 0,
+				MID_CT_CUP_BEG,
+				MID_RCUP_END - MID_RCUP_BEG )
+	+ bmg_copy_helper( bmg, true, MID_BCUP_BEG, 0, 0,
+				MID_CT_BCUP_BEG,
+				MID_BCUP_END - MID_BCUP_BEG );
+    return dirty_count > 0;
+}
 
-    bmg_item_t * dptr = bmg->item;
-    bmg_item_t * dend = dptr + bmg->item_used;
+//-----------------------------------------------------------------------------
+
+bool PatchLEForceCopyBMG
+(
+    bmg_t		* bmg		// pointer to destination bmg
+)
+{
+    uint dirty_count
+	= bmg_copy_helper( bmg, true, MID_TRACK1_BEG, MID_TRACK2_BEG, MID_CT_TRACK_BEG,
+				MID_LE_TRACK_BEG, BMG_N_TRACK )
+	+ bmg_copy_helper( bmg, true, MID_ARENA1_BEG, MID_ARENA2_BEG, MID_CT_ARENA_BEG,
+				MID_LE_ARENA_BEG, BMG_N_ARENA )
+	+ bmg_copy_helper( bmg, true, MID_RCUP_BEG, MID_CT_CUP_BEG, 0,
+				MID_LE_CUP_BEG,
+				MID_RCUP_END - MID_RCUP_BEG )
+	+ bmg_copy_helper( bmg, true, MID_BCUP_BEG, MID_CT_BCUP_BEG, 0,
+				MID_LE_BCUP_BEG,
+				MID_BCUP_END - MID_BCUP_BEG );
+    return dirty_count > 0;
+}
+
+//-----------------------------------------------------------------------------
+
+bool PatchXForceCopyBMG
+(
+    bmg_t		* bmg		// pointer to destination bmg
+)
+{
+    if (opt_bmg_support_lecode)
+	return PatchLEForceCopyBMG(bmg);
+    if (opt_bmg_support_ctcode)
+	return PatchCTForceCopyBMG(bmg);
+    return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+bool PatchIdentificationBMG ( bmg_t *bmg, ct_bmg_t *ctb )
+{
+    DASSERT(bmg);
+    DASSERT(ctb);
+
+    bmg_item_t *bi = InsertItemBMG(bmg,MID_PARAM_IDENTIFY,0,0,0);
+    DASSERT(bi);
+    AssignItemTextBMG(bi,GetCtBMGIdentification(ctb,true),-1);
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+
+bool PatchFillBMG
+	( bmg_t *bmg, ct_mode_t ct_mode, uint rcup_limit, uint track_limit )
+{
+    ct_bmg_t ctb;
+    ct_mode = SetupCtBMG(&ctb,ct_mode,ct_mode);
+    if (!ctb.is_ct_code)
+	return false;
+
+
+    //--- check existence of at least one relevvant message
+
+    bool found = false;
+    bmg_item_t *dptr = bmg->item;
+    bmg_item_t *dend = dptr + bmg->item_used;
     for ( ; dptr < dend; dptr++ )
     {
-	if (   dptr->mid >= MID_TRACK1_BEG	&& dptr->mid < MID_TRACK1_END
-	    || dptr->mid >= MID_TRACK2_BEG	&& dptr->mid < MID_TRACK2_END
-	    || dptr->mid >= MID_ARENA1_BEG	&& dptr->mid < MID_ARENA1_END
-	    || dptr->mid >= MID_ARENA2_BEG	&& dptr->mid < MID_ARENA2_END
-	    || dptr->mid >= MID_RACING_CUP_BEG	&& dptr->mid < MID_RACING_CUP_END
-	    || dptr->mid >= MID_BATTLE_CUP_BEG	&& dptr->mid < MID_BATTLE_CUP_END
-	    || dptr->mid >= MID_CT_TRACK_BEG	&& dptr->mid < MID_CT_TRACK_END
-	    || dptr->mid >= MID_CT_CUP_BEG	&& dptr->mid < MID_CT_CUP_END
+	const u32 m = dptr->mid;
+	if (   m >= MID_TRACK1_BEG		&& m < MID_TRACK1_END
+	    || m >= MID_TRACK2_BEG		&& m < MID_TRACK2_END
+	    || m >= MID_ARENA1_BEG		&& m < MID_ARENA1_END
+	    || m >= MID_ARENA2_BEG		&& m < MID_ARENA2_END
+	    || m >= MID_RCUP_BEG		&& m < MID_RCUP_END
+	    || m >= MID_BCUP_BEG		&& m < MID_BCUP_END
+	    || m >= ctb.track_name1.beg		&& m < ctb.track_name1.end
+	    || m >= ctb.track_name2.beg		&& m < ctb.track_name2.end
+	    || m >= ctb.arena_name1.beg		&& m < ctb.arena_name1.end
+	    || m >= ctb.arena_name2.beg		&& m < ctb.arena_name2.end
+	    || m >= ctb.rcup_name.beg		&& m < ctb.rcup_name.end
+	    || m >= ctb.bcup_name.beg		&& m < ctb.bcup_name.end
+	    || m == ctb.random.beg
 	   )
 	{
 	    if ( dptr->text && dptr->text != bmg_null_entry )
@@ -3716,42 +5804,169 @@ bool PatchCtFillBMG
 	}
     }
 
-    if (found)
-    {
-	uint mid;
-	for ( mid = MID_CT_TRACK_BEG; mid <= MID_CT_TRACK_END; mid++ )
-	{
-	    bool old_item;
-	    bmg_item_t * dptr = InsertItemBMG(bmg,mid,0,0,&old_item);
-	    if ( !old_item || !dptr->len )
-	    {
-		if ( mid < MID_CT_TRACK_END-1 )
-		{
-		    const uint len
-			= snprintf(buf,sizeof(buf),"Track %02X",mid-MID_CT_TRACK_BEG);
-		    AssignItemTextBMG(dptr,buf,len);
-		}
-		else
-		    AssignItemTextBMG(dptr,"???", mid < MID_CT_TRACK_END ? 3 : 1 );
+    if (!found)
+	return false;
 
-		reset_attrib(bmg,dptr);
+
+    //--- random
+
+    char buf[100];
+    bool dirty = false;
+
+    if (ctb.random.beg)
+    {
+	bool old_item;
+	bmg_item_t * dptr = InsertItemBMG(bmg,ctb.random.beg,0,0,&old_item);
+	if ( !old_item || !dptr->len )
+	{
+	    AssignItemTextBMG(dptr,"???",3);
+	    ResetAttribBMG(bmg,dptr);
+	    dirty = true;
+	}
+    }
+
+
+    //--- fill arena names
+
+    uint mid;
+    for ( mid = ctb.arena_name1.beg; mid < ctb.arena_name1.end; mid++ )
+    {
+	bool old_item;
+	bmg_item_t * dptr = InsertItemBMG(bmg,mid,0,0,&old_item);
+	if ( !old_item || !dptr->len )
+	{
+	    const uint len
+		= snprintf(buf,sizeof(buf),"_A%u_",mid-ctb.arena_name1.beg);
+	    AssignItemTextBMG(dptr,buf,len);
+	    ResetAttribBMG(bmg,dptr);
+	    dirty = true;
+	}
+    }
+
+
+    //--- fill track names
+
+    if (!track_limit)
+	track_limit = opt_bmg_track_fill_limit;
+    uint max_track;
+    if (track_limit)
+    {
+	max_track = ctb.track_name1.beg + track_limit;
+	if ( max_track > ctb.track_name1.end )
+	    max_track = ctb.track_name1.end;
+    }
+    else
+	max_track = ctb.track_name1.end;
+
+    for ( mid = ctb.track_name1.beg; mid < max_track; mid++ )
+    {
+	bool old_item;
+	bmg_item_t * dptr = InsertItemBMG(bmg,mid,0,0,&old_item);
+	if ( !old_item || !dptr->len )
+	{
+	    const uint len
+		= snprintf(buf,sizeof(buf),"_T%03X_",mid-ctb.track_name1.beg);
+	    AssignItemTextBMG(dptr,buf,len);
+	    ResetAttribBMG(bmg,dptr);
+	    dirty = true;
+	}
+    }
+
+
+    //--- fill battle cup names
+
+    for ( mid = ctb.bcup_name.beg; mid < ctb.bcup_name.end; mid++ )
+    {
+	bool old_item;
+	bmg_item_t * dptr = InsertItemBMG(bmg,mid,0,0,&old_item);
+	if ( !old_item || !dptr->len )
+	{
+	    const uint len
+		= snprintf(buf,sizeof(buf),"_B%u_",mid-ctb.bcup_name.beg);
+	    AssignItemTextBMG(dptr,buf,len);
+	    ResetAttribBMG(bmg,dptr);
+	    dirty = true;
+	}
+    }
+
+
+    //--- fill racing cup names
+
+    if (!rcup_limit)
+	rcup_limit = opt_bmg_rcup_fill_limit;
+    uint max_cup;
+    if (rcup_limit)
+    {
+	max_cup = ctb.rcup_name.beg + rcup_limit;
+	if ( max_cup > ctb.rcup_name.end )
+	    max_cup = ctb.rcup_name.end;
+    }
+    else
+	max_cup = ctb.rcup_name.end;
+
+    for ( mid = ctb.rcup_name.beg; mid < max_cup; mid++ )
+    {
+	bool old_item;
+	bmg_item_t * dptr = InsertItemBMG(bmg,mid,0,0,&old_item);
+	if ( !old_item || !dptr->len )
+	{
+	    const uint len
+		= snprintf(buf,sizeof(buf),"_R%u_",mid-ctb.rcup_name.beg);
+	    AssignItemTextBMG(dptr,buf,len);
+	    ResetAttribBMG(bmg,dptr);
+	    dirty = true;
+	}
+    }
+
+    //--- identification
+
+    if (dirty)
+	PatchIdentificationBMG(bmg,&ctb);
+
+    return dirty;
+}
+
+//-----------------------------------------------------------------------------
+
+bool PatchXFillBMG ( bmg_t *bmg, uint rcup_limit, uint track_limit )
+{
+    if (opt_bmg_support_lecode)
+	return PatchLEFillBMG(bmg,rcup_limit,track_limit);
+
+    if (opt_bmg_support_ctcode)
+	return PatchCTFillBMG(bmg,rcup_limit,track_limit);
+
+    return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool PatchRmFilledBMG ( bmg_t *bmg )
+{
+    DASSERT(bmg);
+
+    bool dirty = false;
+    bmg_item_t * iptr = bmg->item;
+    bmg_item_t * iend = iptr + bmg->item_used;
+
+    for ( ; iptr < iend; iptr++ )
+    {
+	if (   iptr->mid >= 0x4000
+	    && iptr->len > 3
+	    && ntohs(iptr->text[0]) == '_'
+	    && ntohs(iptr->text[iptr->len-1]) == '_' )
+	{
+	    u16 ch = ntohs(iptr->text[1]);
+	    if ( ch == 'A' ||  ch == 'T' ||  ch == 'B' ||  ch == 'R' )
+	    {
+		FreeItemBMG(iptr);
+		iptr->text = 0;
+		ResetAttribBMG(bmg,iptr);
 		dirty = true;
 	    }
 	}
-
-	for ( mid = MID_CT_CUP_BEG; mid < MID_CT_CUP_END; mid++ )
-	{
-	    bool old_item;
-	    bmg_item_t * dptr = InsertItemBMG(bmg,mid,0,0,&old_item);
-	    if ( !old_item || !dptr->len )
-	    {
-		const uint len = mid >= MID_CT_BATTLE_CUP_BEG && mid < MID_CT_BATTLE_CUP_END
-			? snprintf(buf,sizeof(buf),"Battle %u",mid-MID_CT_BATTLE_CUP_BEG)
-			: snprintf(buf,sizeof(buf),"Cup %02X",mid-MID_CT_CUP_BEG);
-		AssignItemTextBMG(dptr,buf,len);
-	    }
-	}
     }
+
     return dirty;
 }
 
@@ -3774,7 +5989,7 @@ bool PatchRemoveBMG ( bmg_t * bmg, int mid1, int mid2 )
 	{
 	    FreeItemBMG(ptr);
 	    ptr->text = 0;
-	    reset_attrib(bmg,ptr);
+	    ResetAttribBMG(bmg,ptr);
 	    dirty = true;
 	}
     }
@@ -3791,19 +6006,21 @@ enumError PatchBMG
     bmg_t		*dest,			// pointer to destination bmg
     const bmg_t		*src,			// pointer to source bmg
     PatchModeBMG_t	patch_mode,		// patch mode
-    ccp			format,			// NULL or format parameter
+    ccp			string,			// NULL or string parameter
     bool		dup_strings	// true: alloc mem for copied strings (OVERWRITE)
 )
 {
     PRINT("PatchBMG(%p,%p,%u,%s,%d)\n",
-		dest, src, patch_mode, format, dup_strings );
+		dest, src, patch_mode, string, dup_strings );
     DASSERT(dest);
 
     bool dirty = false;
     switch(patch_mode)
     {
      case BMG_PM_PRINT:		dirty = PatchPrintBMG(dest,src); break;
-     case BMG_PM_FORMAT:	dirty = PatchFormatBMG(dest,src,format); break;
+     case BMG_PM_FORMAT:	dirty = PatchFormatBMG(dest,src,string); break;
+     case BMG_PM_REGEX:		dirty = PatchRegexBMG(dest,string); break;
+     case BMG_PM_RM_REGEX:	dirty = PatchRmRegexBMG(dest,string); break;
      case BMG_PM_ID:		dirty = PatchIdBMG(dest,false); break;
      case BMG_PM_ID_ALL:	dirty = PatchIdBMG(dest,true); break;
      case BMG_PM_UNICODE:	dirty = PatchRmEscapesBMG(dest,true,false); break;
@@ -3819,9 +6036,20 @@ enumError PatchBMG
 
      case BMG_PM_GENERIC:	dirty = PatchGenericBMG(dest,dest); break;
      case BMG_PM_RM_CUPS:	dirty = PatchRmCupsBMG(dest); break;
-     case BMG_PM_CT_COPY:	dirty = PatchCtCopyBMG(dest); break;
-     case BMG_PM_CT_FORCE_COPY:	dirty = PatchCtForceCopyBMG(dest); break;
-     case BMG_PM_CT_FILL:	dirty = PatchCtFillBMG(dest); break;
+
+     case BMG_PM_CT_COPY:	dirty = PatchCTCopyBMG(dest); break;
+     case BMG_PM_CT_FORCE_COPY:	dirty = PatchCTForceCopyBMG(dest); break;
+     case BMG_PM_CT_FILL:	dirty = PatchCTFillBMG(dest,0,0); break;
+
+     case BMG_PM_LE_COPY:	dirty = PatchLECopyBMG(dest); break;
+     case BMG_PM_LE_FORCE_COPY:	dirty = PatchLEForceCopyBMG(dest); break;
+     case BMG_PM_LE_FILL:	dirty = PatchLEFillBMG(dest,0,0); break;
+
+     case BMG_PM_X_COPY:	dirty = PatchXCopyBMG(dest); break;
+     case BMG_PM_X_FORCE_COPY:	dirty = PatchXForceCopyBMG(dest); break;
+     case BMG_PM_X_FILL:	dirty = PatchXFillBMG(dest,0,0); break;
+
+     case BMG_PM_RM_FILLED:	dirty = PatchRmFilledBMG(dest); break;
 
      default:			return ERROR0(ERR_NOT_IMPLEMENTED,0);
     }
@@ -3830,6 +6058,292 @@ enumError PatchBMG
 	TouchFileAttrib(&dest->fatt);
 
     return dirty ? ERR_DIFFER : ERR_OK;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			CT/LE support			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ct_mode_t NormalizeCtModeBMG ( ct_mode_t mode, ct_mode_t fallback )
+{
+    for(;;)
+    {
+	switch(mode)
+	{
+	    case CTM_NINTENDO:
+	    case CTM_CTCODE:
+	    case CTM_LECODE2:
+		return mode;
+
+	    case CTM_CTCODE_BASE:
+		return CTM_CTCODE;
+
+	    case CTM_LECODE1:
+	    case CTM_LECODE_BASE:
+		return CTM_LECODE_DEF;
+
+	    case CTM_OPTIONS:
+		if (opt_bmg_support_lecode)
+		    return CTM_LECODE2;
+		if (opt_bmg_support_ctcode)
+		    return CTM_CTCODE;
+		return CTM_NINTENDO;
+
+	    case CTM_NO_INIT:
+	    case CTM_AUTO:
+		break;
+	}
+
+	mode = fallback;
+	fallback = CTM_OPTIONS;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ct_mode_t SetupCtModeBMG ( ct_mode_t mode )
+{
+    mode = NormalizeCtModeBMG(mode,CTM_NINTENDO);
+    switch (mode)
+    {
+     case CTM_NINTENDO:
+	opt_bmg_support_mkw	= true;
+	opt_bmg_support_ctcode	= false;
+	opt_bmg_support_lecode	= false;
+	break;
+
+     case CTM_CTCODE:
+	opt_bmg_support_mkw	= true;
+	opt_bmg_support_ctcode	= true;
+	opt_bmg_support_lecode	= false;
+	break;
+
+     case CTM_LECODE2:
+	opt_bmg_support_mkw	= true;
+	opt_bmg_support_ctcode	= false;
+	opt_bmg_support_lecode	= true;
+	break;
+
+     default:
+	opt_bmg_support_mkw	= false;
+	opt_bmg_support_ctcode	= false;
+	opt_bmg_support_lecode	= false;
+	break;
+    }
+    return mode;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetCtModeNameBMG ( ct_mode_t mode, bool full )
+{
+    switch(mode)
+    {
+	case CTM_NINTENDO:	return "Nintendo";
+	case CTM_CTCODE:	return "CT-CODE";
+	case CTM_LECODE1:	return full ? "LE-CODE v1" : "LE-CODE";
+	case CTM_LECODE2:	return full ? "LE-CODE v2" : "LE-CODE";
+	default:		return "?";
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ct_mode_t SetupCtBMG ( ct_bmg_t *ctb, ct_mode_t mode, ct_mode_t fallback )
+{
+    mode = NormalizeCtModeBMG(mode,fallback);
+    if (ctb)
+    {
+	ctb->ct_mode	= mode;
+	ctb->identify	= MID_PARAM_IDENTIFY;
+	ctb->param.beg	= MID_PARAM_BEG;
+	ctb->param.end	= MID_PARAM_END;
+	ctb->param.n	= ctb->param.end - ctb->param.beg;
+
+	switch(mode)
+	{
+	    case CTM_CTCODE:
+		ctb->version		= 0;
+		ctb->is_ct_code		= 1;
+		ctb->le_phase		= 0;
+
+		ctb->rcup_name.beg	= MID_CT_RCUP_BEG;
+		ctb->rcup_name.end	= MID_CT_RCUP_END;
+		ctb->bcup_name.beg	= MID_CT_BCUP_BEG;
+		ctb->bcup_name.end	= MID_CT_BCUP_END;
+
+		ctb->track_name1.beg	= MID_CT_TRACK_BEG;
+		ctb->track_name1.end	= MID_CT_TRACK_END;
+		ctb->track_name2.beg	= 0;
+		ctb->track_name2.end	= 0;
+
+		ctb->arena_name1.beg	= MID_CT_ARENA_BEG;
+		ctb->arena_name1.end	= MID_CT_ARENA_END;
+		ctb->arena_name2.beg	= 0;
+		ctb->arena_name2.end	= 0;
+
+		ctb->cup_ref.beg	= MID_CT_CUP_REF_BEG;
+		ctb->cup_ref.end	= MID_CT_CUP_REF_END;
+
+		ctb->random.beg		= MID_CT_RANDOM;
+		ctb->random.end		= MID_CT_RANDOM+1;
+		break;
+
+	    case CTM_LECODE1:
+	    case CTM_LECODE2:
+		ctb->version		= mode == CTM_LECODE2 ? 2 : 1;
+		ctb->le_phase		= ctb->version;
+		ctb->is_ct_code		= 2;
+
+		ctb->rcup_name.beg	= MID_LE_RCUP_BEG;
+		ctb->rcup_name.end	= MID_LE_RCUP_END;
+		ctb->bcup_name.beg	= MID_LE_BCUP_BEG;
+		ctb->bcup_name.end	= MID_LE_BCUP_END;
+
+		ctb->track_name1.beg	= MID_LE_TRACK_BEG;
+		ctb->track_name1.end	= MID_LE_TRACK_END;
+		ctb->track_name2.beg	= 0;
+		ctb->track_name2.end	= 0;
+
+		ctb->arena_name1.beg	= MID_LE_ARENA_BEG;
+		ctb->arena_name1.end	= MID_LE_ARENA_END;
+		ctb->arena_name2.beg	= 0;
+		ctb->arena_name2.end	= 0;
+
+		ctb->cup_ref.beg	= MID_LE_CUP_REF_BEG;
+		ctb->cup_ref.end	= MID_LE_CUP_REF_END;
+
+		ctb->random.beg		= 0;
+		ctb->random.end		= 0;
+		break;
+
+	    default:
+		ctb->version		= 0;
+		ctb->is_ct_code		= 0;
+		ctb->le_phase		= 0;
+
+		ctb->rcup_name.beg	= MID_RCUP_BEG;
+		ctb->rcup_name.end	= MID_RCUP_END;
+		ctb->bcup_name.beg	= MID_BCUP_BEG;
+		ctb->bcup_name.end	= MID_BCUP_END;
+
+		ctb->track_name1.beg	= MID_TRACK1_BEG;
+		ctb->track_name1.end	= MID_TRACK1_END;
+		ctb->track_name2.beg	= MID_TRACK2_BEG;
+		ctb->track_name2.end	= MID_TRACK2_END;
+
+		ctb->arena_name1.beg	= MID_ARENA1_BEG;
+		ctb->arena_name1.end	= MID_ARENA1_END;
+		ctb->arena_name2.beg	= MID_ARENA2_BEG;
+		ctb->arena_name2.end	= MID_ARENA2_END;
+
+		ctb->cup_ref.beg	= 0;
+		ctb->cup_ref.end	= 0;
+
+		ctb->random.beg		= MID_RANDOM;
+		ctb->random.end		= MID_RANDOM+1;
+		break;
+	}
+
+	u32 min = M1(u32), max = 0;
+	bmg_range_t *ptr;
+	for ( ptr = &ctb->rcup_name; ptr <= &ctb->random; ptr++ )
+	{
+	    ptr->n = ptr->end - ptr->beg;
+	    if (ptr->n)
+	    {
+		if ( min > ptr->beg ) min = ptr->beg;
+		if ( max < ptr->end ) max = ptr->end;
+	    }
+	}
+	ctb->range.beg = min;
+	ctb->range.end = max;
+	ctb->range.n   = max - min;
+    }
+    return mode;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+#undef TAB
+#define TAB(nam) ctb->nam.beg, ctb->nam.n
+
+ccp GetCtBMGIdentification ( ct_bmg_t *ctb, bool full )
+{
+    DASSERT(ctb);
+
+    ccp name = GetCtModeNameBMG(ctb->ct_mode,false);
+    char buf[200];
+    int len;
+    if (full)
+	len = snprintf(buf,sizeof(buf),
+		"%x, %s, v=%x, ct=%x, le=%x, par=%x+%x,"
+		" rcup=%x+%x, bcup=%x+%x, t1=%x+%x, t2=%x+%x,"
+		" a1=%x+%x, a2=%x+%x, ref=%x+%x",
+		ctb->ct_mode, name, ctb->version,
+		ctb->is_ct_code==1, ctb->le_phase,
+		TAB(param),
+		TAB(rcup_name), TAB(bcup_name),
+		TAB(track_name1), TAB(track_name2),
+		TAB(arena_name1), TAB(arena_name2),
+		TAB(cup_ref) );
+    else
+	len = snprintf(buf,sizeof(buf),"%x, %s v%d",ctb->ct_mode,name,ctb->version);
+    return len > 0 ? CopyCircBuf(buf,len+1) : EmptyString;
+}
+
+#undef TAB
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void DumpCtMidHelper1 ( FILE *f, int indent, u32 id, ccp info )
+{
+    DASSERT(f);
+    if (id)
+	fprintf(f,"%*s%-20s %04x\n", indent, "", info, id );
+}
+
+//-----------------------------------------------------------------------------
+
+static void DumpCtMidHelper2 ( FILE *f, int indent, bmg_range_t *id, ccp info )
+{
+    DASSERT(f);
+    DASSERT(id);
+    if (id->beg)
+	fprintf(f,"%*s%-20s %04x .. %04x, %5u = 0x%04x\n",
+		indent, "", info, id->beg, id->end, id->n, id->n );
+}
+
+//-----------------------------------------------------------------------------
+
+void DumpCtBMG ( FILE *f, int indent, ct_bmg_t *ctb )
+{
+    DASSERT(f);
+    DASSERT(ctb);
+    indent = NormalizeIndent(indent);
+
+ #if defined(TEST) || defined(DEBUG)
+    fprintf(f,"%*s%s\n",indent,"",GetCtBMGIdentification(ctb,true));
+ #else
+    fprintf(f,"%*s%s\n",indent,"",GetCtBMGIdentification(ctb,false));
+ #endif
+
+    indent += 2;
+    DumpCtMidHelper1( f,indent, ctb->identify,		"Identification:" );
+    DumpCtMidHelper2( f,indent, &ctb->param,		"Parameters:" );
+    DumpCtMidHelper2( f,indent, &ctb->range,		"Data range:" );
+
+    DumpCtMidHelper2( f,indent, &ctb->rcup_name,	"  Racing cup names:" );
+    DumpCtMidHelper2( f,indent, &ctb->bcup_name,	"  Battle cup names:" );
+    DumpCtMidHelper2( f,indent, &ctb->track_name1,	"  Track names 1:" );
+    DumpCtMidHelper2( f,indent, &ctb->track_name2,	"  Track names 2:" );
+    DumpCtMidHelper2( f,indent, &ctb->arena_name1,	"  Battle names 1:" );
+    DumpCtMidHelper2( f,indent, &ctb->arena_name2,	"  Battle names 2:" );
+    DumpCtMidHelper2( f,indent, &ctb->cup_ref,		"  Cup reference:" );
+    DumpCtMidHelper1( f,indent, ctb->random.beg,	"  Random text:" );
 }
 
 //

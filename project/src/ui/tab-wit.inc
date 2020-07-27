@@ -1954,7 +1954,9 @@
   { T_COPY_GRP,	"SPLIT_CHUNK",	0,0,0 },
 
   { T_SEP_OPT,	0,0,0,0 },
+  { T_COPY_GRP,	"PATCH",	0,0,0 },
 
+  { T_SEP_OPT,	0,0,0,0 },
   { T_COPY_GRP,	"OUTMODE_FST",	0,0,0 },
 
 

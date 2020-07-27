@@ -3,10 +3,11 @@
 # standard object files
 
 DCLIB_O = dclib-basics.o dclib-color.o dclib-numeric.o \
-		dclib-file.o dclib-option.o \
-		dclib-utf8.o dclib-vector.o dclib-tables.o dclib-ui.o \
+		dclib-file.o dclib-option.o dclib-regex.o \
+		dclib-utf8.o dclib-shift-jis.o \
+		dclib-vector.o dclib-tables.o dclib-ui.o \
 		dclib-xdump.o dclib-debug.o
-DCLIB_O1 := lib-dol.o lib-bmg.o
+DCLIB_O1 := lib-dol.o lib-bmg.o lib-mkw.o
 DCLIB_O2 := lib-wiimmfi.o lib-gamespy.o lib-natneg.o
 
 DCLIB_PRIVATE := dclib-terminal* dclib-command* lib-wiimmfi* lib-gamespy* lib-natneg*

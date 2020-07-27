@@ -594,6 +594,7 @@ typedef enum enumOptions
 //				| OB_DIFF
 //				| OB_REMOVE
 //				| OB_GRP_SPLIT_CHUNK
+//				| OB_GRP_PATCH
 //				| OB_GRP_OUTMODE_FST,
 //
 //	OB_CMD_CONVERT		= OB_GRP_TITLES

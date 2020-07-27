@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -242,13 +242,43 @@ bool ResolveHostMem
 ///////////////			struct AllowIP4_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+const KeywordTab_t AllowIP4KeyTable[] =
+{
+	{ 0,			"0",		0,		1 },
+	{ ALLOW_MODE_DENY,	"DENY",		0,		1 },
+	{ ALLOW_MODE_ALLOW,	"ALLOW",	0,		0 },
+	{ ALLOW_MODE_AKEY,	"AKEY",		"JACC",		0 },
+
+	{ ALLOW_MODE_LOCAL,	"LOCAL",	0,		0 },
+	{ ALLOW_MODE_LAN,	"LAN",		0,		0 },
+	{ ALLOW_MODE_EXTERN,	"EXTERN",	0,		0 },
+
+	{ ALLOW_MODE_PUBLIC,	"PUBLIC",	0,		0 },
+	{ ALLOW_MODE_USER,	"USER",		0,		0 },
+	{ ALLOW_MODE_MOD,	"MOD",		"MODERATOR",	0 },
+	{ ALLOW_MODE_ADMIN,	"ADMIN",	"ADMINISTRATOR",0 },
+	{ ALLOW_MODE_DEVELOP,	"DEVELOP",	"DEVELOPER",	0 },
+
+	{ ALLOW_MODE_LOG,	"LOG",		0,		0 },
+	{ ALLOW_MODE_VERBOSE,	"VERBOSE",	0,		0 },
+
+	{ ALLOW_MODE_NOT,	"NOT",		0,		0 },
+	{ ALLOW_MODE_SET,	"SET",		0,		ALLOW_MODE__OP },
+	{ ALLOW_MODE_AND,	"AND",		0,		ALLOW_MODE__OP },
+	{ 0,			"OR",		0,		ALLOW_MODE__OP },
+	{ ALLOW_MODE_CONTINUE,	"CONTINUE",	0,		0 },
+	{0,0,0,0}
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
 void InitializeAllowIP4 ( AllowIP4_t *ai )
 {
     DASSERT(ai);
     memset(ai,0,sizeof(*ai));
     ai->ref_counter	= 1;
     ai->fallback_mode	= ALLOW_MODE_DENY;
-    ai->allow_mode	= ALLOW_MODE_ALLOW;
+    ai->allow_mode	= ALLOW_MODE_ALLOW|ALLOW_MODE_AKEY;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -339,35 +369,8 @@ enumError ScanLineAllowIP4
 
     //--- scan options
 
-    static const KeywordTab_t mytab[] =
-    {
-	{ 0,			"0",		0,		1 },
-	{ ALLOW_MODE_DENY,	"DENY",		0,		1 },
-	{ ALLOW_MODE_ALLOW,	"ALLOW",	0,		0 },
-
-	{ ALLOW_MODE_LOCAL,	"LOCAL",	0,		0 },
-	{ ALLOW_MODE_LAN,	"LAN",		0,		0 },
-	{ ALLOW_MODE_EXTERN,	"EXTERN",	0,		0 },
-
-	{ ALLOW_MODE_PUBLIC,	"PUBLIC",	0,		0 },
-	{ ALLOW_MODE_USER,	"USER",		0,		0 },
-	{ ALLOW_MODE_MOD,	"MOD",		"MODERATOR",	0 },
-	{ ALLOW_MODE_ADMIN,	"ADMIN",	"ADMINISTRATOR",0 },
-	{ ALLOW_MODE_DEVELOP,	"DEVELOP",	"DEVELOPER",	0 },
-
-	{ ALLOW_MODE_LOG,	"LOG",		0,		0 },
-	{ ALLOW_MODE_VERBOSE,	"VERBOSE",	0,		0 },
-
-	{ ALLOW_MODE_NOT,	"NOT",		0,		0 },
-	{ ALLOW_MODE_SET,	"SET",		0,		ALLOW_MODE__OP },
-	{ ALLOW_MODE_AND,	"AND",		0,		ALLOW_MODE__OP },
-	{ 0,			"OR",		0,		ALLOW_MODE__OP },
-	{ ALLOW_MODE_CONTINUE,	"CONTINUE",	0,		0 },
-	{0,0,0,0}
-    };
-
     if (!tab)
-	tab = mytab;
+	tab = AllowIP4KeyTable;
 
     char arg[1000];
     StringCopySMem(arg,sizeof(arg),line); // to be NULL terminated
@@ -475,11 +478,36 @@ void AddCountersAllowIP4
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+static uint print_mode_helper
+	( char *buf, uint bufsize, const KeywordTab_t *keytab, u64 mode )
+{
+    ASSERT(buf);
+    ASSERT(bufsize>1);
+    char *dest = buf, *end = buf + bufsize-1;
+    if (keytab)
+    {
+	mode &= ~(ALLOW_MODE_SET|ALLOW_MODE_AND);
+	for ( ; mode && keytab->name1; keytab++ )
+	{
+	    if ( keytab->id & mode )
+	    {
+		dest = StringCat2E(dest,end,keytab->name1," ");
+		mode &= ~keytab->id;
+	    }
+	}
+    }
+    *dest = 0;
+    return dest-buf;
+}
+
+//-----------------------------------------------------------------------------
+
 void DumpAllowIP4
 (
     FILE		*f,		// NULL or output file
     int			indent,		// indention
     const AllowIP4_t	*ai,		// NULL or source
+    const KeywordTab_t	*keytab,	// NULL or key table for output
     ccp			title,		// not NULL: Add title
     bool		print_tab_head	// true: add table headings and separators
 )
@@ -487,42 +515,52 @@ void DumpAllowIP4
     if ( !f || !ai )
 	return;
 
+    char buf[200];
+    uint i, fw_mode = 5, fw_settings = 8;
+    for ( i = 0; i < ai->used; i++ )
+    {
+	const AllowIP4Item_t *it = ai->list + i;
+	uint len = snprintf(buf,sizeof(buf),"%llx",it->mode);
+	if ( fw_mode < len )
+	     fw_mode = len;
+
+	len = print_mode_helper(buf,sizeof(buf),keytab,it->mode);
+	if ( fw_settings < len )
+	     fw_settings = len;
+    }
+
     indent = NormalizeIndent(indent);
-    fprintf(f, "%*sAllowIP4[%s]: %u reference%s, %u/%u elements, fallback:%llx, allow:%llx\n",
+    fprintf(f,	"%*sAllowIP4[%s]: %u reference%s, %u/%u elements,"
+		" fallback:%llx, allow:%llx\n",
 		indent,"", title ? title : "",
 		ai->ref_counter, ai->ref_counter == 1 ? "" : "s",
 		ai->used, ai->size,
 		ai->fallback_mode, ai->allow_mode );
 
+    const uint seplen = 52 + fw_mode + fw_settings;
     if (print_tab_head)
 	fprintf(f,"\n"
-		"%*s counter  ipv4 address        ipv4/netmask  > operation"
-		"             settings\n%*s%.78s\n",
-		indent,"", indent,"", Minus300 );
+		"%*s counter  ipv4 address        ipv4/netmask  > %-*s"
+		"  settings\n%*s%.*s\n",
+		indent,"", fw_mode+4, "operation",
+		indent,"", seplen, Minus300 );
 
-    uint i;
     for ( i = 0; i < ai->used; i++ )
     {
 	const AllowIP4Item_t *it = ai->list + i;
-
-	char opt[100];
-	StringCat2S(opt,sizeof(opt),
-		it->mode & ai->allow_mode ? "" : ",DENY",
-		it->mode & ALLOW_MODE_CONTINUE ? ",CONT" : "" );
-
-	fprintf(f, "%*s%8s  %-15s %08x/%08x > %s %016llx  %s\n",
+	print_mode_helper(buf,sizeof(buf),keytab,it->mode);
+	fprintf(f, "%*s%8s  %-15s %08x/%08x > %s %*llx  %s\n",
 		indent, "",
 		PrintNumberU7(0,0,it->count,DC_SFORM_ALIGN|DC_SFORM_DASH),
 		PrintIP4(0,0,it->addr,-1),
 		it->addr, it->mask,
 		it->mode & ALLOW_MODE_SET ? "SET"
 			:  it->mode & ALLOW_MODE_AND ? "AND" : "OR ",
-		it->mode,
-		*opt ? opt+1 : "-" );
+		fw_mode, it->mode, *buf ? buf : "-" );
     }
 
     if (print_tab_head)
-	fprintf(f,"%*s%.78s\n", indent,"", Minus300 );
+	fprintf(f,"%*s%.*s\n", indent,"", seplen, Minus300 );
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1385,9 +1423,9 @@ void PrintTranferStatistics
 		prefix, color1, name,
 		stat->conn_count, stat->conn_count == 1 ? "" : "s",
 		stat->recv_count, stat->recv_count == 1 ? "" : "s",
-		PrintSize1024(0,0,stat->recv_size,false),
+		PrintSize1024(0,0,stat->recv_size,0),
 		stat->send_count, stat->send_count == 1 ? "" : "s",
-		PrintSize1024(0,0,stat->send_size,false),
+		PrintSize1024(0,0,stat->send_size,0),
 		color0 );
     }
     else if ( stat->recv_count || stat->send_count )
@@ -1396,9 +1434,9 @@ void PrintTranferStatistics
 		"%s%s#STAT-%-5s %u packet%s (%s) received, %u packet%s (%s) send.%s\n",
 		prefix, color1, name,
 		stat->recv_count, stat->recv_count == 1 ? "" : "s",
-		PrintSize1024(0,0,stat->recv_size,false),
+		PrintSize1024(0,0,stat->recv_size,0),
 		stat->send_count, stat->send_count == 1 ? "" : "s",
-		PrintSize1024(0,0,stat->send_size,false),
+		PrintSize1024(0,0,stat->send_size,0),
 		color0 );
     }
     else
@@ -1427,8 +1465,8 @@ void PrintTranferStatistics
 		duration_info,
 		delta.recv_count, crate,
 		delta.recv_count == 1 ? "" : "s",
-		PrintSize1024(0,0,delta.recv_size,false),
-		PrintSize1024(0,0,srate,false),
+		PrintSize1024(0,0,delta.recv_size,0),
+		PrintSize1024(0,0,srate,0),
 		color0 );
 	}
 
@@ -1443,8 +1481,8 @@ void PrintTranferStatistics
 		duration_info,
 		delta.send_count, crate,
 		delta.send_count == 1 ? "" : "s",
-		PrintSize1024(0,0,delta.send_size,false),
-		PrintSize1024(0,0,srate,false),
+		PrintSize1024(0,0,delta.send_size,0),
+		PrintSize1024(0,0,srate,0),
 		color0 );
 	}
     }
@@ -1635,13 +1673,13 @@ uint RestoreStateTransferStatsN
 ///////////////			  TCP HANDLER			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-#define LOC_TCP HAVE_PRINT0
+#define LOG_TCP HAVE_PRINT0
 
 #undef INC_TCP_INDENT
 #undef DEC_TCP_INDENT
 #undef LOG_TCP_BUFFER
 
-#if LOC_TCP
+#if LOG_TCP
     static int tcp_indent = 5;
     #define INC_TCP_INDENT tcp_indent += 2
     #define DEC_TCP_INDENT tcp_indent -= 2
@@ -1683,6 +1721,7 @@ void ResetTCPStream
 )
 {
     DASSERT(ts);
+    LogTCPStreamActivity(ts,"ResetTCPStream");
     TCPHandler_t *th = ts->handler;
 
     if (th)
@@ -1706,7 +1745,7 @@ void ResetTCPStream
 
     if (th)
     {
-	// chain is only valid if path of TCP-handler
+	// chain is only valid if part of TCP-handler
 	if (ts->prev)
 	    ts->prev->next = ts->next;
 	if (ts->next)
@@ -1725,6 +1764,7 @@ void DestroyTCPStream
 )
 {
     DASSERT(ts);
+    LogTCPStreamActivity(ts,"DestroyTCPStream");
     ResetTCPStream(ts);
     FREE(ts);
 }
@@ -2164,8 +2204,8 @@ void LogTCPStream
     fprintf(f,"%*sTS: id:%x, sock=%d, %u packets received (%s), %u packets send (%s)",
 	indent,"",
 	ts->unique_id, ts->sock,
-	ts->stat.recv_count, PrintSize1024(0,0,ts->stat.recv_size,false),
-	ts->stat.send_count, PrintSize1024(0,0,ts->stat.send_size,false) );
+	ts->stat.recv_count, PrintSize1024(0,0,ts->stat.recv_size,0),
+	ts->stat.send_count, PrintSize1024(0,0,ts->stat.send_size,0) );
 
     if (format)
     {
@@ -2183,6 +2223,37 @@ void LogTCPStream
 	LogGrowBuffer(f,indent+2,&ts->ibuf,"in buf");
 	LogGrowBuffer(f,indent+2,&ts->obuf,"out buf");
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void LogTCPStreamActivity
+(
+    const TCPStream_t	*ts,		// valid TCP handler
+    ccp			activity
+)
+{
+    if (!ts->tracelog)
+	return;
+
+    char hbuf[200];
+    if (ts->handler)
+    {
+	const TCPHandler_t *th = ts->handler;
+	const Socket_t     *so = th->listen;
+
+	DASSERT( TCP_HANDLER_MAX_LISTEN >= 3 );
+	snprintf(hbuf,sizeof(hbuf),
+		" | TH#%u: %u/%u/%u, sock=%d,%d,%d",
+		th->unique_id,
+		th->used_streams, th->max_used_streams, th->total_streams,
+		so[0].sock, so[1].sock, so[2].sock  );
+    }
+    else
+	*hbuf = 0;
+
+    TraceLogPrint(ts->tracelog,
+	"%p %-20s sock=%d%s\n", ts, activity, ts->sock, hbuf );
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2538,6 +2609,7 @@ TCPStream_t * AddTCPStream
     th->stat.conn_count++;
     ts->connect_usec = GetTimeUSec(false);
 
+    LogTCPStreamActivity(ts,"AddTCPStream");
     return ts;
 }
 
@@ -2553,17 +2625,24 @@ TCPStream_t * CreateTCPStream
 {
     DASSERT(th);
 
-    TCPStream_t *ts = listen && listen->OnCreateStream ? listen->OnCreateStream(th) : 0;
+    TCPStream_t *ts = listen && listen->OnCreateStream
+			? listen->OnCreateStream(th,sock) : 0;
     if (!ts)
     {
 	if (th->OnCreateStream)
-	    ts = th->OnCreateStream(th);
+	    ts = th->OnCreateStream(th,sock);
 
 	if (!ts)
 	{
 	    ts = CALLOC(sizeof(*ts)+th->data_size,1);
 	    InitializeTCPStream(ts,sock);
 	}
+    }
+
+    if ( th->tracelog.level >= 0 )
+    {
+	ts->tracelog = &th->tracelog;
+	LogTCPStreamActivity(ts,"CreateTCPStream");
     }
 
     ts->allow_mode = allow_mode;
@@ -2755,7 +2834,7 @@ enumError ListenUnixTCP
 	return ERROR1(ERR_CANT_CREATE,"Can't bind UNIX socket: %s\n",path);
     }
 
-    stat = listen(sock,30);
+    stat = listen(sock,50);
     if ( stat == -1 )
     {
 	close(sock);
@@ -2836,7 +2915,7 @@ enumError ListenTCP
 	return ERR_CANT_CREATE;
     }
 
-    stat = listen(sock,30);
+    stat = listen(sock,50);
     if ( stat == -1 )
     {
 	ERROR1(ERR_CANT_CREATE,"Can't listen TCP socket: %s\n",
@@ -2987,6 +3066,8 @@ TCPStream_t * OnAcceptStream
     int new_sock = accept(lsock->sock,0,0);
     if ( new_sock != -1 )
     {
+	RegisterFileId(new_sock);
+
 	u64 allow_code = 0;
 	const u64 is_allowed = th->OnAllowStream
 			? th->OnAllowStream(th,lsock,new_sock,&allow_code)
@@ -3313,8 +3394,8 @@ void LogTCPHandler
     fprintf(f,"\n%*s    %u connects, %u packets received (%s), %u packets send (%s)\n",
 	indent,"",
 	th->stat.conn_count,
-	th->stat.recv_count, PrintSize1024(0,0,th->stat.recv_size,false),
-	th->stat.send_count, PrintSize1024(0,0,th->stat.send_size,false) );
+	th->stat.recv_count, PrintSize1024(0,0,th->stat.recv_size,0),
+	th->stat.send_count, PrintSize1024(0,0,th->stat.send_size,0) );
 
     if (recurse>0)
     {
@@ -4290,25 +4371,7 @@ TCPStream_t * RestoreStateTCPHandler_stream
  #endif
 
     TCPStream_t *ts = CreateTCPStream(th,fd,ALLOW_MODE_ALLOW,0);
- #if 1
     RestoreStateTCPStream(rs,ts,th->data_size);
- #else
-    ts->protect		= protect;
-    ts->auto_close	= GetParamFieldUINT( rs, "auto-close",	 ts->auto_close );
-    ts->rescan		= GetParamFieldUINT( rs, "rescan",	 ts->rescan );
-    ts->eof		= GetParamFieldUINT( rs, "eof",		 ts->eof );
-    ts->trigger_usec	= GetParamFieldU64 ( rs, "trigger-usec", ts->trigger_usec );
-    ts->accept_usec	= GetParamFieldU64 ( rs, "accept-usec",  ts->accept_usec );
-    ts->connect_usec	= GetParamFieldU64 ( rs, "connect-usec", ts->connect_usec );
-    ts->receive_usec	= GetParamFieldU64 ( rs, "receive-usec", ts->receive_usec );
-    ts->send_usec	= GetParamFieldU64 ( rs, "send-usec",    ts->send_usec );
-
-    GetParamFieldBUF(ts->info,sizeof(ts->info),rs,"info",ENCODE_STRING,"?");
-
-    RestoreStateTransferStats1(rs,"tfer-stat",&ts->stat,true);
-    RestoreStateGrowBuffer(&ts->ibuf,"ibuf-",rs);
-    RestoreStateGrowBuffer(&ts->obuf,"obuf-",rs);
- #endif
     return ts;
 }
 

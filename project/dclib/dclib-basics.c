@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -46,17 +46,20 @@
 #include <stddef.h>
 #include <errno.h>
 #include <sys/time.h>
+#include <fcntl.h>
 
 #include "dclib-basics.h"
 #include "dclib-debug.h"
 #include "dclib-file.h"
 #include "dclib-utf8.h"
+#include "dclib-network.h"
 
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////		some basic string functions		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+const char EmptyQuote[]	  = "\"\"";	// Ignored by FreeString()
 const char EmptyString[4] = "\0\0\0";	// Ignored by FreeString()
 const char MinusString[4] = "-\0\0";	// Ignored by FreeString()
 
@@ -329,7 +332,7 @@ void FreeString ( ccp str )
 {
     noTRACE("FreeString(%p) EmptyString=%p MinusString=%p\n",
 	    str, EmptyString, MinusString );
-    if ( str != EmptyString && str != MinusString )
+    if ( str != EmptyString && str != EmptyQuote && str != MinusString )
 	FREE((char*)str);
 }
 
@@ -453,6 +456,23 @@ char * StringCat3E ( char * buf, ccp buf_end, ccp src1, ccp src2, ccp src3 )
 char * StringCat3S ( char * buf, size_t buf_size, ccp src1, ccp src2, ccp src3 )
 {
     return StringCat3E(buf,buf+buf_size,src1,src2,src3);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// [[?]]
+
+char * StringCat2A  ( ccp src1, ccp src2 )
+{
+    mem_t mem = MemCat2A( MemByString(src1), MemByString(src2) );
+    return (char*)mem.ptr;
+}
+
+//-----------------------------------------------------------------------------
+
+char * StringCat3A  ( ccp src1, ccp src2, ccp src3 )
+{
+    mem_t mem = MemCat3A( MemByString(src1), MemByString(src2), MemByString(src3) );
+    return (char*)mem.ptr;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -588,12 +608,12 @@ char * PathCatBufPPE ( char * buf, size_t bufsize, ccp path1, ccp path2, ccp ext
     DASSERT(bufsize);
 
     char *ptr = path1 ? StringCopyS(buf,bufsize-1,path1) : buf;
-    if ( ptr > buf && ptr[-1] != '/' )
-	*ptr++ = '/';
     *ptr = 0;
 
     if (path2)
     {
+	if ( ptr > buf && ptr[-1] != '/' )
+	    *ptr++ = '/';
 	while ( *path2 == '/' )
 	    path2++;
 	ptr = StringCopyE(ptr,buf+bufsize,path2);
@@ -1356,66 +1376,6 @@ char * ScanName
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-static char circ_buf[CIRC_BUF_SIZE];
-static char *circ_ptr = circ_buf;
-
-//-----------------------------------------------------------------------------
-
-char * GetCircBuf
-(
-    // never returns NULL, but always ALIGN(4)
-
-    u32		buf_size	// wanted buffer size, add 1 for NULL-term
-				// if buf_size > CIRC_BUF_MAX_ALLOC:
-				//  ==> ERROR0(ERR_OUT_OF_MEMORY)
-)
-{
-    DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
-
-    buf_size = buf_size + 3 & ~3;
-    if ( buf_size > CIRC_BUF_MAX_ALLOC )
-    {
-	ERROR0(ERR_OUT_OF_MEMORY,
-		"Circulary buffer too small: needed=%u, half-size=%zu\n",
-		buf_size, sizeof(circ_buf)/2 );
-	ASSERT(0);
-	exit(ERR_OUT_OF_MEMORY);
-    }
-
-    if ( circ_buf + sizeof(circ_buf) - circ_ptr < buf_size )
-	circ_ptr = circ_buf;
-
-    char *result = circ_ptr;
-    circ_ptr = result + buf_size;
-    DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
-
-    noPRINT("CIRC-BUF: %3u -> %3zu / %3zu / %3zu\n",
-		buf_size, result-circ_buf, circ_ptr-circ_buf, sizeof(circ_buf) );
-    return result;
-}
-
-//-----------------------------------------------------------------------------
-
-void ReleaseCircBuf
-(
-    ccp	    end_buf,		// pointer to end of previous alloced buffer
-    uint    release_size	// number of bytes to give back from end
-)
-{
-    DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
-
-    if ( end_buf == circ_ptr
-	&& release_size <= CIRC_BUF_MAX_ALLOC
-	&& circ_ptr >= circ_buf + release_size )
-    {
-	circ_ptr -= release_size;
-	DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
 char * PrintVersion
 (
     char		* buf,		// result buffer
@@ -1475,6 +1435,497 @@ char * PrintID
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			    circ buf			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static char circ_buf[CIRC_BUF_SIZE];
+static char *circ_ptr = circ_buf;
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * GetCircBuf
+(
+    // never returns NULL, but always ALIGN(4)
+
+    u32		buf_size	// wanted buffer size, caller must add 1 for NULL-term
+				// if buf_size > CIRC_BUF_MAX_ALLOC:
+				//  ==> ERROR0(ERR_OUT_OF_MEMORY)
+)
+{
+    DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
+
+    buf_size = buf_size + 3 & ~3;
+    if ( buf_size > CIRC_BUF_MAX_ALLOC )
+    {
+	ERROR0(ERR_OUT_OF_MEMORY,
+		"Circulary buffer too small: needed=%u, half-size=%zu\n",
+		buf_size, sizeof(circ_buf)/2 );
+	ASSERT(0);
+	exit(ERR_OUT_OF_MEMORY);
+    }
+
+    if ( circ_buf + sizeof(circ_buf) - circ_ptr < buf_size )
+	circ_ptr = circ_buf;
+
+    char *result = circ_ptr;
+    circ_ptr = result + buf_size;
+    DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
+
+    noPRINT("CIRC-BUF: %3u -> %3zu / %3zu / %3zu\n",
+		buf_size, result-circ_buf, circ_ptr-circ_buf, sizeof(circ_buf) );
+    return result;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * CopyCircBuf
+(
+    // never returns NULL, but always ALIGN(4)
+
+    cvp		data,		// source to copy
+    u32		data_size	// see GetCircBuf()
+)
+{
+    char *dest = GetCircBuf(data_size);
+    memcpy(dest,data,data_size);
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * CopyCircBuf0
+(
+    // never returns NULL, but always ALIGN(4)
+    // an additional char is alloced and set to NULL
+
+    cvp		data,		// source to copy
+    u32		data_size	// see GetCircBuf()
+)
+{
+    char *dest = GetCircBuf(data_size+1);
+    memcpy(dest,data,data_size);
+    dest[data_size] = 0;
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * PrintCircBuf
+(
+    ccp		format,		// format string for vsnprintf()
+    ...				// arguments for 'format'
+)
+{
+    char buf[CIRC_BUF_MAX_ALLOC-1];
+    va_list arg;
+    va_start(arg,format);
+    const int len = vsnprintf(buf,sizeof(buf),format,arg);
+    va_end(arg);
+
+    return len > 0 ? CopyCircBuf0(buf,len) : (char*)EmptyString;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ReleaseCircBuf
+(
+    ccp	    end_buf,		// pointer to end of previous alloced buffer
+    uint    release_size	// number of bytes to give back from end
+)
+{
+    DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
+
+    if ( end_buf == circ_ptr
+	&& release_size <= CIRC_BUF_MAX_ALLOC
+	&& circ_ptr >= circ_buf + release_size )
+    {
+	circ_ptr -= release_size;
+	DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
+    }
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct FastBuf_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+FastBuf_t * InitializeFastBuf ( cvp mem, uint size )
+{
+    DASSERT(mem);
+    DASSERT( size >= sizeof(FastBuf_t) );
+
+    FastBuf_t *fb = (FastBuf_t*)mem;
+
+    int buf_size = (int)size - offsetof(FastBuf_t,fast_buf);
+    if ( buf_size < sizeof(fb->fast_buf) )
+    {
+	PrintError(__FUNCTION__,__FILE__,__LINE__,0,ERR_OUT_OF_MEMORY,
+		"Out of memory, FastBuf_t is at least %zd bytes to short.",
+			sizeof(fb->fast_buf) - size );
+	ASSERT(0);
+	return 0;
+    }
+
+    fb->fast_buf_size = buf_size;
+    fb->buf = fb->ptr = fb->fast_buf;
+    fb->end = fb->buf + buf_size - 1;
+    DASSERT( fb->buf < fb->end );
+    return fb;
+}
+
+//-----------------------------------------------------------------------------
+
+FastBuf_t * InitializeFastBufAlloc ( FastBuf_t *fb, uint size )
+{
+    DASSERT(fb);
+    InitializeFastBuf(fb,sizeof(*fb));
+
+    const uint new_size = GetGoodAllocSize(size+10);
+    fb->buf = MALLOC(new_size);
+    fb->ptr = fb->buf;
+    fb->end = fb->buf + new_size - 1;
+    return fb;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#define RESET_FASTBUF(fb) fb->buf = fb->ptr = fb->fast_buf; \
+			  fb->end = fb->buf + fb->fast_buf_size - 1;
+
+void ResetFastBuf ( FastBuf_t *fb )
+{
+    DASSERT(fb);
+    if ( fb->buf != fb->fast_buf )
+	FREE(fb->buf);
+
+    RESET_FASTBUF(fb)
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetFastBufStatus ( const FastBuf_t *fb )
+{
+    char info[100];
+    int len = snprintf(info,sizeof(info),"%s=%u/%u",
+		fb->buf == fb->fast_buf ? "FastBuf" : "Alloc",
+		(uint)(fb->ptr - fb->buf), (uint)(fb->end - fb->buf) );
+    return CopyCircBuf(info,len+1);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+char * MoveFromFastBufString ( FastBuf_t *fb )
+{
+    DASSERT(fb);
+    *fb->ptr = 0;
+
+    char *res;
+    if ( fb->buf == fb->fast_buf )
+    {
+	res = MEMDUP(fb->buf,fb->ptr-fb->buf);
+	fb->ptr = fb->buf;
+    }
+    else
+    {
+	res = fb->buf;
+	RESET_FASTBUF(fb)
+    }
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+mem_t MoveFromFastBufMem ( FastBuf_t *fb )
+{
+    DASSERT(fb);
+    *fb->ptr = 0;
+
+    mem_t res;
+    res.len = fb->ptr - fb->buf;
+
+    if ( fb->buf == fb->fast_buf )
+    {
+	res.ptr = MEMDUP(fb->buf,res.len);
+	fb->ptr = fb->buf;
+    }
+    else
+    {
+	res.ptr = fb->buf;
+	RESET_FASTBUF(fb)
+    }
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+char * GetSpaceFastBuf ( FastBuf_t *fb, uint size )
+{
+    DASSERT(fb);
+    if ( size > fb->end - fb->ptr )
+    {
+	const uint used = fb->ptr - fb->buf;
+	const uint new_size = GetGoodAllocSize( used + used/4 + size + 1000 );
+	if ( fb->buf == fb->fast_buf )
+	{
+	    fb->buf = MALLOC(new_size);
+	    memcpy(fb->buf,fb->fast_buf,used);
+	}
+	else
+	    fb->buf = REALLOC(fb->buf,new_size);
+	fb->ptr = fb->buf + used;
+	fb->end = fb->buf + new_size - 1;
+    }
+
+    char *res = fb->ptr;
+    fb->ptr += size;
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+
+int ReserveSpaceFastBuf ( FastBuf_t *fb, uint size )
+{
+    DASSERT(fb);
+    if ( size > 0 )
+	fb->ptr = GetSpaceFastBuf(fb,size);
+    return fb->end - fb->ptr;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint InsertFastBuf ( FastBuf_t *fb, int index, cvp source, int size )
+{
+    DASSERT(fb);
+    DASSERT(source||!size);
+
+    if ( size < 0 )
+	size = strlen(source);
+
+    const uint len = fb->ptr - fb->buf;
+    index = CheckIndex1(len,index);
+    noPRINT("index=%d/%d/%zd, size=%d\n",index,len,fb->end-fb->buf,size);
+
+    char *ptr = GetSpaceFastBuf(fb,size);
+    char *dest = fb->buf + index;
+    DASSERT( dest >= fb->buf );
+    DASSERT( dest + size + len <= fb->end );
+
+    memmove(dest+size,dest,ptr-dest);
+    memcpy(dest,source,size);
+    return index;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * AppendFastBuf ( FastBuf_t *fb, cvp source, int size )
+{
+    DASSERT(fb);
+    DASSERT(source||!size);
+
+    if ( size < 0 )
+	size = strlen(source);
+
+    char *dest = GetSpaceFastBuf(fb,size);
+    memcpy(dest,source,size);
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void AppendUTF8CharFastBuf ( FastBuf_t *fb, u32 code )
+{
+    char buf[8];
+    const uint len = PrintUTF8Char(buf,code) - buf;
+
+    char *dest = GetSpaceFastBuf(fb,len);
+    memcpy(dest,buf,len);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void AppendBE16FastBuf ( FastBuf_t *fb, u16 num )
+{
+    DASSERT(fb);
+
+    char *dest = GetSpaceFastBuf(fb,sizeof(num));
+    write_be16(dest,num);
+}
+
+//-----------------------------------------------------------------------------
+
+void AppendBE32FastBuf ( FastBuf_t *fb, u32 num )
+{
+    DASSERT(fb);
+
+    char *dest = GetSpaceFastBuf(fb,sizeof(num));
+    write_be32(dest,num);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void AppendInt64FastBuf ( FastBuf_t *fb, u64 val, IntMode_t mode )
+{
+    DASSERT(fb);
+
+    switch(mode)
+    {
+	case IMD_UNSET:
+	    AppendFastBuf(fb,&val,sizeof(val));
+	    break;
+
+	case IMD_BE1:
+	case IMD_LE1:	AppendCharFastBuf(fb,val); break;
+
+	case IMD_BE2:	write_be16(GetSpaceFastBuf(fb,2),val); break;
+	case IMD_BE3:	write_be24(GetSpaceFastBuf(fb,3),val); break;
+	case IMD_BE4:	write_be32(GetSpaceFastBuf(fb,4),val); break;
+	case IMD_BE5:	write_be40(GetSpaceFastBuf(fb,5),val); break;
+	case IMD_BE6:	write_be48(GetSpaceFastBuf(fb,6),val); break;
+	case IMD_BE7:	write_be56(GetSpaceFastBuf(fb,7),val); break;
+	case IMD_BE0:
+	case IMD_BE8:	write_be64(GetSpaceFastBuf(fb,8),val); break;
+
+	case IMD_LE2:	write_le16(GetSpaceFastBuf(fb,2),val); break;
+	case IMD_LE3:	write_le24(GetSpaceFastBuf(fb,3),val); break;
+	case IMD_LE4:	write_le32(GetSpaceFastBuf(fb,4),val); break;
+	case IMD_LE5:	write_le40(GetSpaceFastBuf(fb,5),val); break;
+	case IMD_LE6:	write_le48(GetSpaceFastBuf(fb,6),val); break;
+	case IMD_LE7:	write_le56(GetSpaceFastBuf(fb,7),val); break;
+	case IMD_LE0:
+	case IMD_LE8:	write_le64(GetSpaceFastBuf(fb,8),val); break;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * WriteFastBuf ( FastBuf_t *fb, uint offset, cvp source, int size )
+{
+    DASSERT(fb);
+
+    uint oldlen = fb->ptr - fb->buf;
+    uint minlen = offset + size;
+    if ( minlen > oldlen )
+    {
+	char *ptr = GetSpaceFastBuf(fb,minlen-oldlen);
+	memset(ptr,0,minlen-oldlen);
+    }
+    DASSERT( fb->ptr - fb->buf >= minlen );
+    char *dest = fb->buf + offset;
+    if (source)
+	memcpy( dest, source, size );
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint AssignFastBuf ( FastBuf_t *fb, cvp source, int size )
+{
+    DASSERT(fb);
+
+    if ( size < 0 )
+	size = strlen(source);
+
+    if ( source == fb->buf )
+    {
+	const uint used = fb->ptr - fb->buf;
+	if ( size < used )
+	    fb->ptr = fb->buf + size;
+	else
+	    size = used;
+    }
+    else
+    {
+	fb->ptr = fb->buf;
+	if (source)
+	    AppendFastBuf(fb,source,size);
+	*fb->ptr = 0;
+    }
+    return size;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint AlignFastBuf ( FastBuf_t *fb, uint align, u8 fill )
+{
+    DASSERT(fb);
+    const uint len = fb->ptr - fb->buf;
+    const uint append = ALIGN32(len,align) - len;
+    if ( append > 0 )
+    {
+	char *dest = GetSpaceFastBuf(fb,append);
+	memset(dest,fill,append);
+    }
+
+    return fb->ptr - fb->buf;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint DropFastBuf ( FastBuf_t *fb, int index, int size )
+{
+    DASSERT(fb);
+    if (size)
+    {
+	const uint len = fb->ptr - fb->buf;
+	index = CheckIndex1(len,index);
+	if ( size < 0 )
+	{
+	    size = -size;
+	    if ( size > index )
+		size = index;
+	    index -= size;
+	}
+	int index2 = CheckIndex1(len,index+size);
+	size = index2 - index;
+	if (size)
+	{
+	    memmove(fb->buf+index,fb->buf+index2,len-index2+1);
+	    fb->ptr -= size;
+	}
+    }
+
+    return size;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void CopyFastBuf ( FastBuf_t *dest, const FastBuf_t *src )
+{
+    if ( dest && dest != src )
+    {
+	if (!src)
+	    ClearFastBuf(dest);
+	else
+	    AssignFastBuf( dest, src->buf, src->ptr - src->buf );
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void MoveFastBuf ( FastBuf_t *dest, FastBuf_t *src )
+{
+    if ( dest && src && dest != src )
+    {
+	if ( src->buf != src->fast_buf )
+	{
+	    // src is allocated
+	    if ( dest->buf != dest->fast_buf )
+		FREE(dest->buf);
+	    dest->buf = src->buf;
+	    dest->ptr = src->ptr;
+	    dest->end = src->end;
+	    InitializeFastBuf( src, offsetof(FastBuf_t,fast_buf) + src->fast_buf_size );
+	}
+	else
+	    AssignFastBuf( dest, src->buf, src->ptr - src->buf );
+    }
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			    alloc info			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1505,7 +1956,8 @@ uint SetupAllocInfo()
 	    noPRINT("%4x: %p [%zx]\n",i,alloc[i],alloc[i]-alloc[ i>0 ? i-1 : 0 ] );
 	    if ( i > 1 )
 	    {
-		int diff = abs ( alloc[i-1] - alloc[i] );
+		const int diff = abs ( (int)(uintptr_t)(alloc[i-1])
+				     - (int)(uintptr_t)(alloc[i]) );
 		mask_found &= diff - 1;
 	    }
 	}
@@ -1525,7 +1977,8 @@ uint SetupAllocInfo()
 	    int found = 0x100;
 	    for ( i = 2; i <= MAX; i++ )
 	    {
-		const int diff = abs ( alloc[i-1] - alloc[i] ) - i;
+		const int diff = abs ( (int)(uintptr_t)(alloc[i-1])
+				     - (int)(uintptr_t)(alloc[i]) ) - i;
 		if ( diff >= 0 && found > diff )
 		    found = diff;
 	    }
@@ -1795,6 +2248,51 @@ bool LeftStrCmpMemEQ ( const mem_t mem, ccp str )
 {
     const uint slen = str ? strlen(str) : 0;
     return mem.len <= slen && !memcmp(mem.ptr,str,mem.len);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+mem_t MemCat2A ( const mem_t m1, const mem_t m2 )
+{
+    const uint len1 = m1.len >= 0 ? m1.len : strlen(m1.ptr);
+    const uint len2 = m2.len >= 0 ? m2.len : strlen(m2.ptr);
+
+    char *dest;
+    mem_t res;
+    res.len = len1 + len2;
+    res.ptr = dest = MALLOC(res.len+1);
+    dest[res.len] = 0;
+
+    if (len1)
+	memcpy(dest,m1.ptr,len1);
+    if (len2)
+	memcpy(dest+len1,m2.ptr,len2);
+
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+
+mem_t MemCat3A ( const mem_t m1, const mem_t m2, const mem_t m3 )
+{
+    const uint len1 = m1.len >= 0 ? m1.len : strlen(m1.ptr);
+    const uint len2 = m2.len >= 0 ? m2.len : strlen(m2.ptr);
+    const uint len3 = m3.len >= 0 ? m3.len : strlen(m3.ptr);
+
+    char *dest;
+    mem_t res;
+    res.len = len1 + len2 + len3;
+    res.ptr = dest = MALLOC(res.len+1);
+    dest[res.len] = 0;
+
+    if (len1)
+	memcpy(dest,m1.ptr,len1);
+    if (len2)
+	memcpy(dest+len1,m2.ptr,len2);
+    if (len3)
+	memcpy(dest+len1+len2,m3.ptr,len3);
+
+    return res;
 }
 
 //
@@ -2554,7 +3052,7 @@ Container_t * CreateContainer
     // returns 'c' or the alloced container
     // 'c' is always initialized
 
-    Container_t		*c,		// if NULL: alloc a container
+    Container_t		*c,		// valid container, alloc one if NULL
     int			protect,	// initial value for protection
     const void		*data,		// data to copy/move/link
     uint		size,		// size of 'data'
@@ -2567,12 +3065,37 @@ Container_t * CreateContainer
     c->protect_level = protect;
 
     ContainerData_t *cdata = CALLOC(sizeof(*cdata),1);
-    c->cdata = cdata;
-    cdata->data = CopyData(data,size,mode,&cdata->data_alloced);
-    cdata->size = size;
-    cdata->ref_count = 1;
+    c->cdata		= cdata;
+
+    cdata->data		= CopyData(data,size,mode,&cdata->data_alloced);
+    cdata->size		= size;
+    cdata->ref_count	= 1;
     if ( protect > 0 )
 	cdata->protect_count++;
+    return c;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+Container_t * InheritContainer
+(
+    // returns 'c' or the alloced container
+
+    Container_t		*c,		// valid container, alloc one if NULL
+    int			protect,	// initial value for protection
+    const Container_t	*parent,	// NULL or valid parent container
+    const void		*data,		// data to copy/move/link
+    uint		size		// size of 'data'
+)
+{
+    if (!c)
+	c = CALLOC(sizeof(*c),1);
+
+    if ( InContainerS(parent,data,size) || !InContainerS(c,data,size) )
+    {
+	UnlinkContainerData(c);
+	UseContainerData(c,protect,parent);
+    }
     return c;
 }
 
@@ -2597,10 +3120,10 @@ bool AssignContainer
 	{
 	    UnlinkContainerData(c);
 	    ContainerData_t *cdata = CALLOC(sizeof(*cdata),1);
-	    c->cdata = cdata;
-	    cdata->data = CopyData(data,size,mode,&cdata->data_alloced);
-	    cdata->size = size;
-	    cdata->ref_count = 1;
+	    c->cdata		= cdata;
+	    cdata->data		= CopyData(data,size,mode,&cdata->data_alloced);
+	    cdata->size		= size;
+	    cdata->ref_count	= 1;
 	    if ( protect > 0 )
 		cdata->protect_count++;
 	    return true;
@@ -2669,7 +3192,8 @@ ContainerData_t * LinkContainerData
 (
     // increment 'ref_count' and return NULL or current container-data
     // => use CatchContainerData() to complete operation
-    Container_t		*c		// NULL or valid container
+
+    const Container_t	*c		// NULL or valid container
 )
 {
     if ( !c || !c->cdata )
@@ -2704,11 +3228,12 @@ Container_t * CatchContainerData
     // returns 'c' or the alloced container
     // 'c' is always initialized
 
-    Container_t		*c,		// if NULL: alloc a container
+    Container_t		*c,		// valid container, alloc one if NULL
     int			protect,	// initial value for protection
     ContainerData_t	*cdata		// if not NULL: catch this
 )
-{    if (!c)
+{
+    if (!c)
 	c = MALLOC(sizeof(*c));
     memset(c,0,sizeof(*c));
     c->protect_level = protect;
@@ -2722,10 +3247,63 @@ Container_t * CatchContainerData
     return c;
 }
 
-//-----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ContainerData_t * DisjoinContainerData
+(
+    // Disjoin data container date without freeing it. Call either
+    // JoinContainerData() or FreeContainerData() to finish operation.
+    // Reference counters are not modified.
+    // Return the data container or NULL
+
+    Container_t		*c		// NULL or valid container
+)
+{
+    ContainerData_t *res = 0;
+    if ( c && c->cdata )
+    {
+	const int old_protect = SetProtectContainer(c,0);
+	res = c->cdata;
+	c->cdata = 0;
+	SetProtectContainer(c,old_protect);
+    }
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void JoinContainerData
+(
+    // Join a data container, that was diosjoined by DisjoinContainerData()
+    // Reference counters are not modified.
+
+    Container_t		*c,		// container to reset => no data
+    ContainerData_t	*cdata		// NULL or container-data to join
+)
+{
+    if (c)
+    {
+	UnlinkContainerData(c);
+	DASSERT(!c->cdata);
+	if (cdata)
+	{
+	    const int old_protect = SetProtectContainer(c,0);
+	    c->cdata = cdata;
+	    SetProtectContainer(c,old_protect);
+	}
+    }
+    else
+	FreeContainerData(cdata);
+}
+
+///////////////////////////////////////////////////////////////////////////////
 
 void FreeContainerData
 (
+    // Decrement the reference counter of an already disjoined data container
+    // and free it if unused.
+
     ContainerData_t	*cdata		// NULL or container-data to free
 )
 {
@@ -2737,6 +3315,7 @@ void FreeContainerData
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 bool ModifyAllContainer
@@ -2800,17 +3379,23 @@ bool ModifyContainer
 int SetProtectContainer
 (
     // returns 'c' new protection level
-    Container_t		*c,		// if NULL: alloc a container
+    Container_t		*c,		// valid container, alloc one if NULL
     int			new_protect	// new protection value
 )
 {
     DASSERT(c);
     if (c->cdata)
     {
-	if ( c->protect_level > 0 && new_protect <= 0 )
-	    c->cdata->protect_count--;
-	else if ( c->protect_level <= 0 && new_protect > 0 )
-	    c->cdata->protect_count++;
+	if ( new_protect > 0 )
+	{
+	    if ( c->protect_level <= 0 )
+		c->cdata->protect_count++;
+	}
+	else
+	{
+	    if ( c->protect_level > 0 )
+		c->cdata->protect_count--;
+	}
     }
     return c->protect_level = new_protect;
 }
@@ -3280,7 +3865,7 @@ static bool MatchPatternHelper
 		break;
 
 	   case '{':
-		for (;;)
+		for(;;)
 		{
 		    if (MatchPatternHelper(pattern,text,skip_end,alt_depth+1,path_sep))
 			return true;
@@ -3689,7 +4274,7 @@ s64 ScanKeywordListEx
     char *end  = key_buf + sizeof(key_buf) - 1;
     uint err_cnt = 0;
 
-    for (;;)
+    for(;;)
     {
 	while ( *arg > 0 && *arg <= ' ' || *arg == ',' || *arg == '.' )
 	    arg++;
@@ -3791,7 +4376,7 @@ enumError ScanKeywordListFunc
     char key_buf[KEYWORD_NAME_MAX];
     char *end  = key_buf + sizeof(key_buf) - 1;
 
-    for (;;)
+    for(;;)
     {
 	while ( *arg > 0 && *arg <= ' ' || *arg == ','  || *arg == '.' )
 	    arg++;
@@ -4099,7 +4684,7 @@ const KeywordTab_t KeyTab_OFF_AUTO_ON[] =
 
 int ScanKeywordOffAutoOn
 (
-    // returns one of OFFON_* (OFFON_ON on empty argument)
+    // returns one of OFFON_*
 
     ccp			arg,		// argument to scan
     int			on_empty,	// return this value on empty
@@ -4127,6 +4712,14 @@ int ScanKeywordOffAutoOn
 	PrintKeywordError(KeyTab_OFF_AUTO_ON,arg,status,0,object);
 
     return OFFON_ERROR;
+}
+
+//-----------------------------------------------------------------------------
+
+ccp GetKeywordOffAutoOn ( OffOn_t value )
+{
+    const KeywordTab_t *key = GetKewordById(KeyTab_OFF_AUTO_ON,value);
+    return key ? key->name1 : "?";
 }
 
 //
@@ -4167,19 +4760,45 @@ int ScanCommandList
 {
     DASSERT(cli);
 
+    static uint log_pid	= 0;
+    static uint log_seq	= 0;
+    static FILE *log	= 0;
+
+    if ( cli->log_fname && cli->log_level && !log_pid )
+    {
+	log_pid = getpid();
+	log = fopen(cli->log_fname,"ab");
+	if (log)
+	{
+	    fcntl(fileno(log),F_SETFD,FD_CLOEXEC);
+	    fprintf(log,"\n#\f\n#OPEN %s, pid=%d\n\n",
+			PrintTimeByFormat("%F %T %z",time(0)), log_pid );
+	}
+    }
+    uint log_level = log ? cli->log_level : 0;
+
+    cli->read_cmd_len = 0;
     const char sep = cli->command_sep ? cli->command_sep : ';';
     ccp cmd = cli->command, end = cmd + cli->command_len;
+    if ( log_level > 0 )
+    {
+	fprintf(log,"\n++ %u.%u len=%u\n",
+			log_pid, ++log_seq, cli->command_len );
+	fflush(log);
+    }
+
     for(;;)
     {
 	cli->n_bin = 0;
 	memset(cli->bin,0,sizeof(cli->bin));
 
-	//--- skip blanks and terminators
+	//--- skip blanks and terminators => find begin of record
 
 	while ( cmd < end && ( (uchar)*cmd <= ' ' || *cmd == sep ))
 	    cmd++;
-	cli->scanned_len = cmd - cli->command;
-	if ( cmd == end )
+	cli->read_cmd_len = cmd - cli->command; // definitley scanned!
+
+	if ( cmd >= end )
 	    break;
 
 	cli->record = (u8*)cmd;
@@ -4191,7 +4810,7 @@ int ScanCommandList
 	if (!endcmd)
 	{
 	    if (!cli->is_terminated)
-		break;
+		goto abort;
 	    endcmd = end;
 	}
 
@@ -4204,6 +4823,12 @@ int ScanCommandList
 	cli->cmd_len = param - cmd;
 	if ( cli->cmd_len > sizeof(cli->cmd)-1 )
 	     cli->cmd_len = sizeof(cli->cmd)-1;
+
+	if ( log_level > 1 )
+	{
+	    fprintf(log,">%.*s\n",cli->cmd_len,cmd);
+	    fflush(log);
+	}
 
 	if (cli->change_case)
 	{
@@ -4232,23 +4857,63 @@ int ScanCommandList
 		param++;
 
 	    if ( param == endcmd || *param != '\1' )
-		break;
+		break; // no binary!
+
+	    //-- From now on for binary examintation, only 'end' is relevant,
+	    //-- because binary data may contain the separator character.
+
+	    if ( param+3 > end )
+	    {
+		if ( log_level > 1 )
+		{
+		    fprintf(log,"bin incomplete\n");
+		    fflush(log);
+		}
+
+		if (cli->is_terminated)
+		{
+		    // now we have a conflict:
+		    fprintf(stderr,
+			"#WARN: Conflict in ExecCommandOfList():"
+			" Stream is terminated, but binary not: %s\n",
+			cli->user_ts ? cli->user_ts->info : "" );
+
+		    if (log)
+		    {
+			fprintf(log,"#WARN: Conflict: Stream is terminated, but binary not!\n");
+			fflush(log);
+		    }
+		}
+		goto abort; // incomplete
+	    }
 
 	    const uint bin_len = be16(++param);
 	    param += 2;
-	    if ( param + bin_len >= end )
-		goto abort; // definitley incomplete
+	    if ( log_level > 2 )
+	    {
+		fprintf(log,"bin %u,%u..%u/%u%s\n",
+			bin_len,
+			(uint)(param - cli->command),
+			(uint)(param - cli->command + bin_len),
+			cli->command_len,
+			param + bin_len > end ? " incomplete" : "" );
+		fflush(log);
+	    }
+	    if ( param + bin_len > end )
+		goto abort; // incomplete
 
 	    cli->bin[cli->n_bin].ptr = param;
 	    cli->bin[cli->n_bin].len = bin_len;
 	    param += bin_len;
 	    cli->n_bin++;
 
+	    //-- rescan 'endcmd' after binary block
+
 	    endcmd = memchr(param,sep,end-param);
 	    if (!endcmd)
 	    {
 		if (!cli->is_terminated)
-		    break;
+		    goto abort; // incomplete
 		endcmd = end;
 	    }
 	}
@@ -4277,6 +4942,16 @@ int ScanCommandList
 	    endparam--;
 	endparam++;
 
+	if ( log_level > 2 && endparam > param )
+	{
+	    const uint plen = endparam - param, max = 25;
+	    if ( plen <= max )
+		fprintf(log,"par %.*s\n",plen,param);
+	    else
+		fprintf(log,"par %.*s…+%u\n",max,param,plen-max);
+	    fflush(log);
+	}
+
 	if (cli->term_param)
 	{
 	    if ( cli->term_param > 1 )
@@ -4288,20 +4963,45 @@ int ScanCommandList
 		((char*)endparam)[0] = 0;
 	}
 
-	cli->param       = param;
-	cli->param_len   = endparam - param;
-	cli->record_len  = endparam - (ccp)cli->record;
-	cli->scanned_len = endcmd   - (ccp)cli->record;
-	cmd              = endcmd;
+	cli->param		= param;
+	cli->param_len		= endparam - param;
+	cli->record_len		= endparam - (ccp)cli->record;
+	cli->read_cmd_len	= endcmd   - (ccp)cli->command;
+	cmd			= endcmd;
 
 
 	//--- execute command
 
-	if ( func && func(cli) < 0 )
+	if ( log_level > 3 )
+	{
+	    fprintf(log,"func\n");
+	    fflush(log);
+	    const int stat = func(cli);
+	    fprintf(log,"s=%d\n",stat);
+	    fflush(log);
+	    if ( stat < 0 )
+		break;
+	}
+	else if ( func && func(cli) < 0 )
 	    break;
+
 	cli->cmd_count++;
     }
+
  abort:;
+    if ( log_level > 1 || log && cli->read_cmd_len > cli->command_len )
+    {
+	fprintf(log,"-- %u,%u/%u%s\n",
+		cli->cmd_count,
+		cli->read_cmd_len, cli->command_len,
+		cli->read_cmd_len > cli->command_len ? " #FAIL!" : "" );
+	fflush(log);
+    }
+
+    // should never happen
+    if ( cli->read_cmd_len > cli->command_len )
+	 cli->read_cmd_len = cli->command_len;
+
     return cli->fail_count ? -1 : cli->cmd_count;
 }
 
@@ -4339,12 +5039,13 @@ enumError Command_COLORS
 
     if ( level < 0 )
     {
-	printf("%s--color=%d [%s], colorize=%d [%s] / "
+	printf("%s--color=%d [%s], colorize=%d [%s]\n"
+		"term=%s\n"
 		"stdout: tty=%d, mode=%d [%s], have-color=%d, n-colors=%u%s\n",
 		colout->status,
 		opt_colorize, GetColorModeName(opt_colorize,"?"),
 		colorize_stdout, GetColorModeName(colorize_stdout,"?"),
-		isatty(fileno(stdout)),
+		getenv("TERM"), isatty(fileno(stdout)),
 		colout->col_mode, GetColorModeName(colout->col_mode,"?"),
 		colout->colorize, colout->n_colors, colout->reset );
 	return ERR_OK;
@@ -4616,9 +5317,9 @@ u32 ColorTab_M0_M15[16] =
 u8 ConvertColorRGB3ToM256 ( u8 r, u8 g, u8 b )
 {
     // 0..5
-    const uint r6 = SingleColorToM6(r);
-    const uint g6 = SingleColorToM6(g);
-    const uint b6 = SingleColorToM6(b);
+    const int r6 = SingleColorToM6(r);
+    const int g6 = SingleColorToM6(g);
+    const int b6 = SingleColorToM6(b);
 
     u8	 m256	= 36*r6 + 6*g6 + b6 + 16;
     uint delta	= abs ( ( r6 ? 55 + 40 * r6 : 0 ) - r  )
@@ -4627,7 +5328,7 @@ u8 ConvertColorRGB3ToM256 ( u8 r, u8 g, u8 b )
 
     //printf("%02x>%u %02x>%u %02x>%u : m=%u delta=%d\n",r,r6,g,g6,b,b6,m256,delta);
 
-    uint m, gray, prev = 0x1000000;
+    int m, gray, prev = 0x1000000;
     for ( m = 232, gray = 8; m < 256; m++, gray += 10 )
     {
 	const uint d = abs( gray - r ) + abs( gray - g ) + abs( gray - b );
@@ -4664,7 +5365,7 @@ u32 ConvertColorM256ToRGB ( u8 m256 )
 	const uint r =  m256 / 36;
 	const uint g =  m256 / 6 % 6;
 	const uint b =  m256 % 6;
-	
+
 	u32 col = 0;
 	if (r) col |= 0x370000 + 0x280000 * r;
 	if (g) col |= 0x003700 + 0x002800 * g;
@@ -4806,8 +5507,11 @@ void ResetStringField ( StringField_t * sf )
 		FreeString(*ptr);
 	}
 	FREE(sf->field);
+
+	int (*func_cmp)( ccp s1, ccp s2 ) = sf->func_cmp;
+	InitializeStringField(sf);
+	sf->func_cmp = func_cmp;
     }
-    InitializeStringField(sf);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -4954,7 +5658,7 @@ void AppendStringField ( StringField_t * sf, ccp key, bool move_key )
 	    sf->field = REALLOC(sf->field,sf->size*sizeof(*sf->field));
 	}
 	TRACE("AppendStringField(%s,%d) %d/%d\n",key,move_key,sf->used,sf->size);
-	ccp * dest = sf->field + sf->used++;
+	ccp *dest = sf->field + sf->used++;
 	*dest = move_key ? key : STRDUP(key);
     }
 }
@@ -5029,8 +5733,8 @@ enumError LoadStringField
 )
 {
     ASSERT(sf);
-    ASSERT(filename);
-    ASSERT(*filename);
+    DASSERT(filename);
+    DASSERT(*filename);
 
     TRACE("LoadStringField(%p,%d,%d,%s,%d)\n",sf,init_sf,sort,filename,silent);
 
@@ -5048,7 +5752,7 @@ enumError LoadStringField
     char iobuf[10000];
     while (fgets(iobuf,sizeof(iobuf)-1,f))
     {
-	char * ptr = iobuf;
+	char *ptr = iobuf;
 	while (*ptr)
 	    ptr++;
 	if ( ptr > iobuf && ptr[-1] == '\n' )
@@ -5240,11 +5944,13 @@ void ResetParamField ( ParamField_t * pf )
 	    }
 	}
 	FREE(pf->field);
-    }
 
-    const bool free_data = pf->free_data;
-    InitializeParamField(pf);
-    pf->free_data = free_data;
+	const bool free_data = pf->free_data;
+	int (*func_cmp)( ccp s1, ccp s2 ) = pf->func_cmp;
+	InitializeParamField(pf);
+	pf->free_data = free_data;
+	pf->func_cmp = func_cmp;
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -5571,7 +6277,7 @@ void CopyMemMap
     const MemMap_t	* mm2,		// NULL or second mem map
     bool		use_tie		// TRUE: use InsertMemMapTie()
 )
-{   
+{
     DASSERT(mm1);
     ResetMemMap(mm1);
     MergeMemMap(mm1,mm2,use_tie);
@@ -5956,7 +6662,7 @@ char * ScanAddress
 	end = ScanUINT(&result->size,++arg,default_base);
 	result->stat = 2;
     }
-    
+
     return (char*)end;
 }
 
@@ -7135,7 +7841,7 @@ void LogGrowBuffer
 	PrintSize1024(0,0,gb->used,DC_SFORM_TINY|DC_SFORM_ALIGN),
 	PrintSize1024(0,0,gb->max_used,DC_SFORM_TINY|DC_SFORM_ALIGN),
 	PrintSize1024(0,0,gb->size,DC_SFORM_TINY|DC_SFORM_ALIGN),
-	PrintNumberU6(0,0,gb->ptr-gb->buf,true),
+	PrintNumberU6(0,0,gb->ptr-gb->buf,DC_SFORM_ALIGN),
 	PrintSize1024(0,0,gb->grow_size,DC_SFORM_TINY|DC_SFORM_ALIGN),
 	PrintSize1024(0,0,gb->max_size,DC_SFORM_TINY|DC_SFORM_ALIGN),
 	gb->disabled );
@@ -7331,8 +8037,57 @@ uint CreateUniqueId ( int range )
 {
     static uint unique_id = 1;
     const uint ret = unique_id;
-    unique_id += range > 0 ? range : 0;
+    if ( range > 0 )
+	unique_id += range;
     return ret;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void Sha1Hex2Bin ( sha1_hash_t bin, ccp src, ccp end )
+{
+    DASSERT(bin);
+    DASSERT(src);
+
+    uint i;
+    for ( i = 0; i < 20; i++ )
+	bin[i] = ScanDigits(&src,end,16,2,0);
+}
+
+//-----------------------------------------------------------------------------
+
+void Sha1Bin2Hex ( sha1_hex_t hex, cvp bin )
+{
+    DASSERT(hex);
+    DASSERT(bin);
+
+    snprintf(hex,sizeof(sha1_hex_t),"%08x%08x%08x%08x%08x",
+	be32(bin), be32(bin+4), be32(bin+8), be32(bin+12), be32(bin+16) );
+}
+
+//-----------------------------------------------------------------------------
+
+ccp GetSha1Hex ( cvp bin )
+{
+    DASSERT(bin);
+
+    char *hex = GetCircBuf(sizeof(sha1_hex_t));
+    Sha1Bin2Hex(hex,bin);
+    return hex;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void * dc_memrchr ( cvp src, int ch, size_t size )
+{
+    if ( !src || !size )
+	return 0;
+
+    ccp ptr = src + size;
+    while ( ptr > (ccp)src )
+	if ( *--ptr == ch )
+	    return (void*)ptr;
+    return 0;
 }
 
 //

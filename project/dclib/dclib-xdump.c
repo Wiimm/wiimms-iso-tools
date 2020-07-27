@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -120,7 +120,6 @@ int XDumpStandardOutput
 {
     DASSERT(xd);
     DASSERT(dump);
-    DASSERT(text);
 
     if (xd->f)
     {
@@ -176,6 +175,7 @@ static void print_text ( char *buf, const u8 *data, int n )
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			XParam_t			///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[XParam_t]]
 
 typedef struct XParam_t
 {
@@ -186,6 +186,7 @@ typedef struct XParam_t
     bool	term;		// true: data complete
     bool	recalc_align;	// true: recalculate alignment
     bool	next_line;	// true: continue at next line
+    const u64	*addr_break;	// NULL or pointer to next break
 
     uint	skip;		// number of columns to skip
     uint	line_size;	// current line size (source bytes)
@@ -219,6 +220,7 @@ static void SetupXParam
     p->d		= data;
     p->end		= p->d + size;
     p->recalc_align	= xd->mode_align;
+    p->addr_break	= xd->addr_break;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -242,6 +244,21 @@ static uint SetupXParamLine ( XParam_t *p, XDump_t *xd )
     p->line_size	= xd->bytes_per_line < p->size
 			? xd->bytes_per_line
 			: p->term ? p->size : 0;
+
+    if ( p->addr_break )
+    {
+	while ( *p->addr_break && xd->addr >= *p->addr_break )
+	    p->addr_break++;
+
+	if (!*p->addr_break)
+	    p->addr_break = 0;
+	else
+	{
+	    const s64 max = *p->addr_break - xd->addr;
+	    if ( p->line_size > max )
+		p->line_size = max;
+	}
+    }
 
     p->max_col		= p->line_size / xd->bytes_per_col;
     p->line_size	= p->max_col * xd->bytes_per_col;
@@ -395,16 +412,24 @@ static int DumpInt32
 		    if ( p.d < p.end )
 			num += sprintf(num, "%*c%u", xd->num_format_fw-1,
 					'>', (int)(p.end-p.d) );
-		    else
+		    else if ( xd->print_endmarker )
 			num += sprintf(num,"%*c", xd->num_format_fw, '/' );
+		    else if ( xd->print_text )
+		    {
+			memset(num,' ',xd->num_format_fw);
+			num += xd->num_format_fw;
+		    }
 		    p.term = false; // print only once
 		}
-		else if (xd->print_text)
+		else if ( xd->print_text )
 		{
 		    memset(num,' ',xd->num_format_fw);
 		    num += xd->num_format_fw;
 		}
 	    }
+	    if (!xd->print_text)
+		while ( num > p.num_buf && num[-1] == ' ' )
+		    num--;
 	    *num = 0;
 	    ASSERT( num < p.num_buf + sizeof(p.num_buf));
 	    xd->last_number_fw = num - p.num_buf;
@@ -422,7 +447,6 @@ static int DumpInt32
 	xd->addr += p.line_size;
 	p.size   -= p.line_size;
     }
-
     const uint written = p.d - (u8*)p_data;
     xd->written += written;
     return written;
@@ -490,8 +514,13 @@ static int DumpInt64
 		    if ( p.d < p.end )
 			num += sprintf(num, "%*c%u", xd->num_format_fw-1,
 					'>', (int)(p.end-p.d) );
-		    else
+		    else if ( xd->print_endmarker )
 			num += sprintf(num,"%*c", xd->num_format_fw, '/' );
+		    else if (xd->print_text)
+		    {
+			memset(num,' ',xd->num_format_fw);
+			num += xd->num_format_fw;
+		    }
 		    p.term = false; // print only once
 		}
 		else if (xd->print_text)
@@ -573,7 +602,7 @@ static int DumpFloat
 		    if ( xd->bytes_per_col == 4 )
 		    {
 			val = xd->endian_func->rdf4(p.d);
-			format	= fabsf(val) <= 9999.0 && fabsf(val) >= 1e-3
+			format	= fabs(val) <= 9999.0 && fabs(val) >= 1e-3
 				? xd->num_format1 : xd->num_format2;
 			p.d += 4;
 		    }
@@ -591,8 +620,13 @@ static int DumpFloat
 		    if ( p.d < p.end )
 			num += sprintf(num, "%*c%u", xd->num_format_fw-1,
 					'>', (int)(p.end-p.d) );
-		    else
+		    else if ( xd->print_text )
 			num += sprintf(num,"%*c", xd->num_format_fw, '/' );
+		    else if (xd->print_text)
+		    {
+			memset(num,' ',xd->num_format_fw);
+			num += xd->num_format_fw;
+		    }
 		    p.term = false; // print only once
 		}
 		else if (xd->print_text)
@@ -638,6 +672,7 @@ void InitializeXDump ( XDump_t *xd )
     xd->print_format	=
     xd->print_addr	=
     xd->print_number	=
+    xd->print_endmarker	=
     xd->print_text	=
     xd->print_diff_sep	=
     xd->print_summary	= true;
@@ -1033,10 +1068,13 @@ static void SetupRemainder
     xd->assumed_size	= size;
     xd->min_width	= size;
     xd->max_width	= size;
-    xd->min_number_fw	= xd->last_number_fw;
     xd->extra_space	= 0;
     xd->mode_align	= false;
     xd->mode_ignore	= false;
+
+    if (xd->print_text)
+	xd->min_number_fw = xd->last_number_fw;
+
     SetupXDump(xd,cmd);
 }
 
@@ -1365,6 +1403,7 @@ static int XDiffHelper
     XDump_t		*xd,		// original params; SetupXDump() already done!
     XDiff_t		*d1,		// first diff file
     XDiff_t		*d2,		// second diff file
+    uint		limit_lines,	// >0: limit number of differ-lines
     bool		colorize	// true: use red and green on output
 )
 {
@@ -1398,6 +1437,10 @@ static int XDiffHelper
     const u8 *p1 = d1->data;
     const u8 *p2 = d2->data;
 
+    const u64 *save_addr_break	= xd->addr_break;
+    const u64 *addr_break	= save_addr_break;
+    xd->addr_break		= 0;
+
 
     //--- main loop
 
@@ -1422,15 +1465,39 @@ static int XDiffHelper
     #endif
 
 	//---
-	const uint dumpsize1 = size1 < xd->bytes_per_line ? size1 : xd->bytes_per_line;
-	const uint dumpsize2 = size2 < xd->bytes_per_line ? size2 : xd->bytes_per_line;
+	int dumpsize1 = size1 < (int)xd->bytes_per_line ? size1 : xd->bytes_per_line;
+	int dumpsize2 = size2 < (int)xd->bytes_per_line ? size2 : xd->bytes_per_line;
+
+	bool have_break = false;
+	if (addr_break)
+	{
+	    while ( *addr_break && xd->addr >= *addr_break )
+		addr_break++;
+
+	    if (!*addr_break)
+		addr_break = 0;
+	    else
+	    {
+		const s64 max = *addr_break - xd->addr;
+		if ( dumpsize1 > max || dumpsize2 > max )
+		{
+		    have_break = true;
+		    if ( dumpsize1 > max ) dumpsize1 = max;
+		    if ( dumpsize2 > max ) dumpsize2 = max;
+		}
+	    }
+	}
+
     #if !OPTIMIZED_SEARCH
-	const uint diffsize  = dumpsize1 < dumpsize2 ? dumpsize1 : dumpsize2;
+	const uint diffsize = dumpsize1 < dumpsize2 ? dumpsize1 : dumpsize2;
     #endif
 	uint donesize = dumpsize1 > dumpsize2 ? dumpsize1 : dumpsize2;
 
+//DEL fprintf(stderr,">>> %d,%d done=%d, donesize=%d, diffsize=%d\n",size1,size2,done,donesize,diffsize);
+
     #if !OPTIMIZED_SEARCH
-	if ( diffsize < xd->bytes_per_line || memcmp(p1,p2,diffsize) )
+	if ( diffsize > 0
+		&& ( diffsize < xd->bytes_per_line || memcmp(p1,p2,diffsize) ))
     #endif
 	{
 	    if ( dumpsize1 != dumpsize2 && !xd->diff_size )
@@ -1440,13 +1507,13 @@ static int XDiffHelper
 		    xd->diff_count++;
 	    }
 
-	    if ( dumpsize1 >= xd->bytes_per_col )
+	    if ( dumpsize1 >= (int)xd->bytes_per_col )
 	    {
 		const int stat = xd->dump_func(&d1->xd,p1,dumpsize1,true);
 		if ( stat >= 0 && stat < dumpsize1 && donesize > stat )
 		    donesize = stat;
 	    }
-	    else if ( dumpsize1 )
+	    else if ( dumpsize1 > 0 )
 	    {
 		SetupRemainder(&d1->xd,&d1->xd,XDUMPC_DIFF,dumpsize1);
 		d1->xd.dump_func(&d1->xd,p1,dumpsize1,true);
@@ -1458,13 +1525,13 @@ static int XDiffHelper
 		*d1->text_buf = 0;
 	    }
 
-	    if ( dumpsize2 >= xd->bytes_per_col )
+	    if ( dumpsize2 >= (int)xd->bytes_per_col )
 	    {
 		const int stat = xd->dump_func(&d2->xd,p2,dumpsize2,true);
 		if ( stat >= 0 && stat < dumpsize2 && donesize > stat )
 		    donesize = stat;
 	    }
-	    else if ( dumpsize2 )
+	    else if ( dumpsize2 > 0 )
 	    {
 		SetupRemainder(&d2->xd,&d2->xd,XDUMPC_DIFF,dumpsize2);
 		d2->xd.dump_func(&d2->xd,p2,dumpsize2,true);
@@ -1477,6 +1544,8 @@ static int XDiffHelper
 	    }
 
 	    XDiffText(xd,d1,d2,colorize);
+	    if ( limit_lines && !--limit_lines )
+		break;
 	}
 
 	p1		+= donesize;
@@ -1485,8 +1554,18 @@ static int XDiffHelper
 	count		+= donesize;
 	size1		-= donesize;
 	size2		-= donesize;
+
+	if (have_break)
+	{
+	    if (!d1->term)
+		size1 = size1 / xd->bytes_per_line * xd->bytes_per_line;
+
+	    if (!d2->term)
+		size2 = size2 / xd->bytes_per_line * xd->bytes_per_line;
+	}
     }
 
+    xd->addr_break = save_addr_break;
     return count;
 }
 
@@ -1505,9 +1584,14 @@ int XDiff
     uint		size2,		// size of 'data2'
     bool		term2,		// true: 'data2' completed
 
+    uint		limit_lines,	// >0: limit number of differ-lines
     bool		colorize	// true: use red and green on output
 )
 {
+    // fast test for identical data
+    if ( term1 && term2 && size1 == size2 && ( !size1 || !memcmp(data1,data2,size1) ))
+	return 0;
+
     XDump_t local_xd;
     if (!xd)
     {
@@ -1519,7 +1603,7 @@ int XDiff
     XDiff_t diff1, diff2;
     SetupXDiff(&diff1,xd,data1,size1,term1);
     SetupXDiff(&diff2,xd,data2,size2,term2);
-    return XDiffHelper(xd,&diff1,&diff2,colorize);
+    return XDiffHelper(xd,&diff1,&diff2,limit_lines,colorize);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1531,6 +1615,7 @@ int XDiffByFile
     FILE		*f1,		// first input file
     FILE		*f2,		// second input file
     u64			max_size,	// >0: limit comparing size
+    uint		limit_lines,	// >0: limit number of differ-lines
     bool		colorize	// true: use red and green on output
 )
 {
@@ -1577,7 +1662,7 @@ int XDiffByFile
 	diff2.size = stat2 + start2;
 	diff2.term = !stat2;
 
-	int dstat = XDiffHelper(xd,&diff1,&diff2,colorize);
+	int dstat = XDiffHelper(xd,&diff1,&diff2,limit_lines,colorize);
 
 	if ( dstat <= 0 )
 	    return dstat;
@@ -1612,6 +1697,7 @@ int XDiff16
     const void		*data2,		// data
     uint		size2,		// size of 'data'
 
+    uint		limit_lines,	// >0: limit number of differ-lines
     bool		colorize	// true: use red and green on output
 )
 {
@@ -1622,16 +1708,19 @@ int XDiff16
     xd.start_addr	= addr;
     xd.assumed_size	= size1 > size2 ? size1 : size2;
 
-    return XDiff( &xd, data1,size1,true, data2,size2,true, colorize );
+    return XDiff( &xd,	data1,size1,true,
+			data2,size2,true, limit_lines, colorize );
 }
 
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			scan interface			///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[XScan_t]]
 
 typedef struct XScan_t
 {
+    FastBuf_t		*dest;		// not NULL: append scanned data here & ignore 'fout'
     FILE		*fout;		// valid output file
     u64			written;	// number of written bytes
 
@@ -1654,7 +1743,7 @@ static void UpdateXScan ( XScan_t *scan )
 {
     DASSERT(scan);
 
-    if (!scan->fout)
+    if ( !scan->dest && !scan->fout )
 	scan->fout = stdout;
 
     if (scan->prefix)
@@ -1687,7 +1776,8 @@ static void UpdateXScan ( XScan_t *scan )
 static void SetupXScan
 (
     XScan_t		*scan,		// data to setup
-    XDump_t		*xd		// NULL or template
+    XDump_t		*xd,		// NULL or template
+    FastBuf_t		*dest		// not NULL: append scanned data here
 )
 {
     DASSERT(scan);
@@ -1712,6 +1802,7 @@ static void SetupXScan
 	scan->prefix		= 0;
     }
 
+    scan->dest = dest;
     UpdateXScan(scan);
 }
 
@@ -1854,7 +1945,7 @@ static size_t XScanHelper
 )
 {
     DASSERT(scan);
-    DASSERT(scan->fout);
+    DASSERT( scan->dest || scan->fout );
     DASSERT(source);
     DASSERT(end);
     DASSERT( source <= end );
@@ -1868,7 +1959,7 @@ static size_t XScanHelper
     u8 *destmax = destbuf + sizeof(destbuf) - 10;
     u8 *dest = destbuf;
 
-    while ( max_size > 0 )
+    while ( src < end && max_size > 0 )
     {
 	//--- skip all leading contral characters
 
@@ -1893,7 +1984,7 @@ static size_t XScanHelper
 	if (!found_eol)
 	    break;
 
-	noPRINT(stderr,"LINE: |%.*s|\n",(int)(eol-src),src);
+	PRINT0("LINE: |%.*s|\n",(int)(eol-src),src);
 
 
 	//--- skip prefix
@@ -1952,7 +2043,10 @@ static size_t XScanHelper
 		size_t len = dest - destbuf;
 		if ( len > max_size )
 		     len = max_size;
-		fwrite(destbuf,1,len,scan->fout);
+		if (scan->dest)
+		    AppendFastBuf(scan->dest,destbuf,len);
+		else
+		    fwrite(destbuf,1,len,scan->fout);
 		max_size -= len;
 		scan->written += len;
 		dest = destbuf;
@@ -2028,7 +2122,10 @@ static size_t XScanHelper
 	size_t len = dest - destbuf;
 	if ( len > max_size )
 	     len = max_size;
-	fwrite(destbuf,1,len,scan->fout);
+	if (scan->dest)
+	    AppendFastBuf(scan->dest,destbuf,len);
+	else
+	    fwrite(destbuf,1,len,scan->fout);
 	scan->written += len;
     }
 
@@ -2041,8 +2138,9 @@ int XScan
 (
     // returns <0 on error, or number of dumped bytes
     XDump_t		*xd,		// params; if NULL: use local version
+    FastBuf_t		*dest,		// not NULL: append scanned data here
 
-    const void		*data,		// data to compare
+    const void		*data,		// data to scan
     uint		size,		// size of 'data'
     bool		term,		// true: accept uncomplete last line
     u64			max_size	// >0: limit output size
@@ -2052,7 +2150,7 @@ int XScan
 	return 0;
 
     XScan_t scan;
-    SetupXScan(&scan,xd);
+    SetupXScan(&scan,xd,dest);
     return XScanHelper(&scan,data,data+size,term,max_size);
 }
 
@@ -2062,6 +2160,7 @@ s64 XScanByFile
 (
     // returns <0 on error, or number of written bytes
     XDump_t		*xd,		// params; if NULL: use local version
+    FastBuf_t		*dest,		// not NULL: append scanned data here
     FILE		*f,		// input file
     u64			max_size	// >0: limit output size
 )
@@ -2073,7 +2172,7 @@ s64 XScanByFile
 	max_size = M1(max_size);
 
     XScan_t scan;
-    SetupXScan(&scan,xd);
+    SetupXScan(&scan,xd,dest);
 
     char buf[0x4100];
     uint start = 0;
@@ -2087,13 +2186,16 @@ s64 XScanByFile
 	    break;
 	stat += start;
 
-	int scanstat = XScanHelper(&scan,buf,buf+stat,false,max_size);
+	const bool eof = feof(f) != 0;
+	int scanstat = XScanHelper(&scan,buf,buf+stat,eof,max_size);
 	if ( scanstat < 0 )
 	    return scanstat;
 
 	start = stat - scanstat;
 	if (start)
 	    memmove(buf,buf+scanstat,start);
+	if (eof)
+	    break;
     }
 
     if (start)

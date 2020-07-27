@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -557,7 +557,7 @@ static enumError Generate ( control_t * ctrl )
 		ctrl->n_opt_specific );
 
 	fprintf(hf,
-		"\n\tOPT__N_SPECIFIC, // == %d \n\n"
+		"\n\tOPT__N_SPECIFIC, // == %d\n\n"
 		"\t//----- global options -----\n\n",
 		ctrl->n_opt_specific );
     }
@@ -953,7 +953,7 @@ static enumError Generate ( control_t * ctrl )
     var_ptr = snprintfE(var_ptr,var_end,
 		"//extern u8 OptionUsed[OPT__N_TOTAL+1];\n");
 
-    fprintf(cf,"static const OptionIndex_t OptionIndex[UIOPT_INDEX_SIZE] = \n{\n");
+    fprintf(cf,"static const OptionIndex_t OptionIndex[UIOPT_INDEX_SIZE] =\n{\n");
     var_ptr = snprintfE(var_ptr,var_end,
 		"//extern const OptionIndex_t OptionIndex[UIOPT_INDEX_SIZE];\n"
 		"//UIOPT_INDEX_SIZE := 0x%x = %u\n",
@@ -1113,7 +1113,8 @@ int ui_main ( int argc, char ** argv )
 	return ERR_CANT_CREATE;
     }
 
-    char fname[200];
+    char fname_c[200], fname_c_temp[210];
+    char fname_h[200], fname_h_temp[210];
     info_t * info = info_tab;
 
     while ( info->type != T_END )
@@ -1142,19 +1143,22 @@ int ui_main ( int argc, char ** argv )
 	    DumpText(df,0,0,info->help,-1,1," )\n\n");
 	}
 
-	snprintf(fname,sizeof(fname),"src/ui/ui-%s.c",info->c_name);
-	ctrl.cf = fopen(fname,"wb");
+	snprintf(fname_c,sizeof(fname_c),"src/ui/ui-%s.c",info->c_name);
+	StringCat2S(fname_c_temp,sizeof(fname_c_temp),fname_c,".temp");
+	ctrl.cf = fopen(fname_c_temp,"wb");
 	if (!ctrl.cf)
 	{
-	    fprintf(stderr,"!!! Can't create file: %s\n",fname);
+	    fprintf(stderr,"!!! Can't create file: %s\n",fname_c_temp);
 	    return ERR_CANT_CREATE;
 	}
 
-	snprintf(fname,sizeof(fname),"src/ui/ui-%s.h",info->c_name);
-	ctrl.hf = fopen(fname,"wb");
+	snprintf(fname_h,sizeof(fname_h),"src/ui/ui-%s.h",info->c_name);
+	StringCat2S(fname_h_temp,sizeof(fname_h_temp),fname_h,".temp");
+	ctrl.hf = fopen(fname_h_temp,"wb");
 	if (!ctrl.hf)
 	{
-	    fprintf(stderr,"!!! Can't create file: %s\n",fname);
+	    fclose(ctrl.cf);
+	    fprintf(stderr,"!!! Can't create file: %s\n",fname_h_temp);
 	    return ERR_CANT_CREATE;
 	}
 
@@ -1275,6 +1279,9 @@ int ui_main ( int argc, char ** argv )
 
 	fclose(ctrl.cf);
 	fclose(ctrl.hf);
+	rename(fname_c_temp,fname_c);
+	rename(fname_h_temp,fname_h);
+
 	ResetStringField(&ctrl.gopt);
 	ResetStringField(&ctrl.copt);
 	ResetStringField(&ctrl.opt_done);

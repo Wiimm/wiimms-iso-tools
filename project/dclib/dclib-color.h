@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -45,11 +45,21 @@
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			    color modes			///////////////
 ///////////////////////////////////////////////////////////////////////////////
+
+#ifndef SUPPORT_36_COLORS
+  #if NEW_FEATURES
+    #define SUPPORT_36_COLORS 1
+  #else
+    #define SUPPORT_36_COLORS 0
+  #endif
+#endif
+
+//-----------------------------------------------------------------------------
 // [[ColorMode_t]]
 
 typedef enum ColorMode_t
 {
-    COLMD_OFF		= -1,	// don't support clors
+    COLMD_OFF		= -1,	// don't support colors
     COLMD_AUTO		=  0,	// auto detect
     COLMD_ON,			// on, auto select mode
     COLMD_8_COLORS,		// force 8 color mode
@@ -98,8 +108,8 @@ ColorMode_t GetPrevColorMode ( ColorMode_t col_mode );
 
 extern int termios_valid; // valid if >0
 
-void ResetTermios();
-bool EnableSingleCharInput();
+void ResetTermios(void);
+bool EnableSingleCharInput(void);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -138,8 +148,8 @@ extern term_size_t auto_term_size;	// default = {80,25};
 extern uint auto_term_resized;		// incremented for each resize, init by 0
 extern uint auto_term_size_dirty;	// >0: SIGWINCH received, auto_term_size is dirty
 
-bool GetAutoTermSize();			// return true if changed
-void EnableAutoTermSize();
+bool GetAutoTermSize(void);		// return true if changed
+void EnableAutoTermSize(void);
 
 //-----------------------------------------------------------------------------
 
@@ -188,7 +198,7 @@ extern ccp TermClearLine;	// clear entire line
 
 extern ccp TermClearEOD;	// clear from cursor to end of display
 extern ccp TermClearBOD;	// clear from beginning of display to cursor
-extern ccp TermClearDisplay;	// clear Entire display
+extern ccp TermClearDisplay;	// clear entire display
 
 extern ccp TermSetWrap;		// enabled line wrapping
 extern ccp TermResetWrap;	// disable line wrapping
@@ -264,7 +274,10 @@ typedef enum TermTextMode_t
 	//--- these Colors are also used to setup 'ColorSet_t'
 
 	TTM_COL_SETUP		= TTM_BOLD	| TTM_BLUE	| TTM_BG_BLACK,
+	TTM_COL_RUN		= TTM_BOLD	| TTM_WHITE	| TTM_BG_BLACK,
+	TTM_COL_ABORT		= TTM_BOLD	| TTM_MAGENTA	| TTM_BG_BLACK,
 	TTM_COL_FINISH		= TTM_BOLD	| TTM_CYAN	| TTM_BG_BLACK,
+	TTM_COL_SCRIPT		= TTM_NO_BOLD	| TTM_BLACK	| TTM_BG_WHITE,
 	TTM_COL_OPEN		= TTM_NO_BOLD	| TTM_RED	| TTM_BG_BLACK,
 	TTM_COL_CLOSE		= TTM_NO_BOLD	| TTM_RED	| TTM_BG_BLACK,
 	TTM_COL_FILE		= TTM_NO_BOLD	| TTM_YELLOW	| TTM_BG_BLACK,
@@ -274,12 +287,15 @@ typedef enum TermTextMode_t
 	TTM_COL_HINT		= TTM_BOLD	| TTM_YELLOW	| TTM_BG_BLACK,
 	TTM_COL_WARN		= TTM_BOLD	| TTM_RED	| TTM_BG_BLACK,
 	TTM_COL_DEBUG		= TTM_BOLD	| TTM_RED	| TTM_BG_BLACK,
+	TTM_COL_LOG		= TTM_BOLD	| TTM_WHITE	| TTM_BG_BLUE,
 
 	TTM_COL_NAME		= TTM_NO_BOLD	| TTM_CYAN	| TTM_BG_BLACK,
 	TTM_COL_VALUE		= TTM_NO_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
 	TTM_COL_SUCCESS		= TTM_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
+	TTM_COL_ERROR		= TTM_NO_BOLD	| TTM_BLACK	|  TTM_BG_YELLOW,
 	TTM_COL_FAIL		= TTM_NO_BOLD	| TTM_WHITE	|  TTM_BG_RED,
 	TTM_COL_FAIL2		= TTM_BOLD	| TTM_WHITE	|  TTM_BG_RED,
+	TTM_COL_FATAL		= TTM_BOLD	| TTM_WHITE	|  TTM_BG_MAGENTA,
 	TTM_COL_MARK		= TTM_BOLD	| TTM_WHITE	| TTM_BG_BLACK,
 	TTM_COL_BAD		= TTM_BOLD	| TTM_MAGENTA	| TTM_BG_BLACK,
 
@@ -291,6 +307,7 @@ typedef enum TermTextMode_t
 	TTM_COL_CITE		= TTM_NO_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
 	TTM_COL_STATUS		= TTM_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
 	TTM_COL_HIGHLIGHT	= TTM_BOLD	| TTM_YELLOW	| TTM_BG_BLACK,
+	TTM_COL_HIDE		= TTM_BOLD	| TTM_BLACK	| TTM_BG_BLACK,
 
 	TTM_COL_HEADING		= TTM_BOLD	| TTM_BLUE	| TTM_BG_BLACK,
 	TTM_COL_CAPTION		= TTM_BOLD	| TTM_CYAN	| TTM_BG_BLACK,
@@ -310,6 +327,64 @@ TermTextMode_t;
 
 typedef enum TermColorIndex_t
 {
+ #if SUPPORT_36_COLORS
+
+    TCI_GRAY0,			// gray scale
+    TCI_GRAY1,
+    TCI_GRAY2,
+    TCI_GRAY3,
+    TCI_GRAY4,
+    TCI_GRAY5,
+    TCI_GRAY6,
+    TCI_GRAY7,
+
+    TCI_RED,			// normal colors in rainbow order
+    TCI_RED_ORANGE,
+    TCI_ORANGE,
+    TCI_ORANGE_YELLOW,
+    TCI_YELLOW,
+    TCI_YELLOW_GREEN,
+    TCI_GREEN,
+    TCI_GREEN_CYAN,
+    TCI_CYAN,
+    TCI_CYAN_BLUE,
+    TCI_BLUE,
+    TCI_BLUE_MAGENTA,
+    TCI_MAGENTA,
+    TCI_MAGENTA_RED,
+
+    TCI_B_RED,			// bold colors in rainbow order
+    TCI_B_RED_ORANGE,
+    TCI_B_ORANGE,
+    TCI_B_ORANGE_YELLOW,
+    TCI_B_YELLOW,
+    TCI_B_YELLOW_GREEN,
+    TCI_B_GREEN,
+    TCI_B_GREEN_CYAN,
+    TCI_B_CYAN,
+    TCI_B_CYAN_BLUE,
+    TCI_B_BLUE,
+    TCI_B_BLUE_MAGENTA,
+    TCI_B_MAGENTA,
+    TCI_B_MAGENTA_RED,
+
+    TCI__IGNORE,		// ignore this param, for GetColorMode()
+
+    //--- alternative names
+
+    TCI_BLACK		= TCI_GRAY0,
+    TCI_DARKGRAY	= TCI_GRAY2,
+    TCI_LIGHTGRAY	= TCI_GRAY5,
+    TCI_WHITE		= TCI_GRAY7,
+
+    //--- counters
+
+    TCI__N	= TCI__IGNORE,	// number of supported colors
+    TCI__N_FONT	= TCI_B_RED,	// number of recommended font colors
+    TCI__N_BG	= TCI__N,	// number of recommended background colors
+
+ #else // !SUPPORT_36_COLORS
+
     TCI_BLACK,			// gray scale
     TCI_DARKGRAY,
     TCI_LIGHTGRAY,
@@ -338,10 +413,18 @@ typedef enum TermColorIndex_t
     TCI__N	= TCI__IGNORE,	// number of supported colors
     TCI__N_FONT	= TCI_B_RED,	// number of recommended font colors
     TCI__N_BG	= TCI__N,	// number of recommended background colors
+
+ #endif // !SUPPORT_36_COLORS
 }
 TermColorIndex_t;
 
-extern const char ColorIndexName[TCI__N][11];
+#if SUPPORT_36_COLORS
+  extern const char ColorIndexName[TCI__N][16];
+#else
+  extern const char ColorIndexName[TCI__N][11];
+#endif
+
+extern const int Color18Index[18+1]; // 18 elements + -1 as terminator
 
 //-----------------------------------------------------------------------------
 // [[ColorSet_t]]
@@ -365,7 +448,10 @@ typedef struct ColorSet_t
     ccp reset;
 
     ccp setup;
+    ccp run;
+    ccp abort;
     ccp finish;
+    ccp script;
     ccp open;
     ccp close;
     ccp file;
@@ -375,12 +461,15 @@ typedef struct ColorSet_t
     ccp hint;
     ccp warn;
     ccp debug;
+    ccp log;
 
     ccp name;
     ccp value;
     ccp success;
+    ccp error;
     ccp fail;
     ccp fail2;
+    ccp fatal;
     ccp mark;
     ccp bad;
 
@@ -392,6 +481,7 @@ typedef struct ColorSet_t
     ccp cite;
     ccp status;
     ccp highlight;
+    ccp hide;
 
     ccp heading;
     ccp caption;
@@ -489,9 +579,9 @@ typedef void (*PrintColorFunc)
 //-----------------------------------------------------------------------------
 
 const ColorSet_t * GetColorSet ( ColorMode_t col_mode );
-const ColorSet_t * GetColorSet0();
-const ColorSet_t * GetColorSet8();
-const ColorSet_t * GetColorSet256();
+const ColorSet_t * GetColorSet0(void);
+const ColorSet_t * GetColorSet8(void);
+const ColorSet_t * GetColorSet256(void);
 const ColorSet_t * GetColorSetAuto ( bool force_on );
 
 const ColorSet_t * GetFileColorSet ( FILE *f );
@@ -527,7 +617,7 @@ void PrintColorSetHelper
 					//   2: print bold colors (e.g. B_RED)
 					//   4: print background (e.g. BLUE_RED)
 					//   8: print color names (e.g. HIGHLIGHT)
-					//      16: include alternative names too (e.g. HL)
+					//  16: include alternative names too (e.g. HL)
 );
 
 //
@@ -582,7 +672,8 @@ void SetupColorViewMode ( ColorView_t *cv, ColorMode_t col_mode );
 
 void ViewColorsAttrib8	( ColorView_t *cv );
 void ViewColorsCombi8	( ColorView_t *cv );
-void ViewColorsDC	( ColorView_t *cv );
+void ViewColors18	( ColorView_t *cv );
+void ViewColorsDC	( ColorView_t *cv, bool optimized );
 void ViewColors256	( ColorView_t *cv );
 void ViewColorsPredef	( ColorView_t *cv, uint mode ); // mode: 1=name, 2=colors
 
@@ -670,8 +761,8 @@ enumError OpenStdLog
 			// If NULL: just clode 'stdlog'.
 );
 
-void CloseStdLog();
-void SetupStdMsg();
+void CloseStdLog(void);
+void SetupStdMsg(void);
 
 //-----------------------------------------------------------------------------
 // [[SavedStdFiles_t]]
