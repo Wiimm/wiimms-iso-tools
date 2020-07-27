@@ -298,7 +298,7 @@ DEFINES1	+= -D_LZMA_PROB32=1	# LZMA option
 DEFINES		=  $(strip $(DEFINES1) $(MODE) $(XDEF))
 
 CFLAGS		+= -fomit-frame-pointer -fno-strict-aliasing -funroll-loops
-CFLAGS		+= -Wall -Wno-parentheses -Wno-unused-function -Wno-format-truncation
+CFLAGS		+= -Wall -Wno-parentheses -Wno-unused-function
 #CFLAGS		+= -O3 -Isrc/libwbfs -Isrc/lzma -Isrc -I$(UI) -I. -Iwork
 CFLAGS		+= -O3 -Isrc/libwbfs -Isrc -I$(UI) -I. -Iwork
 ifeq ($(SYSTEM),cygwin)
@@ -769,62 +769,62 @@ $(SUB_PROJECTS):
 
 templates.sed: Makefile
 	@printf "$(LOGFORMAT)" create templates.sed ""
-	@echo -e '' \
-		'/^~/ d;\n' \
-		's|@.@@@|$(VERSION_NUM)|g;\n' \
-		's|@@@@-@@-@@|$(DATE)|g;\n' \
-		's|@@:@@:@@|$(TIME)|g;\n' \
-		's|@@AUTHOR@@|$(AUTHOR)|g;\n' \
-		's|@@TOOLSET-SHORT@@|$(TOOLSET_SHORT)|g;\n' \
-		's|@@TOOLSET-LONG@@|$(TOOLSET_LONG)|g;\n' \
-		's|@@WIT-SHORT@@|$(WIT_SHORT)|g;\n' \
-		's|@@WIT-LONG@@|$(WIT_LONG)|g;\n' \
-		's|@@WWT-SHORT@@|$(WWT_SHORT)|g;\n' \
-		's|@@WWT-LONG@@|$(WWT_LONG)|g;\n' \
-		's|@@WDF-SHORT@@|$(WDF_SHORT)|g;\n' \
-		's|@@WDF-LONG@@|$(WDF_LONG)|g;\n' \
-		's|@@WFUSE-SHORT@@|$(WFUSE_SHORT)|g;\n' \
-		's|@@WFUSE-LONG@@|$(WFUSE_LONG)|g;\n' \
-		's|@@VERSION@@|$(VERSION)|g;\n' \
-		's|@@VERSION-NUM@@|$(VERSION_NUM)|g;\n' \
-		's|@@BETA-VERSION@@|$(BETA_VERSION)|g;\n' \
-		's|@@BETA-SUFFIX@@|$(BETA_SUFFIX)|g;\n' \
-		's|@@REV@@|$(REVISION)|g;\n' \
-		's|@@REV-NUM@@|$(REVISION_NUM)|g;\n' \
-		's|@@REV-NEXT@@|$(REVISION_NEXT)|g;\n' \
-		's|@@BINTIME@@|$(BINTIME)|g;\n' \
-		's|@@DATE@@|$(DATE)|g;\n' \
-		's|@@TIME@@|$(TIME)|g;\n' \
-		's|@@INSTALL-PATH@@|$(INSTALL_PATH)|g;\n' \
-		's|@@SHARE-PATH@@|$(SHARE_PATH)|g;\n' \
-		's|@@BIN-FILES@@|$(BIN_FILES)|g;\n' \
-		's|@@SHARE-FILES@@|$(SHARE_FILES)|g;\n' \
-		's|@@WDF-LINKS@@|$(WDF_LINKS)|g;\n' \
-		's|@@CYGWIN-DIR@@|$(CYGWIN_DIR)|g;\n' \
-		's|@@CYGWIN-TOOLS@@|$(CYGWIN_TOOLS)|g;\n' \
-		's|@@WIN-INSTALL-PATH@@|$(WIN_INSTALL_PATH)|g;\n' \
-		's|@@LANGUAGES@@|$(LANGUAGES)|g;\n' \
-		's|@@DISTRIB-PATH@@|$(DISTRIB_PATH)|g;\n' \
-		's|@@DISTRIB-I386@@|$(DISTRIB_I386)|g;\n' \
-		's|@@DISTRIB-X86_64@@|$(DISTRIB_X86_64)|g;\n' \
-		's|@@DISTRIB-MAC@@|$(DISTRIB_MAC)|g;\n' \
-		's|@@DISTRIB-CYGWIN@@|$(DISTRIB_CYGWIN)|g;\n' \
-		's|@@URI-FILE@@|$(URI_FILE)|g;\n' \
-		's|@@URI-REPOS@@|$(URI_REPOS)|g;\n' \
-		's|@@URI-VIEWVC@@|$(URI_VIEWVC)|g;\n' \
-		's|@@URI-HOME@@|$(URI_HOME)|g;\n' \
-		's|@@URI-DOWNLOAD@@|$(URI_DOWNLOAD)|g;\n' \
-		's|@@URI-WDF@@|$(URI_WDF)|g;\n' \
-		's|@@URI-CISO@@|$(URI_CISO)|g;\n' \
-		's|@@URI-QTWITGUI@@|$(URI_QTWITGUI)|g;\n' \
-		's|@@URI-WIIBAFU@@|$(URI_WIIBAFU)|g;\n' \
-		's|@@URI-MACWITGUI@@|$(URI_MACWITGUI)|g;\n' \
-		's|@@URI-GBATEMP@@|$(URI_GBATEMP)|g;\n' \
-		's|@@URI-DOWNLOAD-I386@@|$(URI_DOWNLOAD_I386)|g;\n' \
-		's|@@URI-DOWNLOAD-X86_64@@|$(URI_DOWNLOAD_X86_64)|g;\n' \
-		's|@@URI-DOWNLOAD-MAC@@|$(URI_DOWNLOAD_MAC)|g;\n' \
-		's|@@URI-DOWNLOAD-CYGWIN@@|$(URI_DOWNLOAD_CYGWIN)|g;\n' \
-		's|@@URI-TITLES@@|$(URI_TITLES)|g;\n' \
+	@printf '%s\n' \
+		'/^~/ d;' \
+		's|@.@@@|$(VERSION_NUM)|g;' \
+		's|@@@@-@@-@@|$(DATE)|g;' \
+		's|@@:@@:@@|$(TIME)|g;' \
+		's|@@AUTHOR@@|$(AUTHOR)|g;' \
+		's|@@TOOLSET-SHORT@@|$(TOOLSET_SHORT)|g;' \
+		's|@@TOOLSET-LONG@@|$(TOOLSET_LONG)|g;' \
+		's|@@WIT-SHORT@@|$(WIT_SHORT)|g;' \
+		's|@@WIT-LONG@@|$(WIT_LONG)|g;' \
+		's|@@WWT-SHORT@@|$(WWT_SHORT)|g;' \
+		's|@@WWT-LONG@@|$(WWT_LONG)|g;' \
+		's|@@WDF-SHORT@@|$(WDF_SHORT)|g;' \
+		's|@@WDF-LONG@@|$(WDF_LONG)|g;' \
+		's|@@WFUSE-SHORT@@|$(WFUSE_SHORT)|g;' \
+		's|@@WFUSE-LONG@@|$(WFUSE_LONG)|g;' \
+		's|@@VERSION@@|$(VERSION)|g;' \
+		's|@@VERSION-NUM@@|$(VERSION_NUM)|g;' \
+		's|@@BETA-VERSION@@|$(BETA_VERSION)|g;' \
+		's|@@BETA-SUFFIX@@|$(BETA_SUFFIX)|g;' \
+		's|@@REV@@|$(REVISION)|g;' \
+		's|@@REV-NUM@@|$(REVISION_NUM)|g;' \
+		's|@@REV-NEXT@@|$(REVISION_NEXT)|g;' \
+		's|@@BINTIME@@|$(BINTIME)|g;' \
+		's|@@DATE@@|$(DATE)|g;' \
+		's|@@TIME@@|$(TIME)|g;' \
+		's|@@INSTALL-PATH@@|$(INSTALL_PATH)|g;' \
+		's|@@SHARE-PATH@@|$(SHARE_PATH)|g;' \
+		's|@@BIN-FILES@@|$(BIN_FILES)|g;' \
+		's|@@SHARE-FILES@@|$(SHARE_FILES)|g;' \
+		's|@@WDF-LINKS@@|$(WDF_LINKS)|g;' \
+		's|@@CYGWIN-DIR@@|$(CYGWIN_DIR)|g;' \
+		's|@@CYGWIN-TOOLS@@|$(CYGWIN_TOOLS)|g;' \
+		's|@@WIN-INSTALL-PATH@@|$(WIN_INSTALL_PATH)|g;' \
+		's|@@LANGUAGES@@|$(LANGUAGES)|g;' \
+		's|@@DISTRIB-PATH@@|$(DISTRIB_PATH)|g;' \
+		's|@@DISTRIB-I386@@|$(DISTRIB_I386)|g;' \
+		's|@@DISTRIB-X86_64@@|$(DISTRIB_X86_64)|g;' \
+		's|@@DISTRIB-MAC@@|$(DISTRIB_MAC)|g;' \
+		's|@@DISTRIB-CYGWIN@@|$(DISTRIB_CYGWIN)|g;' \
+		's|@@URI-FILE@@|$(URI_FILE)|g;' \
+		's|@@URI-REPOS@@|$(URI_REPOS)|g;' \
+		's|@@URI-VIEWVC@@|$(URI_VIEWVC)|g;' \
+		's|@@URI-HOME@@|$(URI_HOME)|g;' \
+		's|@@URI-DOWNLOAD@@|$(URI_DOWNLOAD)|g;' \
+		's|@@URI-WDF@@|$(URI_WDF)|g;' \
+		's|@@URI-CISO@@|$(URI_CISO)|g;' \
+		's|@@URI-QTWITGUI@@|$(URI_QTWITGUI)|g;' \
+		's|@@URI-WIIBAFU@@|$(URI_WIIBAFU)|g;' \
+		's|@@URI-MACWITGUI@@|$(URI_MACWITGUI)|g;' \
+		's|@@URI-GBATEMP@@|$(URI_GBATEMP)|g;' \
+		's|@@URI-DOWNLOAD-I386@@|$(URI_DOWNLOAD_I386)|g;' \
+		's|@@URI-DOWNLOAD-X86_64@@|$(URI_DOWNLOAD_X86_64)|g;' \
+		's|@@URI-DOWNLOAD-MAC@@|$(URI_DOWNLOAD_MAC)|g;' \
+		's|@@URI-DOWNLOAD-CYGWIN@@|$(URI_DOWNLOAD_CYGWIN)|g;' \
+		's|@@URI-TITLES@@|$(URI_TITLES)|g;' \
 		>templates.sed
 
 #
