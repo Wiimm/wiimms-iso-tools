@@ -4414,7 +4414,7 @@ int GetParamFieldBUF
     if (!it)
 	return not_found ? StringCopyS(buf,buf_size,not_found) - buf : -1;
 
-    return DecodeByMode(buf,buf_size,(ccp)it->data,-1,decode);
+    return DecodeByMode(buf,buf_size,(ccp)it->data,-1,decode,0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -4422,7 +4422,7 @@ int GetParamFieldBUF
 mem_t GetParamFieldMEM
 (
     // Returns the decoded 'source'. Result is NULL-terminated.
-    // It points either to 'buf' or is alloced (on buf==NULL or to less space)
+    // It points either to 'buf' or is alloced (on buf==NULL or too less space)
     // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
 
     char		*buf,		// buffer to store result
@@ -4440,7 +4440,7 @@ mem_t GetParamFieldMEM
 
     ParamFieldItem_t *it = GetParamField(rs,name);
     return it
-	? DecodeByModeMem(buf,buf_size,(ccp)it->data,-1,decode)
+	? DecodeByModeMem(buf,buf_size,(ccp)it->data,-1,decode,0)
 	: not_found;
 }
 
@@ -4536,13 +4536,26 @@ static s64 SCS_get_int ( const u8* data, int idx, const SaveRestoreTab_t *srt )
 
 static void SCS_save_string ( FILE *f, ccp src, int slen, EncodeMode_t emode )
 {
-    char buf[4000];
-    mem_t res = EncodeByModeMem(buf,sizeof(buf),src,slen,emode);
+    if (!src)
+	fputc('%',f);
+    else
+    {
+	char buf[4000];
+	mem_t res = EncodeByModeMem(buf,sizeof(buf),src,slen,emode);
 
-    fwrite(res.ptr,1,res.len,f);
-    fputc('\n',f);
-    if ( res.ptr != buf )
-	FreeMem(&res);
+	if (res.len)
+	{
+	    const bool quote = NeedsQuotesByEncoding(emode);
+	    if (quote)
+		fputc('"',f);
+	    fwrite(res.ptr,1,res.len,f);
+	    if (quote)
+		fputc('"',f);
+	}
+
+	if ( res.ptr != buf )
+	    FreeMem(&res);
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -4590,9 +4603,6 @@ void SaveCurrentStateByTable
     }
 
     const int use_tab = (fw_name&7) ? 0 : (fw_name/8)*8+7;
-
-    //-------------------------------------------------------------------------
-
     const u8 *data = data0;
 
     for ( ; srt->type != SRT__TERM; srt++ )
@@ -4777,6 +4787,7 @@ void SaveCurrentStateByTable
 	    {
 		print_scs_name(f,fw_name,use_tab,"%s%s@%u",prefix,srt->name,i);
 		SCS_save_string(f,*ptr,-1,srt->emode);
+		fputc('\n',f);
 	    }
 	    break;
 	}
@@ -4794,6 +4805,7 @@ void SaveCurrentStateByTable
 		print_scs_name(f,fw_name,use_tab,"%s%s@%u",prefix,srt->name,i);
 		fprintf(f,"%d ",ptr->num);
 		SCS_save_string(f,ptr->key,-1,srt->emode);
+		fputc('\n',f);
 	    }
 	    break;
 	}
@@ -4803,13 +4815,6 @@ void SaveCurrentStateByTable
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-
-#if defined(TEST) && 1
- #define X_DEVELOP 1
-#else
- #define X_DEVELOP 0
-#endif
- 
 
 void RestoreStateByTable
 (
@@ -4822,72 +4827,7 @@ void RestoreStateByTable
     DASSERT(rs);
     DASSERT(srt);
 
-    //-------------------------------------------------------------------------
-
-#if X_DEVELOP
-
-    mem_t get_string
-	( mem_t *param, ccp *p_ptr, char *buf, uint bufsize, EncodeMode_t emode )
-    {
-	DASSERT(param);
-	DASSERT(p_ptr);
-
-	ccp ptr;
-	if (!*p_ptr)
-	    ptr = param->ptr;
-	else
-	{
-	    ptr = *p_ptr;
-	    if ( *ptr != ',' )
-		return NullMem;
-	    ptr++;
-	}
-
-	if ( *ptr == '%' )
-	{
-	    *p_ptr = ptr;
-	    return NullMem;
-	}
-
-	uint len;
-	ccp start, end = param->ptr + param->len;
-	if ( *ptr == '"' )
-	{
-	    start = ++ptr;
-	    for (;;)
-	    {
-		if ( ptr == end )
-		{
-		    len = ptr - start;
-		    break;
-		}
-
-		const char ch = *ptr++;
-		if ( ch == '\\' && ptr < end )
-		    ptr++;
-		else if ( ch == '"' )
-		{
-		    len = ptr-start-1;
-		    break;
-		}
-	    }
-	}
-	else
-	{
-	    start = ptr;
-	    while ( ptr < end && *ptr != ',' )
-		ptr++;
-	    len = ptr - start;
-	}
-
-	*p_ptr = ptr;
-	return MemByStringS(start,len);
-    }
-#endif
-
-    //-------------------------------------------------------------------------
-
-    char buf[4000];
+    char buf[4000]; // ???
     if (!prefix)
 	prefix = EmptyString;
 
@@ -4991,59 +4931,63 @@ void RestoreStateByTable
 	//-----
 
 	case SRT_STRING_SIZE:
-#if X_DEVELOP
 	{
 	    ParamFieldItem_t *it = GetParamField(rs,buf);
-	    mem_t param = it ? MemByString((ccp)it->data) : EmptyMem;
-	    PRINT1("param: [%u] |%.*s|\n",param.len,param.len,param.ptr);
-	    ccp ptr = 0;
-	    uint i;
-	    for ( i = 0; i < srt->n_elem; i++ )
-	    {
-		mem_t str = get_string(&param,&ptr,buf,sizeof(buf),srt->emode);
-		PRINT1("str: [%d,%u] |%.*s|\n",str.ptr!=0,str.len,str.len,str.ptr);
-		//if ( str.ptr != buf ) FreeMem(&str);
-	    }
-	    break;
-	}
-#else
-	{
+	    mem_list_t ml;
+	    DecodeByModeMemList(&ml,2,it?(ccp)it->data:0,-1,srt->emode,0);
+
 	    char *val = (char*)(data+srt->offset);
-	    mem_t res = GetParamFieldMEM(buf,sizeof(buf),rs,buf,
-						srt->emode,MemByString(val));
-	    StringCopyS(val,srt->size,res.ptr);
-	    if ( res.ptr != buf && res.ptr != val )
-		FreeString(res.ptr);
+	    uint i;
+	    for ( i = 0; i < srt->n_elem; i++, val += srt->size )
+		StringCopyS( val, srt->size, i<ml.used ? ml.list[i].ptr : 0 );
+	    ResetMemList(&ml);
 	    break;
 	}
-#endif
 
 	case SRT_STRING_ALLOC:
 	{
+	    ParamFieldItem_t *it = GetParamField(rs,buf);
+	    mem_list_t ml;
+	    DecodeByModeMemList(&ml,2,it?(ccp)it->data:0,-1,srt->emode,0);
+
 	    ccp *val = (ccp*)(data+srt->offset);
-	    mem_t res = GetParamFieldMEM(buf,sizeof(buf),rs,buf,
-						srt->emode,MemByString0(*val));
-	    if ( res.ptr != *val )
+	    uint i;
+	    for ( i = 0; i < srt->n_elem; i++, val++ )
 	    {
 		FreeString(*val);
-		*val = MEMDUP(res.ptr,res.len);
+		*val = 0;
+		if ( i < ml.used )
+		{
+		    mem_t *m = ml.list+i;
+		    if ( m->ptr )
+			*val =  m->ptr == EmptyString ? EmptyString : MEMDUP(m->ptr,m->len);
+		}
 	    }
-	    else if ( res.ptr != buf )
-		FreeString(res.ptr);
+	    ResetMemList(&ml);
 	    break;
 	}
 
 	case SRT_MEM:
 	{
+	    ParamFieldItem_t *it = GetParamField(rs,buf);
+	    mem_list_t ml;
+	    DecodeByModeMemList(&ml,2,it?(ccp)it->data:0,-1,srt->emode,0);
+
 	    mem_t *val = (mem_t*)(data+srt->offset);
-	    mem_t res  = GetParamFieldMEM(buf,sizeof(buf),rs,buf,srt->emode,*val);
-	    if ( res.ptr != val->ptr )
+	    uint i;
+	    for ( i = 0; i < srt->n_elem; i++, val++ )
 	    {
 		FreeString(val->ptr);
-		*val = res.ptr == buf ? DupMem(res) : res;
+		val->ptr = 0;
+		val->len = 0;
+		if ( i < ml.used )
+		{
+		    mem_t *m = ml.list+i;
+		    if ( m->ptr )
+			*val =  m->ptr == EmptyString ? EmptyMem : DupMem(*m);
+		}
 	    }
-	    else if ( res.ptr != buf )
-		FreeString(res.ptr);
+	    ResetMemList(&ml);
 	    break;
 	}
 
@@ -5085,7 +5029,7 @@ void RestoreStateByTable
 		    if ( *str == ' ' ) // space should always exist
 			str++;
 
-		    mem_t res = DecodeByModeMem(buf,sizeof(buf),str,-1,srt->emode);
+		    mem_t res = DecodeByModeMem(buf,sizeof(buf),str,-1,srt->emode,0);
 		    InsertParamField(sf,res.ptr,false,num,0);
 		    if ( res.ptr != buf )
 			FreeString(res.ptr);

@@ -2361,8 +2361,9 @@ void GrowBufMemList ( mem_list_t *ml, uint need_size )
 		noPRINT("OLD: %p,%u\n",dest->ptr,dest->len);
 	    }
 	FREE(ml->buf);
-	ml->buf = new_buf;
+	ml->buf      = new_buf;
 	ml->buf_used = bufptr - new_buf;
+	ml->buf_size = need_size;
     }
 }
 
@@ -2390,10 +2391,7 @@ void InsertMemListN
     int			pos,		// insert position => CheckIndex1()
     const mem_t		*src,		// source list
     uint		src_len,	// number of elements in source list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(ml);
@@ -2411,8 +2409,13 @@ void InsertMemListN
 	    need_size += sptr->len + 1; // always terminate with NULL
 	    add_elem++;
 	}
-	else if ( !src_ignore || src_ignore == 1 && sptr->ptr || src_ignore == 3 )
+	else if (  src_ignore == MEMLM_ALL
+		|| src_ignore == MEMLM_IGN_NULL && sptr->ptr
+		|| src_ignore == MEMLM_REPL_NULL
+		)
+	{
 	    add_elem++;
+	}
     }
 
     if (!add_elem)
@@ -2492,14 +2495,14 @@ void InsertMemListN
 	    dest++;
 	    DASSERT( dest <= ml->list + ml->used );
 	}
-	else if ( !src_ignore || src_ignore == 1 && sptr->ptr )
+	else if ( src_ignore == MEMLM_ALL || src_ignore == MEMLM_IGN_NULL && sptr->ptr )
 	{
 	    dest->ptr = sptr->ptr ? EmptyString : NULL;
 	    dest->len = 0;
 	    dest++;
 	    DASSERT( dest <= ml->list + ml->used );
 	}
-	else if ( src_ignore == 3 )
+	else if ( src_ignore == MEMLM_REPL_NULL )
 	{
 	    dest->ptr = EmptyString;
 	    dest->len = 0;
@@ -2533,10 +2536,7 @@ void CatMemListN
     mem_list_t		*dest,		// valid destination mem_list
     const mem_list_t	**src_list,	// list with mem lists, element may be NULL
     uint		n_src_list,	// number of elements in 'src'
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(dest);
@@ -2565,8 +2565,13 @@ void CatMemListN
 		need_size += sptr->len + 1; // always terminate with NULL
 		need_elem++;
 	    }
-	    else if ( !src_ignore || src_ignore == 1 && sptr->ptr || src_ignore == 3 )
+	    else if (  src_ignore == MEMLM_ALL
+		    || src_ignore == MEMLM_IGN_NULL && sptr->ptr
+		    || src_ignore == MEMLM_REPL_NULL
+		    )
+	    {
 		need_elem++;
+	    }
 	}
     }
 
@@ -2613,14 +2618,14 @@ void CatMemListN
 		listptr++;
 		DASSERT( listptr <= new_list + need_elem );
 	    }
-	    else if ( !src_ignore || src_ignore == 1 && sptr->ptr )
+	    else if ( src_ignore == MEMLM_ALL || src_ignore == MEMLM_IGN_NULL && sptr->ptr )
 	    {
 		listptr->ptr = sptr->ptr ? EmptyString : NULL;
 		listptr->len = 0;
 		listptr++;
 		DASSERT( listptr <= new_list + need_elem );
 	    }
-	    else if ( src_ignore == 3 )
+	    else if ( src_ignore == MEMLM_REPL_NULL )
 	    {
 		listptr->ptr = EmptyString;
 		listptr->len = 0;
@@ -5907,7 +5912,7 @@ void RestoreStateStringField
 	    ParamFieldItem_t *pfi = GetParamField(rs,name);
 	    if (pfi)
 	    {
-		mem_t mem = DecodeByModeMem(0,0,pfi->data,-1,emode);
+		mem_t mem = DecodeByModeMem(0,0,pfi->data,-1,emode,0);
 		AppendStringField(sf,mem.ptr,true);
 	    }
 	}

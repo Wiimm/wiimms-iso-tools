@@ -774,7 +774,7 @@ typedef struct mem_list_t
 {
     mem_t	*list;		// List of mem_t objects.
 				// Elements are always terminated with NULL.
-				// Content is stored in 'buf' or points to EmptyString.
+				// Content is NULL or EmptyString or stored in 'buf'
 
     uint	used;		// Number of active 'list' elements
     uint	size;		// Number of alloced 'list' elements
@@ -784,6 +784,18 @@ typedef struct mem_list_t
     uint	buf_size;	// Size of 'buf'
 }
 mem_list_t;
+
+//-----------------------------------------------------------------------------
+// [[mem_list_mode_t]]
+
+typedef enum mem_list_mode_t
+{
+    MEMLM_ALL,		// insert all
+    MEMLM_IGN_NULL,	// ignore NULL
+    MEMLM_IGN_EMPTY,	// ignore NULL and empty
+    MEMLM_REPL_NULL,	// replace NULL by EmptyString
+}
+mem_list_mode_t;
 
 //-----------------------------------------------------------------------------
 
@@ -802,10 +814,7 @@ void InsertMemListN
     int			pos,		// insert position => CheckIndex1()
     const mem_t		*src,		// source list
     uint		src_len,	// number of elements in source list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 );
 
 //-----------------------------------------------------------------------------
@@ -815,10 +824,7 @@ static inline void InsertMemList2
     mem_list_t		*ml,		// valid destination mem_list
     int			pos,		// insert position => CheckIndex1()
     const mem_list_t	*src,		// source mem_list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(src);
@@ -832,10 +838,7 @@ static inline void AppendMemListN
     mem_list_t		*ml,		// valid destination mem_list
     const mem_t		*src,		// source list
     uint		src_len,	// number of elements in source list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(ml);
@@ -848,10 +851,7 @@ static inline void AppendMemList2
 (
     mem_list_t		*ml,		// valid destination mem_list
     const mem_list_t	*src,		// source mem_list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(ml);
@@ -866,10 +866,7 @@ static inline void AssignMemListN
     mem_list_t		*ml,		// valid destination mem_list
     const mem_t		*src,		// source list
     uint		src_len,	// number of elements in source list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(ml);
@@ -883,10 +880,7 @@ static inline void AssignMemList2
 (
     mem_list_t		*ml,		// valid destination mem_list
     const mem_list_t	*src,		// source mem_list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(ml);
@@ -902,10 +896,7 @@ void CatMemListN
     mem_list_t		*dest,		// valid destination mem_list
     const mem_list_t	**src_list,	// list with mem lists, element may be NULL
     uint		n_src_list,	// number of elements in 'src'
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 );
 
 //-----------------------------------------------------------------------------
@@ -915,10 +906,7 @@ static inline void CatMemList2
     mem_list_t		*dest,		// valid destination mem_list
     const mem_list_t	*src1,		// source mem_list
     const mem_list_t	*src2,		// source mem_list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     const mem_list_t *ml[2] = { src1, src2 };
@@ -933,10 +921,7 @@ static inline void CatMemList3
     const mem_list_t	*src1,		// source mem_list
     const mem_list_t	*src2,		// source mem_list
     const mem_list_t	*src3,		// source mem_list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     const mem_list_t *ml[3] = { src1, src2, src3 };
@@ -2137,7 +2122,7 @@ EncodeMode_t;
 
 // [[doxygen]]
 static inline bool NeedsQuotesByEncoding ( EncodeMode_t em )
-	{ return em < ENCODE_BASE64 || em > ENCODE_BASE64XML; }
+	{ return ( em < ENCODE_BASE64 || em > ENCODE_BASE64XML ) && em != ENCODE_OFF ; }
 
 ///////////////////////////////////////////////////////////////////////////////
 // [[DecodeType_t]]
@@ -2299,14 +2284,15 @@ static inline uint DecodeJSON
 (
     // returns the number of valid bytes in 'buf'
 
-    char	*buf,			// valid destination buffer
-    uint	buf_size,		// size of 'buf', >= 3
-    ccp		source,			// NULL or string to decode
-    int		source_len,		// length of 'source'. If -1, str is NULL terminated
-    uint	*scanned_len		// not NULL: Store number of scanned 'str' bytes here
+    char	*buf,		// valid destination buffer
+    uint	buf_size,	// size of 'buf', >= 3
+    ccp		source,		// NULL or string to decode
+    int		source_len,	// length of 'source'. If -1, str is NULL terminated
+    int		quote,		// 0:none, -1:auto, >0: quotation char
+    uint	*scanned_len	// not NULL: Store number of scanned 'str' bytes here
 )
 {
-    return ScanEscapedString(buf,buf_size,source,source_len,true,0,scanned_len);
+    return ScanEscapedString(buf,buf_size,source,source_len,true,quote,scanned_len);
 }
 
 //-----------------------------------------------------------------------------
@@ -2317,8 +2303,9 @@ mem_t DecodeJSONCirc
     // with valid pointer and null terminated.
     // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
 
-    ccp		source,			// NULL or string to decode
-    int		source_len		// length of 'source'. If -1, str is NULL terminated
+    ccp		source,		// NULL or string to decode
+    int		source_len,	// length of 'source'. If -1, str is NULL terminated
+    int		quote		// 0:none, -1:auto, >0: quotation char
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2372,9 +2359,41 @@ uint DecodeByMode
     uint		buf_size,	// size of 'buf', >= 3
     ccp			source,		// string to decode
     int			slen,		// length of string. if -1, str is null terminated
-    EncodeMode_t	emode		// encoding mode
+    EncodeMode_t	emode,		// encoding mode
+    uint		*scanned_len	// not NULL: Store number of scanned 'str' bytes here
 );
 
+///////////////////////////////////////////////////////////////////////////////
+
+mem_t DecodeByModeMem
+(
+    // Returns the decoded 'source'. Result is NULL-terminated.
+    // It points either to 'buf' or is alloced (on buf==NULL or too less space)
+    // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
+
+    char		*buf,		// NULL or destination buffer
+    uint		buf_size,	// size of 'buf'
+    ccp			source,		// string to decode
+    int			slen,		// length of string. if -1, str is null terminated
+    EncodeMode_t	emode,		// encoding mode
+    uint		*scanned_len	// not NULL: Store number of scanned 'str' bytes here
+);
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint DecodeByModeMemList
+(
+    // returns the number of scanned strings
+
+    mem_list_t		*res,		// result
+    uint		res_mode,	// 0:append, 1:clear, 2:init
+    ccp			source,		// string to decode
+    int			slen,		// length of string. if -1, str is null terminated
+    EncodeMode_t	emode,		// encoding mode
+    uint		*scanned_len	// not NULL: Store number of scanned 'str' bytes here
+);
+
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 uint EncodeByMode
@@ -2390,25 +2409,10 @@ uint EncodeByMode
 
 ///////////////////////////////////////////////////////////////////////////////
 
-mem_t DecodeByModeMem
-(
-    // Returns the decoded 'source'. Result is NULL-terminated.
-    // It points either to 'buf' or is alloced (on buf==NULL or to less space)
-    // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
-
-    char		*buf,		// NULL or destination buffer
-    uint		buf_size,	// size of 'buf'
-    ccp			source,		// string to decode
-    int			slen,		// length of string. if -1, str is null terminated
-    EncodeMode_t	emode		// encoding mode
-);
-
-///////////////////////////////////////////////////////////////////////////////
-
 mem_t EncodeByModeMem
 (
     // Returns the encoded 'source'. Result is NULL-terminated.
-    // It points either to 'buf' or is alloced (on buf==NULL or to less space)
+    // It points either to 'buf' or is alloced (on buf==NULL or too less space)
     // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
 
     char		*buf,		// NULL or destination buffer
@@ -4824,7 +4828,7 @@ int GetParamFieldBUF
 mem_t GetParamFieldMEM
 (
     // Returns the decoded 'source'. Result is NULL-terminated.
-    // It points either to 'buf' or is alloced (on buf==NULL or to less space)
+    // It points either to 'buf' or is alloced (on buf==NULL or too less space)
     // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
 
     char		*buf,		// buffer to store result
@@ -4910,11 +4914,9 @@ __attribute__ ((packed)) SaveRestoreTab_t;
 #define DEF_SRT_FLOAT_N(v,ne,n)		DEF_SRT_VAR(v,ne,n,SRT_FLOAT,0)
 #define DEF_SRT_XFLOAT_N(v,ne,n)	DEF_SRT_VAR(v,ne,n,SRT_XFLOAT,0)
 
-#if defined(TEST) || defined(DEBUG)
 #define DEF_SRT_STR_SIZE_N(v,ne,n,e)	DEF_SRT_VAR(v,ne,n,SRT_STRING_SIZE,e)
 #define DEF_SRT_STR_ALLOC_N(v,ne,n,e)	DEF_SRT_VAR(v,ne,n,SRT_STRING_ALLOC,e)
 #define DEF_SRT_MEM_N(v,ne,n,e)		DEF_SRT_VAR(v,ne,n,SRT_MEM,e)
-#endif
 
 //--- auto array
 
@@ -4929,11 +4931,9 @@ __attribute__ ((packed)) SaveRestoreTab_t;
 #define DEF_SRT_FLOAT_A(v,n)		DEF_SRT_ARRAY(v,n,SRT_FLOAT,0)
 #define DEF_SRT_XFLOAT_A(v,n)		DEF_SRT_ARRAY(v,n,SRT_XFLOAT,0)
 
-#if defined(TEST) || defined(DEBUG)
 #define DEF_SRT_STR_SIZE_A(v,n,e)	DEF_SRT_ARRAY(v,n,SRT_STRING_SIZE,e)
 #define DEF_SRT_STR_ALLOC_A(v,n,e)	DEF_SRT_ARRAY(v,n,SRT_STRING_ALLOC,e)
 #define DEF_SRT_MEM_A(v,n,e)		DEF_SRT_ARRAY(v,n,SRT_MEM,e)
-#endif
 
 //--- special
 

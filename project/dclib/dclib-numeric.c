@@ -1499,13 +1499,14 @@ mem_t DecodeJSONCirc
     // with valid pointer and null terminated.
     // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
 
-    ccp		source,			// NULL or string to decode
-    int		source_len		// length of 'source'. If -1, str is NULL terminated
+    ccp		source,		// NULL or string to decode
+    int		source_len,	// length of 'source'. If -1, str is NULL terminated
+    int		quote		// 0:none, -1:auto, >0: quotation char
 )
 {
     char buf[CIRC_BUF_MAX_ALLOC+10];
     mem_t mem;
-    mem.len = DecodeJSON(buf,sizeof(buf),source,source_len,0);
+    mem.len = DecodeJSON(buf,sizeof(buf),source,source_len,quote,0);
     if ( mem.len < CIRC_BUF_MAX_ALLOC )
 	mem.ptr = CopyCircBuf(buf,mem.len+1);
     else
@@ -1527,7 +1528,8 @@ uint DecodeByMode
     uint		buf_size,	// size of 'buf', >= 3
     ccp			source,		// string to decode
     int			slen,		// length of string. if -1, str is null terminated
-    EncodeMode_t	emode		// encoding mode
+    EncodeMode_t	emode,		// encoding mode
+    uint		*scanned_len	// not NULL: Store number of scanned 'str' bytes here
 )
 {
     DASSERT(buf);
@@ -1539,7 +1541,7 @@ uint DecodeByMode
     if ( buf_size < 4 )
     {
 	char temp[4];
-	len = DecodeByMode(temp,sizeof(temp),source,slen,emode);
+	len = DecodeByMode(temp,sizeof(temp),source,slen,emode,scanned_len);
 	memcpy(buf,temp,buf_size);
 	goto term;
     }
@@ -1548,28 +1550,28 @@ uint DecodeByMode
     switch (emode)
     {
       case ENCODE_STRING:
-	len = ScanEscapedString(buf,buf_size,source,slen,false,0,0);
+	len = ScanEscapedString(buf,buf_size,source,slen,false,-1,scanned_len);
 	break;
 
       case ENCODE_UTF8:
-	len = ScanEscapedString(buf,buf_size,source,slen,true,0,0);
+	len = ScanEscapedString(buf,buf_size,source,slen,true,-1,scanned_len);
 	break;
 
       case ENCODE_BASE64:
-	len = DecodeBase64(buf,buf_size-1,source,slen,TableDecode64,true,0);
+	len = DecodeBase64(buf,buf_size-1,source,slen,TableDecode64,true,scanned_len);
 	break;
 
       case ENCODE_BASE64URL:
       case ENCODE_BASE64STAR:
-	len = DecodeBase64(buf,buf_size-1,source,slen,TableDecode64url,true,0);
+	len = DecodeBase64(buf,buf_size-1,source,slen,TableDecode64url,true,scanned_len);
 	break;
 
       case ENCODE_BASE64XML:
-	len = DecodeBase64(buf,buf_size-1,source,slen,TableDecode64xml,true,0);
+	len = DecodeBase64(buf,buf_size-1,source,slen,TableDecode64xml,true,scanned_len);
 	break;
 
       case ENCODE_JSON:
-	len = DecodeJSON(buf,buf_size,source,slen,0);
+	len = DecodeJSON(buf,buf_size,source,slen,-1,scanned_len);
 	break;
 
       default:
@@ -1577,6 +1579,8 @@ uint DecodeByMode
 	    len = StringCopyS(buf,buf_size,source) - buf;
 	else
 	    len = StringCopySM(buf,buf_size,source,slen) - buf;
+	if (scanned_len)
+	    *scanned_len = len;
 	break;
     }
 
@@ -1594,14 +1598,15 @@ uint DecodeByMode
 mem_t DecodeByModeMem
 (
     // Returns the decoded 'source'. Result is NULL-terminated.
-    // It points either to 'buf' or is alloced (on buf==NULL or to less space)
+    // It points either to 'buf' or is alloced (on buf==NULL or too less space)
     // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
 
     char		*buf,		// NULL or destination buffer
     uint		buf_size,	// size of 'buf'
     ccp			source,		// string to decode
     int			slen,		// length of string. if -1, str is null terminated
-    EncodeMode_t	emode		// encoding mode
+    EncodeMode_t	emode,		// encoding mode
+    uint		*scanned_len	// not NULL: Store number of scanned 'str' bytes here
 )
 {
     DASSERT( source || !slen );
@@ -1639,11 +1644,102 @@ mem_t DecodeByModeMem
     }
 
     mem_t mem;
-    mem.len = DecodeByMode(buf,buf_size,source,slen,emode);
+    mem.len = DecodeByMode(buf,buf_size,source,slen,emode,scanned_len);
     if ( alloced && mem.len+10 < buf_size )
 	buf = REALLOC( buf, mem.len+1 );
     mem.ptr = buf;
     return mem;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint DecodeByModeMemList
+(
+    // returns the number of scanned strings
+
+    mem_list_t		*res,		// result
+    uint		res_mode,	// 0:append, 1:clear, 2:init
+    ccp			source,		// string to decode
+    int			slen,		// length of string. if -1, str is null terminated
+    EncodeMode_t	emode,		// encoding mode
+    uint		*scanned_len	// not NULL: Store number of scanned 'str' bytes here
+)
+{
+    DASSERT(res);
+    if ( res_mode > 1 )
+	InitializeMemList(res);
+    else if ( res_mode > 0 )
+	ResetMemList(res);
+
+    if (!source)
+    {
+	if (scanned_len)
+	    *scanned_len = 0;
+	return 0;
+    }
+
+    ccp src = source;
+    if ( slen < 0 )
+	slen = strlen(src);
+
+    GrowBufMemList(res,res->buf_used+slen);
+    ccp end = src + slen;
+
+    char buf[4000];
+
+    uint count;
+    for ( count = 1;; count++ )
+    {
+	if ( emode != ENCODE_OFF )
+	    while ( src < end && (uchar)*src <= ' ' )
+		src++;
+
+	if ( src >= end )
+	{
+	    AppendMemListN(res,&EmptyMem,1,MEMLM_ALL);
+	    break;
+	}
+
+	if ( *src == ',' )
+	    AppendMemListN(res,&EmptyMem,1,MEMLM_ALL);
+	else if ( *src == '%' )
+	{
+	    AppendMemListN(res,&NullMem,1,MEMLM_ALL);
+	    src++;
+	}
+	else if ( emode == ENCODE_OFF )
+	{
+	    mem_t mem;
+	    mem.ptr = src;
+	    src = memchr(src,',',end-src);
+	    if (!src)
+		src = end;
+	    mem.len = src - mem.ptr;
+	    AppendMemListN(res,&mem,1,MEMLM_ALL);
+	}
+	else
+	{
+	    uint scanned;
+	    mem_t mem = DecodeByModeMem(buf,sizeof(buf),src,end-src,emode,&scanned);
+	    src += scanned;
+
+	    AppendMemListN(res,&mem,1,MEMLM_ALL);
+	    if ( mem.ptr != buf )
+		FreeString(mem.ptr);
+	}
+
+	while ( src < end && (uchar)*src <= ' ' )
+	    src++;
+	if ( src >= end || *src != ',' )
+	    break;
+	src++;
+    }
+
+    //--- terminate
+
+    if (scanned_len)
+	*scanned_len = src - source;
+    return count;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1722,7 +1818,7 @@ uint EncodeByMode
 mem_t EncodeByModeMem
 (
     // Returns the encoded 'source'. Result is NULL-terminated.
-    // It points either to 'buf' or is alloced (on buf==NULL or to less space)
+    // It points either to 'buf' or is alloced (on buf==NULL or too less space)
     // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
 
     char		*buf,		// NULL or destination buffer
@@ -1732,7 +1828,7 @@ mem_t EncodeByModeMem
     EncodeMode_t	emode		// encoding mode
 )
 {
-    DASSERT( source || !slen );
+    DASSERT( source || slen <= 0 );
     DASSERT( (uint)emode < ENCODE__N );
 
     if ( slen < 0 )

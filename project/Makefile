@@ -122,7 +122,7 @@ STRIP		= $(PRE)strip
 DIR_LIST	=
 
 RM_FILES	= *.{a,o,d,tmp,bak,exe} */*.{tmp,bak} */*/*.{tmp,bak}
-RM_FILES2	= *.{iso,ciso,wdf,wbfs} templates.sed
+RM_FILES2	= *.{iso,ciso,wdf,wbfs} templates.sed Makefile.setup
 
 MODE_FILE	= ./_mode.flag
 MODE		= $(shell test -s $(MODE_FILE) && cat $(MODE_FILE))
