@@ -137,6 +137,7 @@ void ScanPartitionGames();
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			    wbfs structs		///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[WBFS_t]]
 
 typedef struct WBFS_t
 {
@@ -168,6 +169,7 @@ typedef struct WBFS_t
 extern bool wbfs_cache_enabled;
 
 //-----------------------------------------------------------------------------
+// [[CheckDisc_t]]
 
 typedef struct CheckDisc_t
 {
@@ -183,6 +185,7 @@ typedef struct CheckDisc_t
 } CheckDisc_t;
 
 //-----------------------------------------------------------------------------
+// [[CheckWBFS_t]]
 
 typedef struct CheckWBFS_t
 {
@@ -227,6 +230,7 @@ int ScanOptWbfsAlloc ( ccp arg );
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			   Analyze WBFS			///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[enumAnalyzeWBFS]]
 
 typedef enum enumAnalyzeWBFS
 {
@@ -245,6 +249,7 @@ typedef enum enumAnalyzeWBFS
 } enumAnalyzeWBFS;
 
 //-----------------------------------------------------------------------------
+// [[AWRecord_t]]
 
 typedef struct AWRecord_t
 {
@@ -265,6 +270,7 @@ typedef struct AWRecord_t
 } AWRecord_t;
 
 //-----------------------------------------------------------------------------
+// [[AWData_t]]
 
 typedef struct AWData_t
 {

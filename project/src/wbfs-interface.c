@@ -4110,7 +4110,7 @@ enumError OpenWDiscSF ( WBFS_t * w )
     sf->file_size = (off_t)disc_blocks * w->wbfs->wbfs_sec_sz;
 
     SetFileAttrib( &sf->f.fatt, 0, &sf->f.st );
-    if ( w->disc->header && w->disc->header->dhead )
+    if (w->disc->header)
     {
 	const wbfs_inode_info_t * ii
 	    = (wbfs_inode_info_t*) ( w->disc->header->dhead + WBFS_INODE_INFO_OFF );

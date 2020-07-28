@@ -170,9 +170,9 @@ enum // some constants
     DOL_N_SECTIONS		= DOL_N_TEXT_SECTIONS + DOL_N_DATA_SECTIONS,
     DOL_HEADER_SIZE		= 0x100,
 
-    WBFS_MAX_SECTORS		= 0x10000,  // max number of sectors
-    WBFS_MIN_SECTOR_SHIFT	=  6,	    // needed for wbfs_calc_size_shift()
-    WBFS_MAX_SECTOR_SHIFT	= 11,	    // needed for wbfs_calc_size_shift()
+    WBFS_MAX_SECTORS		= 0x10000u,	// max number of sectors
+    WBFS_MIN_SECTOR_SHIFT	=  6,		// needed for wbfs_calc_size_shift()
+    WBFS_MAX_SECTOR_SHIFT	= 11,		// needed for wbfs_calc_size_shift()
     WBFS_MIN_SECTOR_SIZE	= 1 << WBFS_MIN_SECTOR_SHIFT + WII_SECTOR_SIZE_SHIFT,
     WBFS_MAX_SECTOR_SIZE	= 1 << WBFS_MAX_SECTOR_SHIFT + WII_SECTOR_SIZE_SHIFT,
 

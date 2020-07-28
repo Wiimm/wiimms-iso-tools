@@ -313,6 +313,8 @@ endif
 
 ifeq ($(SYSTEM),mac)
   CFLAGS	+= -I/usr/local/include
+else
+  LDFLAGS	+= -static-libgcc
 endif
 
 CFLAGS		+= $(XFLAGS)
@@ -320,7 +322,6 @@ CFLAGS		:= $(strip $(CFLAGS))
 
 DEPFLAGS	+= -MMD
 
-LDFLAGS		+= -static-libgcc
 LDFLAGS		:= $(strip $(LDFLAGS))
 
 ifeq ($(HAVE_ZLIB),1)
