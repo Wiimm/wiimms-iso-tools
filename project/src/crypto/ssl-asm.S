@@ -9,14 +9,14 @@
  *                         \/  \/     |_|    |_|                           *
  *                                                                         *
  *                           Wiimms ISO Tools                              *
- *                         https://wit.wiimm.de/                           *
+ *                         http://wit.wiimm.de/                            *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
  *   This file is part of the WIT project.                                 *
- *   Visit https://wit.wiimm.de/ for project details and sources.          *
+ *   Visit http://wit.wiimm.de/ for project details and sources.           *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2011-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -34,6 +34,6 @@
  *                                                                         *
  ***************************************************************************/
 
-#define WIT_INCLUDE_SSL_ASM
+#define WIIMM_INCLUDE_SSL_ASM
 #include "ssl-asm.h"
 

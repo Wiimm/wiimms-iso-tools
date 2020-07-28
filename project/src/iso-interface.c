@@ -5811,8 +5811,8 @@ enumError Skeletonize
     const enumOFT oft = CalcOFT(output_file_type,0,0,OFT__WDF_DEF);
 
     {
-	WIT_SHA_CTX ctx;
-	if (!WIT_SHA1_Init(&ctx))
+	WIIMM_SHA_CTX ctx;
+	if (!WIIMM_SHA1_Init(&ctx))
 	{
 	    ASSERT(0);
 	    exit(0);
@@ -5823,10 +5823,10 @@ enumError Skeletonize
 	{
 	    wd_memmap_item_t * mi = mm.item + i;
 	    noPRINT("### %p %9llx %6llx\n",mi->data,mi->offset,mi->size);
-	    WIT_SHA1_Update(&ctx,mi->data,mi->size);
+	    WIIMM_SHA1_Update(&ctx,mi->data,mi->size);
 	}
 	u8 h[WII_HASH_SIZE];
-	WIT_SHA1_Final(h,&ctx);
+	WIIMM_SHA1_Final(h,&ctx);
 
 	snprintf(fname,sizeof(fname),
 		"%s/%.6s-%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x"

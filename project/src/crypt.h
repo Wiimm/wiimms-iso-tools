@@ -34,15 +34,16 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef WIT_CRYPT_H
-#define WIT_CRYPT_H 1
 
-#include "crypto/wit-sha.h"
-#define SHA1 WIT_SHA1
+#ifndef WIIMM_CRYPT_H
+#define WIIMM_CRYPT_H 1
+
+#include "crypto/wiimm-sha.h"
+#define SHA1 WIIMM_SHA1
 
 // random functions
 void MyRandomFill ( void * buf, size_t size );
 #define RANDOM_FILL MyRandomFill
 
-#endif // WIT_CRYPT_H
+#endif // WIIMM_CRYPT_H
 

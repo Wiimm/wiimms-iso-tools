@@ -704,10 +704,10 @@ void test_sha1()
 
     u32 t2 = GetTimerMSec();
     for ( i=0; i<M; i++ )
-	WIT_SHA1(source,sizeof(source),h2);
+	WIIMM_SHA1(source,sizeof(source),h2);
     t2 = GetTimerMSec() - t2;
 
-    printf("WIT_SHA1: %8u msec / %u = %6llu nsec\n",t2,M,(u64)t2*1000000/M);
+    printf("WIIMM_SHA1: %8u msec / %u = %6llu nsec\n",t2,M,(u64)t2*1000000/M);
     printf("SHA1:     %8u msec / %u = %6llu nsec\n",t1,M,(u64)t1*1000000/M);
 
     for ( i = 0; i < N; i++ )
@@ -717,7 +717,7 @@ void test_sha1()
 	MyRandomFill(source,sizeof(source));
 
 	SHA1(source,sizeof(source),h1);
-	WIT_SHA1(source,sizeof(source),h2);
+	WIIMM_SHA1(source,sizeof(source),h2);
 
 	if (memcmp(h2,h1,sizeof(h2)))
 	    wit_failed++;

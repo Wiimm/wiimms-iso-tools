@@ -2,7 +2,7 @@ name: make mac distrib
 
 on:
   push:
-    branches: [ master, test-mac-build ]
+    branches: [ masterxx, test-mac-build ]
 
 jobs:
   build:

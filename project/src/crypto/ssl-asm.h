@@ -1,22 +1,23 @@
 
 /***************************************************************************
- *                    __            __ _ ___________                       *
- *                    \ \          / /| |____   ____|                      *
- *                     \ \        / / | |    | |                           *
- *                      \ \  /\  / /  | |    | |                           *
- *                       \ \/  \/ /   | |    | |                           *
- *                        \  /\  /    | |    | |                           *
- *                         \/  \/     |_|    |_|                           *
+ *                         _______ _______ _______                         *
+ *                        |  ___  |____   |  ___  |                        *
+ *                        | |   |_|    / /| |   |_|                        *
+ *                        | |_____    / / | |_____                         *
+ *                        |_____  |  / /  |_____  |                        *
+ *                         _    | | / /    _    | |                        *
+ *                        | |___| |/ /____| |___| |                        *
+ *                        |_______|_______|_______|                        *
  *                                                                         *
- *                           Wiimms ISO Tools                              *
- *                         https://wit.wiimm.de/                           *
+ *                            Wiimms SZS Tools                             *
+ *                          https://szs.wiimm.de/                          *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This file is part of the WIT project.                                 *
- *   Visit https://wit.wiimm.de/ for project details and sources.          *
+ *   This file is part of the SZS project.                                 *
+ *   Visit https://szs.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2011-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -36,18 +37,18 @@
 
 #ifdef __CYGWIN__
     #define SHA1_ASM
-    #ifdef WIT_INCLUDE_SSL_ASM
+    #ifdef WIIMM_INCLUDE_SSL_ASM
 	#include "sha1-586-cygwin.s"
     #endif
 #elif defined(__linux__)
     #if defined(__i386__)
 	#define SHA1_ASM
-	#ifdef WIT_INCLUDE_SSL_ASM
+	#ifdef WIIMM_INCLUDE_SSL_ASM
 	    #include "sha1-586-elf.s"
 	#endif
     #elif defined(__x86_64__)
 	#define SHA1_ASM
-	#ifdef WIT_INCLUDE_SSL_ASM
+	#ifdef WIIMM_INCLUDE_SSL_ASM
 	    #include "sha1-x86_64.s"
 	#endif
     #endif
