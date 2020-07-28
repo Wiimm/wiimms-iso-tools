@@ -486,7 +486,7 @@ void wbfs_calc_geometry
     p->n_wii_sec	= p->n_hd_sec / ( p->wii_sec_sz / p->hd_sec_sz );
     const u32 n_wbfs_sec= p->n_wii_sec >> ( p->wbfs_sec_sz_s - p->wii_sec_sz_s );
     p->n_wbfs_sec	= n_wbfs_sec < WBFS_MAX_SECTORS
-			? n_wbfs_sec : WBFS_MAX_SECTORS;
+			? n_wbfs_sec : WBFS_MAX_SECTORS-1;
 
     //----- calculate and fix the needed space for free blocks table
 
