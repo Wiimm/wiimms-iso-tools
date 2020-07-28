@@ -1120,7 +1120,7 @@ enumError Dump_TIK_MEM
     fprintf(f,"%*sIssuer:            %s\n", indent,"", tik->issuer );
 
     dump_sig_type(f,indent,ntohl(tik->sig_type),sig_status,false);
-    if ( !tik->sig && !memcmp(tik->sig,tik->sig+1,sizeof(tik->sig)-1) )
+    if ( !tik->sig[0] && !memcmp(tik->sig,tik->sig+1,sizeof(tik->sig)-1) )
 	fprintf(f,"\n%*sSignature is cleared (all zero)\n", indent,"" );
 
     u32 val = ntohs(tik->n_dlc);
@@ -1233,7 +1233,7 @@ enumError Dump_TMD_MEM
     fprintf(f,"%*sIssuer:            %s\n", indent,"", tmd->issuer );
 
     dump_sig_type(f,indent,ntohl(tmd->sig_type),sig_status,false);
-    if ( !tmd->sig && !memcmp(tmd->sig,tmd->sig+1,sizeof(tmd->sig)-1) )
+    if ( !tmd->sig[0] && !memcmp(tmd->sig,tmd->sig+1,sizeof(tmd->sig)-1) )
 	fprintf(f,"\n%*sSignature is cleared (all zero)\n", indent,"" );
 
     fprintf(f,"%*sVersion:         %11u\n", indent, "", tmd->version);

@@ -272,7 +272,7 @@ wd_ckey_index_t ScanCommonKey ( ccp arg )
 
 //-----------------------------------------------------------------------------
 
-enumRegion opt_common_key = WD_CKEY__N;
+wd_ckey_index_t opt_common_key = WD_CKEY__N;
 
 int ScanOptCommonKey ( ccp arg )
 {

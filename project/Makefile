@@ -301,11 +301,20 @@ CFLAGS		+= -fomit-frame-pointer -fno-strict-aliasing -funroll-loops
 CFLAGS		+= -Wall -Wno-parentheses -Wno-unused-function
 #CFLAGS		+= -O3 -Isrc/libwbfs -Isrc/lzma -Isrc -I$(UI) -I. -Iwork
 CFLAGS		+= -O3 -Isrc/libwbfs -Isrc -I$(UI) -I. -Iwork
+
+ifeq ($(SYSTEM_LINUX),1)
+  LIBS		+= -ltinfo
+  CFLAGS	+= -Wno-format-truncation
+endif
+
 ifeq ($(SYSTEM),cygwin)
   CFLAGS	+= -Wno-format-truncation
-else ifeq ($(SYSTEM),mac)
- CFLAGS		+= -I/usr/local/include
 endif
+
+ifeq ($(SYSTEM),mac)
+  CFLAGS	+= -I/usr/local/include
+endif
+
 CFLAGS		+= $(XFLAGS)
 CFLAGS		:= $(strip $(CFLAGS))
 
@@ -313,10 +322,6 @@ DEPFLAGS	+= -MMD
 
 LDFLAGS		+= -static-libgcc
 LDFLAGS		:= $(strip $(LDFLAGS))
-
-ifeq ($(SYSTEM_LINUX),1)
- LIBS		+= -ltinfo
-endif
 
 ifeq ($(HAVE_ZLIB),1)
  LIBS		+= -lz

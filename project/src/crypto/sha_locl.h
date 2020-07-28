@@ -206,7 +206,8 @@ int HASH_INIT (WIT_SHA_CTX *c)
 static void HASH_BLOCK_DATA_ORDER (WIT_SHA_CTX *c, const void *p, size_t num)
 	{
 	const unsigned char *data=p;
-	register unsigned MD32_REG_T A,B,C,D,E,T,l;
+//	register unsigned MD32_REG_T A,B,C,D,E,T,l;
+	register uint32_t MD32_REG_T A,B,C,D,E,T,l;
 #ifndef MD32_XARRAY
 	unsigned MD32_REG_T	XX0, XX1, XX2, XX3, XX4, XX5, XX6, XX7,
 				XX8, XX9,XX10,XX11,XX12,XX13,XX14,XX15;

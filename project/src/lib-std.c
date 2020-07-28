@@ -276,6 +276,7 @@ void SetupLib ( int argc, char ** argv, ccp p_progname, enumProgID prid )
     TRACE_SIZEOF(bool);
     TRACE_SIZEOF(short);
     TRACE_SIZEOF(int);
+    TRACE_SIZEOF(unsigned);
     TRACE_SIZEOF(long);
     TRACE_SIZEOF(long long);
     TRACE_SIZEOF(size_t);

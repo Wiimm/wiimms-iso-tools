@@ -4505,7 +4505,6 @@ static void print_scs_name ( FILE *f, int fw, int use_tab, ccp format, ... )
 static u64 SCS_get_uint ( const u8* data, int idx, const SaveRestoreTab_t *srt )
 {
     DASSERT(srt);
-    DASSERT(srt->var);
 
     switch(srt->size)
     {
@@ -4522,7 +4521,6 @@ static u64 SCS_get_uint ( const u8* data, int idx, const SaveRestoreTab_t *srt )
 static s64 SCS_get_int ( const u8* data, int idx, const SaveRestoreTab_t *srt )
 {
     DASSERT(srt);
-    DASSERT(srt->var);
 
     switch(srt->size)
     {
