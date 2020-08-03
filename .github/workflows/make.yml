@@ -2,11 +2,7 @@ name: make mac distrib
 
 on:
   push:
-<<<<<<< HEAD
     branches: [ master, test-mac-build ]
-=======
-    branches: [ master, Test-Mac-build ]
->>>>>>> 24e2650dea3a994dc3c8149646eb80bc6a8b291a
 
 jobs:
   build:
@@ -19,10 +15,6 @@ jobs:
       - name: Upload distribution
         uses: actions/upload-artifact@v2
         with:
-<<<<<<< HEAD
           name: latest-wit@mac-distribution
-=======
-          name: latest-mac-distribution
->>>>>>> 24e2650dea3a994dc3c8149646eb80bc6a8b291a
           path: project/latest-mac.tar.gz
 
