@@ -67,22 +67,6 @@
     #define PRINT_IF noPRINT
 #endif
 
-///////////////////////////////////////////////////////////////////////////////
-
-typedef enum mm_mode_t
-{
-    WIA_MM_IGNORE = WD_PAT_IGNORE,
-
-    WIA_MM_HEADER_DATA,		// header data, part of wia_disc_t
-    WIA_MM_CACHED_DATA,		// cached data, write at close
-    WIA_MM_RAW_GDATA,		// raw data, managed with 'gdata'
-    WIA_MM_PART_GDATA_0,	// partition data #0, managed with 'gdata'
-    WIA_MM_PART_GDATA_1,	// partition data #1, managed with 'gdata'
-    WIA_MM_EOF,			// end of file marker
-    WIA_MM_GROWING,		// growing space
-
-} mm_mode_t;
-
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			    static data			///////////////

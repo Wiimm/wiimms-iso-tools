@@ -167,7 +167,7 @@ typedef enum enumOptions
 	OPT_SORT,
 	OPT_LIMIT,
 
-	OPT__N_SPECIFIC, // == 111 
+	OPT__N_SPECIFIC, // == 111
 
 	//----- global options -----
 

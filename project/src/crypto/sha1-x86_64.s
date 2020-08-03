@@ -1,4 +1,4 @@
-.text	
+.text
 .globl	wit_sha1_block_data_order
 .type	wit_sha1_block_data_order,@function
 .align	16

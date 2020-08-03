@@ -86,7 +86,7 @@ typedef enum enumOptions
 	OPT_COMPRESSION,
 	OPT_MEM,
 
-	OPT__N_SPECIFIC, // == 30 
+	OPT__N_SPECIFIC, // == 30
 
 	//----- global options -----
 

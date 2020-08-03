@@ -5,21 +5,21 @@
  * This package is an SSL implementation written
  * by Eric Young (eay@cryptsoft.com).
  * The implementation was written so as to conform with Netscapes SSL.
- * 
+ *
  * This library is free for commercial and non-commercial use as long as
  * the following conditions are aheared to.  The following conditions
  * apply to all code found in this distribution, be it the RC4, RSA,
  * lhash, DES, etc., code; not just the SSL code.  The SSL documentation
  * included with this distribution is covered by the same copyright terms
  * except that the holder is Tim Hudson (tjh@cryptsoft.com).
- * 
+ *
  * Copyright remains Eric Young's, and as such any Copyright notices in
  * the code are not to be removed.
  * If this package is used in a product, Eric Young should be given attribution
  * as the author of the parts of the library used.
  * This can be in the form of a textual message at program startup or
  * in documentation (online or textual) provided with the package.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -34,10 +34,10 @@
  *     Eric Young (eay@cryptsoft.com)"
  *    The word 'cryptographic' can be left out if the rouines from the library
  *    being used are not cryptographic related :-).
- * 4. If you include any Windows specific code (or a derivative thereof) from 
+ * 4. If you include any Windows specific code (or a derivative thereof) from
  *    the apps directory (application code) you must include an acknowledgement:
  *    "This product includes software written by Tim Hudson (tjh@cryptsoft.com)"
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY ERIC YOUNG ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -49,7 +49,7 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- * 
+ *
  * The licence and distribution terms for any publically available version or
  * derivative of this code cannot be changed.  i.e. this code cannot simply be
  * copied and put under another distribution licence
@@ -58,12 +58,12 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include "wit-sha.h"
+#include "wiimm-sha.h"
 
 #define DATA_ORDER_IS_BIG_ENDIAN
 
 #define HASH_LONG               SHA_LONG
-#define HASH_CTX                WIT_SHA_CTX
+#define HASH_CTX                WIIMM_SHA_CTX
 #define HASH_CBLOCK             SHA_CBLOCK
 #define HASH_MAKE_STRING(c,s)   do {	\
 	unsigned long ll;		\
@@ -83,14 +83,14 @@
 # define HASH_BLOCK_DATA_ORDER   	sha_block_data_order
 # define Xupdate(a,ix,ia,ib,ic,id)	(ix=(a)=(ia^ib^ic^id))
 
-static void sha_block_data_order (WIT_SHA_CTX *c, const void *p,size_t num);
+static void sha_block_data_order (WIIMM_SHA_CTX *c, const void *p,size_t num);
 
 #elif defined(SHA_1)
 
-# define HASH_UPDATE             	WIT_SHA1_Update
-# define HASH_TRANSFORM          	WIT_SHA1_Transform
-# define HASH_FINAL              	WIT_SHA1_Final
-# define HASH_INIT			WIT_SHA1_Init
+# define HASH_UPDATE             	WIIMM_SHA1_Update
+# define HASH_TRANSFORM          	WIIMM_SHA1_Transform
+# define HASH_FINAL              	WIIMM_SHA1_Final
+# define HASH_INIT			WIIMM_SHA1_Init
 # define HASH_BLOCK_DATA_ORDER   	wit_sha1_block_data_order
 # if defined(__MWERKS__) && defined(__MC68K__)
    /* Metrowerks for Motorola fails otherwise:-( <appro@fy.chalmers.se> */
@@ -106,7 +106,7 @@ static void sha_block_data_order (WIT_SHA_CTX *c, const void *p,size_t num);
 #ifndef SHA1_ASM
 static
 #endif
-void wit_sha1_block_data_order (WIT_SHA_CTX *c, const void *p,size_t num);
+void wit_sha1_block_data_order (WIIMM_SHA_CTX *c, const void *p,size_t num);
 
 #else
 # error "Either SHA_0 or SHA_1 must be defined."
@@ -120,7 +120,7 @@ void wit_sha1_block_data_order (WIT_SHA_CTX *c, const void *p,size_t num);
 #define INIT_DATA_h3 0x10325476UL
 #define INIT_DATA_h4 0xc3d2e1f0UL
 
-int HASH_INIT (WIT_SHA_CTX *c)
+int HASH_INIT (WIIMM_SHA_CTX *c)
 	{
 	memset (c,0,sizeof(*c));
 	c->h0=INIT_DATA_h0;
@@ -143,9 +143,9 @@ int HASH_INIT (WIT_SHA_CTX *c)
  * I've just become aware of another tweak to be made, again from Wei Dai,
  * in F_40_59, (x&a)|(y&a) -> (x|y)&a
  */
-#define	F_00_19(b,c,d)	((((c) ^ (d)) & (b)) ^ (d)) 
+#define	F_00_19(b,c,d)	((((c) ^ (d)) & (b)) ^ (d))
 #define	F_20_39(b,c,d)	((b) ^ (c) ^ (d))
-#define F_40_59(b,c,d)	(((b) & (c)) | (((b)|(c)) & (d))) 
+#define F_40_59(b,c,d)	(((b) & (c)) | (((b)|(c)) & (d)))
 #define	F_60_79(b,c,d)	F_20_39(b,c,d)
 
 #ifndef OPENSSL_SMALL_FOOTPRINT
@@ -203,7 +203,7 @@ int HASH_INIT (WIT_SHA_CTX *c)
 #endif
 
 #if !defined(SHA_1) || !defined(SHA1_ASM)
-static void HASH_BLOCK_DATA_ORDER (WIT_SHA_CTX *c, const void *p, size_t num)
+static void HASH_BLOCK_DATA_ORDER (WIIMM_SHA_CTX *c, const void *p, size_t num)
 	{
 	const unsigned char *data=p;
 	register unsigned MD32_REG_T A,B,C,D,E,T,l;
@@ -220,7 +220,7 @@ static void HASH_BLOCK_DATA_ORDER (WIT_SHA_CTX *c, const void *p, size_t num)
 	D=c->h3;
 	E=c->h4;
 
-	for (;;)
+	for(;;)
 			{
 	const union { long one; char little; } is_endian = {1};
 
@@ -337,8 +337,8 @@ static void HASH_BLOCK_DATA_ORDER (WIT_SHA_CTX *c, const void *p, size_t num)
 	BODY_60_79(77,B,C,D,E,T,A,X(13),X(15),X( 5),X(10));
 	BODY_60_79(78,A,B,C,D,E,T,X(14),X( 0),X( 6),X(11));
 	BODY_60_79(79,T,A,B,C,D,E,X(15),X( 1),X( 7),X(12));
-	
-	c->h0=(c->h0+E)&0xffffffffL; 
+
+	c->h0=(c->h0+E)&0xffffffffL;
 	c->h1=(c->h1+T)&0xffffffffL;
 	c->h2=(c->h2+A)&0xffffffffL;
 	c->h3=(c->h3+B)&0xffffffffL;
@@ -388,7 +388,7 @@ static void HASH_BLOCK_DATA_ORDER (WIT_SHA_CTX *c, const void *p, size_t num)
 	A=ROTATE(A,5)+T+xa;	    } while(0)
 
 #if !defined(SHA_1) || !defined(SHA1_ASM)
-static void HASH_BLOCK_DATA_ORDER (WIT_SHA_CTX *c, const void *p, size_t num)
+static void HASH_BLOCK_DATA_ORDER (WIIMM_SHA_CTX *c, const void *p, size_t num)
 	{
 	const unsigned char *data=p;
 	register unsigned MD32_REG_T A,B,C,D,E,T,l;
@@ -401,7 +401,7 @@ static void HASH_BLOCK_DATA_ORDER (WIT_SHA_CTX *c, const void *p, size_t num)
 	D=c->h3;
 	E=c->h4;
 
-	for (;;)
+	for(;;)
 		{
 	for (i=0;i<16;i++)
 	{ HOST_c2l(data,l); X[i]=l; BODY_00_15(X[i]); }
@@ -414,7 +414,7 @@ static void HASH_BLOCK_DATA_ORDER (WIT_SHA_CTX *c, const void *p, size_t num)
 	for (i=4;i<24;i++)
 	{ BODY_60_79(X[(i+8)&15],X[(i+10)&15],X[i&15],    X[(i+5)&15]);  }
 
-	c->h0=(c->h0+A)&0xffffffffL; 
+	c->h0=(c->h0+A)&0xffffffffL;
 	c->h1=(c->h1+B)&0xffffffffL;
 	c->h2=(c->h2+C)&0xffffffffL;
 	c->h3=(c->h3+D)&0xffffffffL;

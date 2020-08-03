@@ -160,7 +160,7 @@ typedef enum enumOptions
 	OPT_FILE_LIMIT,
 	OPT_PATCH_FILE,
 
-	OPT__N_SPECIFIC, // == 104 
+	OPT__N_SPECIFIC, // == 104
 
 	//----- global options -----
 
@@ -594,6 +594,7 @@ typedef enum enumOptions
 //				| OB_DIFF
 //				| OB_REMOVE
 //				| OB_GRP_SPLIT_CHUNK
+//				| OB_GRP_PATCH
 //				| OB_GRP_OUTMODE_FST,
 //
 //	OB_CMD_CONVERT		= OB_GRP_TITLES

@@ -572,7 +572,7 @@ static const struct option OptionLong[] =
 
 static u8 OptionUsed[OPT__N_TOTAL+1] = {0};
 
-static const OptionIndex_t OptionIndex[UIOPT_INDEX_SIZE] = 
+static const OptionIndex_t OptionIndex[UIOPT_INDEX_SIZE] =
 {
 	/* 0x00   */	 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
 	/* 0x10   */	 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,

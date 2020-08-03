@@ -2,3 +2,7 @@
 cmd.txt
 bin/
 project/bin/
+project/edit-list/
+project/Makefile.setup
+project/Makefile.local
+project/Makefile.user

@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -116,6 +116,24 @@ typedef struct dol_sect_select_t
 }
 dol_sect_select_t;
 
+///////////////////////////////////////////////////////////////////////////////
+// [[dol_sect_addr_t]]
+
+typedef struct dol_sect_addr_t
+{
+    //--- source info
+    u32		addr;		// address of data
+    u32		size;		// size of data 
+
+    //--- search info
+    int		section;	// section index, <0: invalid
+    char	sect_name[4];	// empty or name of found section
+    u32		sect_addr;	// NULL or section address
+    u32		sect_offset;	// NULL or offset in found section
+    u32		sect_size;	// NULL or size of found section
+}
+dol_sect_addr_t;
+
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			DOL: Interface			///////////////
@@ -205,6 +223,27 @@ void DumpDolHeader
 					//  1: print file map
 					//  2: print virtual mem map
 					//  4: print delta table
+);
+
+///////////////////////////////////////////////////////////////////////////////
+
+int GetDolSectionAddr
+(
+    // returns dsa->section
+    dol_sect_addr_t	*dsa,		// result: section address info
+    const dol_header_t	*dol_head,	// valid DOL header
+    u32			addr,		// address to search
+    u32			size		// >0: wanted size
+);
+
+//-----------------------------------------------------------------------------
+
+ccp GetDolSectionAddrInfo
+(
+    // returns GetCircBuf() or EmptyString on error
+    const dol_header_t	*dol_head,	// valid DOL header
+    u32			addr,		// address to search
+    u32			size		// >0: wanted size
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -346,7 +385,7 @@ uint RemoveDolSections
 
 #define GCH_MAGIC_NUM 0x47044348
 
-#define GCT_MAGIC_NUM	0x00d0c0de00d0c0deull
+#define GCT_MAGIC8_NUM	0x00d0c0de00d0c0deull
 #define GCT_TERM_NUM	0xf000000000000000ull
 #define GCT_SEP_NUM1	0xf0000001u
 #define GCT_REG_OFFSET	8

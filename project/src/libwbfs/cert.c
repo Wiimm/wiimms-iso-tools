@@ -271,7 +271,7 @@ void setup_cert_data()
 	int i;
 	for ( i = 0; i < sizeof(std_cert_chain); i++ )
 	    std_cert_chain[i] ^= 0xdc;
-	
+
 	const int key_size = cert_get_pubkey_size(ntohl(root_cert.key_type));
 	for ( i = 0; i < key_size; i++ )
 	    root_cert.public_key[i] ^= 0xdc;
@@ -292,14 +292,13 @@ void setup_cert_data()
 
 static void bn_sub_modulus ( u8 *a, const u8 *N, const u32 n )
 {
-    u32 i;
-    u32 dig;
-    u8 c;
+    uint i;
+    u8 c = 0;
 
-    c = 0;
-    for (i = n - 1; i < n; i--) {
-	dig = N[i] + c;
-	c = (a[i] < dig);
+    for ( i = n - 1; i < n; i-- )
+    {
+	const u32 dig = N[i] + c;
+	c = a[i] < dig;
 	a[i] -= dig;
     }
 }
@@ -309,14 +308,12 @@ static void bn_sub_modulus ( u8 *a, const u8 *N, const u32 n )
 
 static void bn_add ( u8 *d, const u8 *a, const u8 *b, const u8 *N, const u32 n )
 {
-    u32 i;
-    u32 dig;
-    u8 c;
+    uint i;
+    u8 c = 0;
 
-    c = 0;
     for (i = n - 1; i < n; i--)
     {
-	dig = a[i] + b[i] + c;
+	const u32 dig = a[i] + b[i] + c;
 	c = (dig >= 0x100);
 	d[i] = dig;
     }
@@ -324,7 +321,7 @@ static void bn_add ( u8 *d, const u8 *a, const u8 *b, const u8 *N, const u32 n )
     if (c)
 	bn_sub_modulus(d, N, n);
 
-    if (bn_compare(d, N, n) >= 0)
+    if ( bn_compare(d, N, n) >= 0 )
 	bn_sub_modulus(d, N, n);
 }
 
@@ -333,13 +330,12 @@ static void bn_add ( u8 *d, const u8 *a, const u8 *b, const u8 *N, const u32 n )
 
 static void bn_mul ( u8 *d, const u8 *a, const u8 *b, const u8 *N, const u32 n )
 {
-    u32 i;
+    bn_zero(d,n);
+
+    uint i;
     u8 mask;
-
-    bn_zero(d, n);
-
-    for (i = 0; i < n; i++)
-	for (mask = 0x80; mask != 0; mask >>= 1)
+    for ( i = 0; i < n; i++ )
+	for ( mask = 0x80; mask != 0; mask >>= 1 )
 	{
 	    bn_add(d, d, d, N, n);
 	    if ((a[i] & mask) != 0)
@@ -358,7 +354,7 @@ static void bn_exp(u8 *d, const u8 *a, const u8 *N, const u32 n, const u8 *e, co
 
     bn_zero(d, n);
     d[n-1] = 1;
-    for (i = 0; i < en; i++)
+    for ( i = 0; i < en; i++ )
 	for ( mask = 0x80; mask != 0; mask >>= 1 )
 	{
 	    bn_mul(t, d, d, N, n);
@@ -366,6 +362,287 @@ static void bn_exp(u8 *d, const u8 *a, const u8 *N, const u32 n, const u8 *e, co
 		bn_mul(d, t, a, N, n);
 	    else
 		bn_copy(d, t, n);
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void bn_inv ( u8 *d, const u8 *a, const u8 *N, const u32 n )
+{
+    u8 t[512], s[512];
+
+    bn_copy(t, N, n);
+    bn_zero(s, n);
+    s[n-1] = 2;
+    bn_sub_modulus(t, s, n);
+    bn_exp(d, a, N, n, t, n);
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			elt helpers			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+#define elt_zero(d)	memset(d,0,30)
+#define elt_copy(d,s)	memcpy(d,s,30)
+
+///////////////////////////////////////////////////////////////////////////////
+
+static int elt_is_zero ( const u8 *d )
+{
+    uint i;
+    for ( i = 0; i < 30; i++ )
+	if (d[i] != 0)
+	    return 0;
+    return 1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void elt_add ( u8 *d, const u8 *a, const u8 *b )
+{
+    uint i;
+    for ( i = 0; i < 30; i++ )
+	d[i] = a[i] ^ b[i];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void elt_mul_x ( u8 *d, const u8 *a )
+{
+    u8 carry = a[0] & 1;
+    u8 x = 0, y;
+
+    uint i;
+    for ( i = 0; i < 29; i++ )
+    {
+	y = a[i+1];
+	d[i] = x ^ y>>7;
+	x = (u8)(y<<1);
+    }
+    d[29] = x ^ carry;
+    d[20] ^= carry << 2;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void elt_mul ( u8 *d, const u8 *a, const u8 *b )
+{
+    elt_zero(d);
+    u8 mask = 1;
+    uint i = 0, n;
+
+    for ( n = 0; n < 233; n++ )
+    {
+	elt_mul_x(d,d);
+
+	if ( a[i] & mask )
+	    elt_add(d,d,b);
+
+	mask >>= 1;
+	if ( !mask)
+	{
+	    mask = 0x80;
+	    i++;
+	}
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void elt_square_to_wide ( u8 *d, const u8 *a )
+{
+    static const u8 square[16] =
+	"\x00\x01\x04\x05\x10\x11\x14\x15\x40\x41\x44\x45\x50\x51\x54\x55";
+
+    uint i;
+    for ( i = 0; i < 30; i++ )
+    {
+	d[ 2*i   ] = square[ a[i] >> 4 ];
+	d[ 2*i+1 ] = square[ a[i] & 15 ];
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void wide_reduce ( u8 *d )
+{
+    uint i;
+    for ( i = 0; i < 30; i++ )
+    {
+	u8 x = d[i];
+	d[i + 19] ^= x >> 7;
+	d[i + 20] ^= x << 1;
+	d[i + 29] ^= x >> 1;
+	d[i + 30] ^= x << 7;
+    }
+
+    u8 x = d[30] & ~1;
+
+    d[49] ^= x >> 7;
+    d[50] ^= x << 1;
+    d[59] ^= x >> 1;
+    d[30] &= 1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void elt_square ( u8 *d, const u8 *a )
+{
+    u8 wide[60];
+
+    elt_square_to_wide(wide, a);
+    wide_reduce(wide);
+
+    elt_copy(d, wide + 30);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void itoh_tsujii ( u8 *d, const u8 *a, const u8 *b, uint j )
+{
+    u8 t[30];
+    elt_copy(t,a);
+
+    while (j--)
+    {
+	elt_square(d,t);
+	elt_copy(t,d);
+    }
+    elt_mul(d,t,b);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void elt_inv ( u8 *d, const u8 *a )
+{
+    u8 t[30];
+    u8 s[30];
+
+    itoh_tsujii( t, a, a,   1);
+    itoh_tsujii( s, t, a,   1);
+    itoh_tsujii( t, s, s,   3);
+    itoh_tsujii( s, t, a,   1);
+    itoh_tsujii( t, s, s,   7);
+    itoh_tsujii( s, t, t,  14);
+    itoh_tsujii( t, s, a,   1);
+    itoh_tsujii( s, t, t,  29);
+    itoh_tsujii( t, s, s,  58);
+    itoh_tsujii( s, t, t, 116);
+    elt_square(d,s);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static int point_is_zero ( const u8 *p )
+{
+    return elt_is_zero(p) && elt_is_zero(p+30);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void point_double ( u8 *r, const u8 *p )
+{
+    u8 s[30], t[30];
+    const u8 *px = p;
+    const u8 *py = p + 30;
+    u8 *rx = r;
+    u8 *ry = r + 30;
+
+    if (elt_is_zero(px))
+    {
+	elt_zero(rx);
+	elt_zero(ry);
+	return;
+    }
+
+    elt_inv(t,px);	// t = 1/px
+    elt_mul(s,py,t);	// s = py/px
+    elt_add(s,s,px);	// s = py/px + px
+
+    elt_square(t,px);	// t = px*px
+
+    elt_square(rx,s);	// rx = s*s
+    elt_add(rx,rx,s);	// rx = s*s + s
+    rx[29] ^= 1;	// rx = s*s + s + 1
+
+    elt_mul(ry,s,rx);	// ry = s * rx
+    elt_add(ry,ry,rx);	// ry = s*rx + rx
+    elt_add(ry,ry,t);	// ry = s*rx + rx + px*px
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void point_add ( u8 *r, const u8 *p, const u8 *q )
+{
+    u8 s[30], t[30], u[30];
+
+    const u8 *px = p;
+    const u8 *py = p + 30;
+    const u8 *qx = q;
+    const u8 *qy = q + 30;
+    u8 *rx = r;
+    u8 *ry = r + 30;
+
+    if (point_is_zero(p))
+    {
+	elt_copy(rx,qx);
+	elt_copy(ry,qy);
+	return;
+    }
+
+    if (point_is_zero(q))
+    {
+	elt_copy(rx,px);
+	elt_copy(ry,py);
+	return;
+    }
+
+    elt_add(u,px,qx);
+
+    if (elt_is_zero(u))
+    {
+	elt_add(u, py, qy);
+	if (elt_is_zero(u))
+	    point_double(r, p);
+	else
+	{
+	    elt_zero(rx);
+	    elt_zero(ry);
+	}
+	return;
+    }
+
+    elt_inv(t, u);
+    elt_add(u, py, qy);
+    elt_mul(s, t, u);
+
+    elt_square(t, s);
+    elt_add(t, t, s);
+    elt_add(t, t, qx);
+    t[29] ^= 1;
+
+    elt_mul(u, s, t);
+    elt_add(s, u, py);
+    elt_add(rx, t, px);
+    elt_add(ry, s, rx);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void point_mul ( u8 *d, const u8 *a, const u8 *b ) // a is bignum
+{
+    elt_zero(d);
+    elt_zero(d+30);
+
+    uint i;
+    u8 mask;
+    for ( i = 0; i < 30; i++ )
+	for ( mask = 0x80; mask; mask >>= 1 )
+	{
+	    point_double(d, d);
+	    if ( a[i] & mask )
+		point_add(d, d, b);
 	}
 }
 
@@ -398,7 +675,7 @@ ccp cert_get_status_message
 
     return ret_invalid;
 };
- 
+
 ///////////////////////////////////////////////////////////////////////////////
 
 ccp cert_get_status_name
@@ -425,8 +702,25 @@ ccp cert_get_status_name
 
     return ret_invalid;
 };
- 
+
 ///////////////////////////////////////////////////////////////////////////////
+
+const sig_info_t * cert_get_signature_info ( uint sig_type )
+{
+    static const sig_info_t rsa_4096 = { 0x10000, 0x200, 0x200, 0x200, "RSA-4096" };
+    static const sig_info_t rsa_2068 = { 0x10001, 0x100, 0x100, 0x100, "RSA-2048" };
+    static const sig_info_t e_curve  = { 0x10002, 0x040, 0x03c, 0x03c, "Elliptic Curve" };
+
+    switch (sig_type)
+    {
+	case 0x10000:	return &rsa_4096;
+	case 0x10001:	return &rsa_2068;
+	case 0x10002:	return &e_curve;
+    }
+    return 0;
+}
+
+//-----------------------------------------------------------------------------
 
 ccp cert_get_signature_name
 (
@@ -434,39 +728,28 @@ ccp cert_get_signature_name
     ccp			ret_invalid	// return value if 'sig_type' unknown
 )
 {
-    switch (sig_type)
-    {
-	case 0x10000:	return "RSA-4096";
-	case 0x10001:	return "RSA-2048";
-	case 0x10002:	return "Elliptic Curve";
-    }
-    return ret_invalid;
+    const sig_info_t *si = cert_get_signature_info(sig_type);
+    return si ? si->name : ret_invalid;
 }
 
-///////////////////////////////////////////////////////////////////////////////
+//-----------------------------------------------------------------------------
 
-int cert_get_signature_size // returns NULL for unknown 'sig_type'
-(
-    u32			sig_type	// signature type
-)
+int cert_get_signature_space ( u32 sig_type )
 {
-    switch (sig_type)
-    {
-	case 0x10000:	return 0x200;
-	case 0x10001:	return 0x100;
-	case 0x10002:	return 0x040;
-    }
-    return 0;
+    const sig_info_t *si = cert_get_signature_info(sig_type);
+    return si ? si->sig_space : 0;
 }
 
-///////////////////////////////////////////////////////////////////////////////
-
-int cert_get_pubkey_size // returns NULL for unknown 'sig_type'
-(
-    u32			key_type	// signature type
-)
+int cert_get_signature_size ( u32 sig_type )
 {
-    return cert_get_signature_size(key_type|0x10000);
+    const sig_info_t *si = cert_get_signature_info(sig_type);
+    return si ? si->sig_size : 0;
+}
+
+int cert_get_pubkey_size ( u32 key_type )
+{
+    const sig_info_t *si = cert_get_signature_info(key_type|0x10000);
+    return si ? si->key_size : 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -476,17 +759,16 @@ cert_data_t * cert_get_data // return NULL if invalid
     const void		* head		// NULL or pointer to cert header (cert_head_t)
 )
 {
-    cert_data_t * data = 0;
     if (head)
     {
-	const u32 sig_size = cert_get_signature_size(be32(head));
-	if (sig_size)
+	const sig_info_t *si = cert_get_signature_info(be32(head));
+	if (si)
 	{
-	    const u32 head_size = ALIGN32( sig_size + sizeof(cert_head_t), WII_CERT_ALIGN );
-	    data = (cert_data_t*)( (u8*)head + head_size );
+	    const u32 head_size = ALIGN32( si->sig_space + sizeof(cert_head_t), WII_CERT_ALIGN );
+	    return (cert_data_t*)( (u8*)head + head_size );
 	}
     }
-    return data;
+    return 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -496,7 +778,6 @@ cert_head_t * cert_get_next_head // return NULL if invalid
     const void		* data		// NULL or pointer to cert data (cert_data_t)
 )
 {
-    cert_head_t * head = 0;
     if (data)
     {
 	const cert_data_t * cdata = data;
@@ -504,10 +785,10 @@ cert_head_t * cert_get_next_head // return NULL if invalid
 	if (key_size)
 	{
 	    const u32 data_size = ALIGN32( key_size + sizeof(cert_data_t), WII_CERT_ALIGN );
-	    head = (cert_head_t*)( (u8*)data + data_size );
+	    return (cert_head_t*)( (u8*)data + data_size );
 	}
     }
-    return head;
+    return 0;
 }
 
 //
@@ -658,6 +939,8 @@ int cert_append_data
 	    cert_item_t * item
 		= cert_append_item( cc, data->issuer, data->key_id, uniq );
 	    DASSERT(item);
+
+	    item->sig_space	= cert_get_signature_space(ntohl(head->sig_type));
 	    item->sig_size	= cert_get_signature_size(ntohl(head->sig_type));
 	    item->key_size	= cert_get_pubkey_size(ntohl(data->key_type));
 	    item->data_size	= ptr - (u8*)data;
@@ -667,7 +950,7 @@ int cert_append_data
 	    item->head		= (cert_head_t*)raw;
 	    item->data		= (cert_data_t*)( raw + ( (u8*)data - start ));
 
-	    TRACE("s=%04x k=%04x : d=%04x c=%04x : t=%08x,%08x : %s . %s\n",
+	    PRINT("s=%04x k=%04x : d=%04x,04x c=%04x : t=%08x,%08x : %s . %s\n",
 			item->sig_size, item->key_size,
 			item->data_size, item->cert_size,
 			ntohl(head->sig_type), ntohl(data->key_type),
@@ -756,7 +1039,7 @@ cert_stat_t cert_check
 	    cert_item_t * item = cc->cert + c;
 	    if (!strcmp(data->issuer,item->name))
 	    {
-		TRACE("FOUND: %s . %s [%s]\n",
+		PRINT("FOUND: %s . %s [%s]\n",
 			    item->data->issuer, item->data->key_id,
 			    item->head
 				? cert_get_signature_name(ntohl(item->head->sig_type),"?")
@@ -766,46 +1049,100 @@ cert_stat_t cert_check
 
 		const u32 key_type = ntohl(item->data->key_type);
 		const u32 sig_type = ntohl(head->sig_type);
-		noPRINT("%x %x %x\n",key_type,key_type|0x10000,sig_type);
+		PRINT("%x %x %x\n",key_type,key_type|0x10000,sig_type);
 		if ( (key_type|0x10000) != sig_type )
 		    return CERT_ERR_TYPE_MISSMATCH;
 
+		//HEXDUMP16(0,0,data,test_data_size);
 		u8 hash[WII_HASH_SIZE];
 		SHA1((u8*)data,test_data_size,hash);
 		//PRINT("HASH: "); HEXDUMP(0,0,0,-WII_HASH_SIZE,hash,WII_HASH_SIZE);
+
+		bool sig_ok = false, fake_ok = false;
+		bool res_is_sig = true; // otherwise 'hash'
 
 		u8 buf[0x200];
 		const int sig_len = cert_get_signature_size(sig_type);
 		if ( sig_len > sizeof(buf) )
 		    return CERT_ERR_TYPE_MISSMATCH;
-		const u8 * key = item->data->public_key;
-		bn_exp(buf,head->sig_data,key,sig_len,key+sig_len,4);
-		//HEXDUMP16(0,0,buf,sig_len);
 
-		static const u8 ber[16] = { 0x00,0x30,0x21,0x30,0x09,0x06,0x05,0x2b,
-					    0x0e,0x03,0x02,0x1a,0x05,0x00,0x04,0x14 };
-		const int ber_index = sig_len - 36;
-		const u8 * h = buf + sig_len - WII_HASH_SIZE;
+		const u8 *key = item->data->public_key;
+		//HEXDUMP16(0,0,key,60);
 
-		if (   buf[0] == 0x00
-		    && buf[1] == 0x01
-		    && buf[2] == 0xff
-		    && !memcmp(buf+2,buf+3,sig_len-ber_index-3)
-		    && !memcmp(buf+ber_index,ber,sizeof(ber))
-		)
+		if ( key_type == 2 )
 		{
-		    return !memcmp(h,hash,WII_HASH_SIZE)
-			    ? CERT_SIG_OK
-			    : !strncmp((ccp)h,(ccp)hash,WII_HASH_SIZE)
-				    ? CERT_SIG_FAKE_SIGNED
-				    : CERT_HASH_FAILED;
+		    // special code for Elliptic Curve
+
+		    //HEXDUMP16(0,0,head->sig_data,60);
+		    const u8 *r = head->sig_data;	// first 30 bytes of signature
+		    const u8 *s = head->sig_data+30;	// second 30 bytes of signature
+
+		    u8 s_inv[30];
+		    u8 e[30];
+		    u8 w1[30], w2[30];
+		    u8 r1[60], r2[60];
+
+		    // order of the addition group of points
+		    static u8 ec_n[30] =
+			"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+			"\x13\xe9\x74\xe7\x2f\x8a\x69\x22\x03\x1d\x26\x03\xcf\xe0\xd7";
+
+		    // base point
+		    static u8 ec_g[60] =
+			"\x00\xfa\xc9\xdf\xcb\xac\x83\x13\xbb\x21\x39\xf1\xbb\x75\x5f"
+			"\xef\x65\xbc\x39\x1f\x8b\x36\xf8\xf8\xeb\x73\x71\xfd\x55\x8b"
+			"\x01\x00\x6a\x08\xa4\x19\x03\x35\x06\x78\xe5\x85\x28\xbe\xbf"
+			"\x8a\x0b\xef\xf8\x67\xa7\xca\x36\x71\x6f\x7e\x01\xf8\x10\x52";
+
+    #if defined(TEST) && 0
+		#define ESTIMATE_EC_TIME 10
+		const u_usec_t start = GetTimeUSec(false);
+		uint ii;
+		for ( ii = 0; ii < ESTIMATE_EC_TIME; ii++ )
+		{
+    #endif
+		    bn_inv(s_inv,s,ec_n,30);
+		    elt_zero(e);
+		    memcpy( e+10, hash, 20 );
+		    bn_mul(w1, e, s_inv, ec_n, 30);
+		    bn_mul(w2, r, s_inv, ec_n, 30);
+		    point_mul(r1, w1, ec_g);
+		    point_mul(r2, w2, key);
+		    point_add(r1, r1, r2);
+
+		    if (bn_compare(r1, ec_n, 30) >= 0)
+			    bn_sub_modulus(r1, ec_n, 30);
+		    sig_ok = !bn_compare(r1,r,30);
+    #if ESTIMATE_EC_TIME
+		}
+		printf("EC duration: %llu usec\n",(GetTimeUSec(false)-start)/ESTIMATE_EC_TIME);
+    #endif
+		}
+		else
+		{
+		    bn_exp(buf,head->sig_data,key,sig_len,key+sig_len,4);
+		    const u8 *h = buf + sig_len - WII_HASH_SIZE;
+		    sig_ok  = !memcmp(h,hash,WII_HASH_SIZE);
+		    fake_ok = !strncmp((ccp)h,(ccp)hash,WII_HASH_SIZE);
+		    //HEXDUMP16(0,0,buf,sig_len);
+
+		    static const u8 ber[16] = { 0x00,0x30,0x21,0x30,0x09,0x06,0x05,0x2b,
+						0x0e,0x03,0x02,0x1a,0x05,0x00,0x04,0x14 };
+		    const int ber_index = sig_len - 36;
+		    res_is_sig	=  buf[0] == 0x00
+				&& buf[1] == 0x01
+				&& buf[2] == 0xff
+				&& !memcmp(buf+2,buf+3,sig_len-ber_index-3)
+				&& !memcmp(buf+ber_index,ber,sizeof(ber));
 		}
 
-		return !memcmp(h,hash,WII_HASH_SIZE)
-			? CERT_HASH_OK
-			: !strncmp((ccp)h,(ccp)hash,WII_HASH_SIZE)
-				? CERT_FAKE_SIGNED
-				: CERT_SIG_FAILED;
+
+		if (res_is_sig)
+		    return sig_ok ? CERT_SIG_OK
+				: fake_ok ? CERT_SIG_FAKE_SIGNED : CERT_SIG_FAILED;
+
+		return sig_ok ? CERT_HASH_OK
+				: fake_ok ? CERT_FAKE_SIGNED : CERT_HASH_FAILED;
 	    }
 	}
 	if ( cc == &global_cert )

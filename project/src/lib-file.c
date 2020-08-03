@@ -306,6 +306,9 @@ void InitializeWFile ( WFile_t * f )
     f->slot = -1;
     f->already_created_mode = 2;
 
+    InitializeSplitFilename(&f->split_fname);
+    InitializeSplitFilename(&f->split_rename);
+
     // normalize 'opt_iomode'
     opt_iomode = opt_iomode & IOM__IS_MASK | IOM_FORCE_STREAM;
 
@@ -373,6 +376,9 @@ enumError XClearWFile ( XPARM WFile_t * f, bool remove_file )
     FreeString(f->outname);		f->outname		= 0;
     FreeString(f->split_fname_format);	f->split_fname_format	= EmptyString;
     FreeString(f->split_rename_format);	f->split_rename_format	= 0;
+
+    ResetSplitFilename(&f->split_fname);
+    ResetSplitFilename(&f->split_rename);
 
     ASSERT(!f->is_caching);
     ASSERT(!f->cache);
@@ -1320,6 +1326,8 @@ enumError XSetupAutoSplit ( XPARM WFile_t *f, enumOFT oft )
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#define SUPPORT_NEW_SPLIT_FNAME 0
+
 enumError XSetupSplitWFile ( XPARM WFile_t *f, enumOFT oft, off_t split_size )
 {
     ASSERT(f);
@@ -1336,6 +1344,35 @@ enumError XSetupSplitWFile ( XPARM WFile_t *f, enumOFT oft, off_t split_size )
 
     // at very first: setup split file format
 
+#if SUPPORT_NEW_SPLIT_FNAME
+    ResetSplitFilename(&f->split_fname);
+    ResetSplitFilename(&f->split_rename);
+    if (f->rename)
+    {
+	AnalyseSplitFilename(&f->split_fname,f->fname,OFT_PLAIN);
+	AnalyseSplitFilename(&f->split_rename,f->rename,oft);
+xBINGO;
+fprintf(stderr,"FNAME:  %s\n",f->split_fname.format);
+fprintf(stderr,"RENAME: %s\n",f->split_rename.format);
+    }
+    else
+    {
+	AnalyseSplitFilename(&f->split_fname,f->fname,oft);
+xBINGO;
+fprintf(stderr,"FNAME:  %s\n",f->split_fname.format);
+    }
+
+    char fname[PATH_MAX];
+    if (!f->is_writing)
+    {
+	// for read only files: test if split files available
+	snprintf(fname,sizeof(fname),f->split_fname.format,f->split_fname.index+1);
+	struct stat st;
+	if (stat(fname,&st))
+	    return ERR_OK; // no split files found -> return
+	noPRINT("SPLIT-FNAME: %s\n",f->split_fname_format);
+    }
+#else
     FreeString(f->split_fname_format);
     FreeString(f->split_rename_format);
     if (f->rename)
@@ -1376,6 +1413,7 @@ enumError XSetupSplitWFile ( XPARM WFile_t *f, enumOFT oft, off_t split_size )
 	}
 	noPRINT("SPLIT-FNAME: %s\n",f->split_fname_format);
     }
+#endif
 
     WFile_t ** list = CALLOC(MAX_SPLIT_FILES,sizeof(*list));
     WFile_t * first;
@@ -3046,13 +3084,162 @@ FileAttrib_t * CopyFileAttribDiscInfo
 ///////////////			split file support		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-int CalcSplitFilename ( char * buf, size_t buf_size, ccp path, enumOFT oft )
+static char * copy_escape ( char *dest, char *dest_end, ccp src, ccp src_end )
 {
-    const int needed_space = oft == OFT_WBFS ? 6 : 7;
-    const int max_path_len = PATH_MAX - needed_space;
+    while ( dest < dest_end && src < src_end )
+    {
+	if ( *src == '%' )
+	{
+	    *dest++ = '%';
+	    *dest++ = '%';
+	    src++;
+	}
+	else
+	    *dest++ = *src++;
+    }
+    return dest;
+}
+
+//-----------------------------------------------------------------------------
+
+void InitializeSplitFilename ( split_file_t *split )
+{
+    DASSERT(split);
+    memset(split,0,sizeof(*split));
+    split->format = EmptyString;
+}
+
+//-----------------------------------------------------------------------------
+
+void ResetSplitFilename ( split_file_t *split )
+{
+    if (split)
+    {
+	FreeString(split->format);
+	InitializeSplitFilename(split);
+    }
+}
+
+//-----------------------------------------------------------------------------
+
+void AnalyseSplitFilename ( split_file_t *split, ccp path, enumOFT oft )
+{
+    DASSERT(split);
+    ResetSplitFilename(split);
 
     if (!path)
 	path = "";
+    size_t plen = strlen(path);
+
+    const uint buf_size = PATH_MAX + 1000;
+    char buf[buf_size+10];
+    char *dest = buf;
+    int digit_index = 0;
+
+
+    //--- find last appearance of "part0" or "part1"
+
+    ccp name_beg = strrchr(path,'/');
+    if (!name_beg)
+	name_beg = path;
+
+    int skip = 0;
+    ccp part = 0;
+    for(;;)
+    {
+	ccp pos = strcasestr( part ? part+4 : name_beg, "part" );
+	if (!pos)
+	    break;
+	char *end;
+	long num = strtoul(pos+4,&end,10);
+	if ( end == pos+4 || num != 0 && num != 1 )
+	    break;
+	part = pos;
+	split->index = num;
+	skip = end - pos;
+    }
+
+    if (part)
+    {
+	char digit = skip - 4 + '0';
+	if ( digit > '9' )
+	    digit = '9';
+
+//xBINGO;
+fprintf(stderr,"PART%u: %s : %s\n",split->index,part,path);
+	dest = copy_escape(dest,dest+buf_size-6,path,part+4);
+	*dest++ = '%';
+	*dest++ = '0';
+	digit_index = dest-buf;
+	*dest++ = digit;
+	*dest++ = 'u';
+	dest = copy_escape(dest,dest+buf_size-2,part+skip,path+strlen(path));
+//xBINGO;
+fprintf(stderr,">P> %s\n",buf);
+    }
+    else
+    {
+	const bool suppress_point = oft == OFT_WBFS
+		    || oft == OFT_PLAIN && plen >= 6 && !strcasecmp(path+plen-6,".part0");
+	if ( plen > 0 && suppress_point )
+	    plen--;
+
+	dest = copy_escape(dest,buf+buf_size,path,path+plen);
+	if (!suppress_point)
+	    *dest++ = '.';
+	*dest++ = '%';
+	*dest++ = '0';
+	digit_index = dest-buf;
+	*dest++ = '1';
+	*dest++ = 'u';
+    }
+
+    char *res = MEMDUP(buf,dest-buf);
+    split->format = res;
+    split->digit = res + digit_index;
+}
+
+//-----------------------------------------------------------------------------
+
+int CalcSplitFilename ( char *buf, size_t buf_size, ccp path, enumOFT oft )
+{
+    if (!path)
+	path = "";
+
+
+    //--- find last appeareance of "part0"
+
+    ccp name_beg = strrchr(path,'/');
+    if (!name_beg)
+	name_beg = path;
+
+    ccp part = 0;
+    for(;;)
+    {
+	ccp pos = strcasestr( part ? part+1 : name_beg, "part0" );
+	if (!pos)
+	    break;
+	part = pos;
+    }
+
+    if (part)
+    {
+	char *dest = buf;
+	dest = copy_escape(dest,dest+buf_size-6,path,part+4);
+	*dest++ = '%';
+	*dest++ = '0';
+	*dest++ = '1';
+	*dest++ = 'u';
+	dest = copy_escape(dest,dest+buf_size-2,part+5,path+strlen(path));
+	*dest = 0;
+	return dest-buf;
+    }
+
+
+    //--- old classic way
+
+    const int needed_space = oft == OFT_WBFS ? 6 : 7;
+    const int max_path_len = (int)buf_size - needed_space;
 
     size_t plen = strlen(path);
     const bool suppress_point = oft == OFT_WBFS
@@ -3069,18 +3256,7 @@ int CalcSplitFilename ( char * buf, size_t buf_size, ccp path, enumOFT oft )
     if ( buf_size > needed_space )
     {
 	char * end = dest + buf_size - needed_space;
-	while ( dest < end && path < path_end )
-	{
-	    if ( *path == '%' )
-	    {
-		*dest++ = '%';
-		*dest++ = '%';
-		path++;
-	    }
-	    else
-		*dest++	= *path++;
-	}
-
+	dest = copy_escape(dest,end,path,path_end);
 	if (!suppress_point)
 	    *dest++ = '.';
 	*dest++ = '%';

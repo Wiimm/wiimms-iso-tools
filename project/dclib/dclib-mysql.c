@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -135,6 +135,12 @@ enumError OpenMYSQL ( MySql_t *my, uint loglevel )
 	return ERR_DATABASE;
     }
 
+    if (my->auto_reconnect)
+    {
+	my_bool reconnect = 1;
+	mysql_options(my->mysql,MYSQL_OPT_RECONNECT,&reconnect);
+    }
+
     noPRINT("connect(%p,%s,%s,%s,%s,%u,,)\n",
 		my->mysql, host.name, my->user, my->password, my->database, host.port );
     MYSQL *stat = mysql_real_connect ( my->mysql, host.name,
@@ -153,6 +159,7 @@ enumError OpenMYSQL ( MySql_t *my, uint loglevel )
 	return ERR_CANT_CONNECT;
     }
 
+    mysql_set_character_set(my->mysql,"utf8mb4");
     my->total_connect_count++;
     ResetHost(&host);
     return ERR_OK;
@@ -855,7 +862,7 @@ int CountTablesMYSQL
     DASSERT(my);
 
     int stat = -1;
-    mem_t db = EscapeStringMYSQL(my, database && *database ? database : my->database );
+    mem_t db  = EscapeStringMYSQL(my, database && *database ? database : my->database );
     mem_t tab = EscapeStringMYSQL(my, table && *table ? table : "%" );
 
     stat = PrintFetchIntMYSQL(my,MYLL_QUERY_ON_ERROR,-1,
@@ -912,24 +919,133 @@ int CountColumnsMYSQL
 ///////////////////////////////////////////////////////////////////////////////
 // helpers
 
-mem_t EscapeMemMYSQL ( MySql_t *my, mem_t src )
+mem_t EscapeMYSQL ( MySql_t *my, cvp ptr, int len )
 {
+    DASSERT(my);
+
+    if ( len < 0 )
+	len = ptr ? strlen(ptr) : 0;
+
     mem_t res;
-    char *buf = MALLOC(2*src.len+1);
-    res.ptr = buf;
-    res.len = mysql_real_escape_string(my->mysql,buf,src.ptr,src.len);
+    if ( !ptr || !len )
+    {
+	res.ptr = EmptyString;
+	res.len = 0;
+    }
+    else
+    {
+	char *buf = MALLOC(2*len+1);
+	res.ptr = buf;
+	res.len = mysql_real_escape_string(my->mysql,buf,ptr,len);
+    }
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+
+mem_t EscapeMYSQLCirc ( MySql_t *my, cvp ptr, int len )
+{
+    DASSERT(my);
+
+    if ( len < 0 )
+	len = ptr ? strlen(ptr) : 0;
+
+    mem_t res;
+    if ( !ptr || !len )
+    {
+	res.ptr = EmptyString;
+	res.len = 0;
+    }
+    else if ( len >= CIRC_BUF_MAX_ALLOC )
+    {
+	// no chance
+	res.ptr = 0;
+	res.len = 0;
+    }
+    else
+    {
+	char buf[2*CIRC_BUF_MAX_ALLOC+10];
+	res.len = mysql_real_escape_string(my->mysql,buf,ptr,len);
+	if ( res.len < CIRC_BUF_MAX_ALLOC )
+	    res.ptr = CopyCircBuf(buf,res.len+1);
+	else
+	{
+	    res.ptr = 0;
+	    res.len = 0;
+	}
+    }
     return res;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-mem_t EscapeStringMYSQL ( MySql_t *my, ccp src )
+mem_t QuoteMYSQL ( MySql_t *my, cvp ptr, int len, bool null_if_empty )
 {
+    if ( len < 0 )
+	len = ptr ? strlen(ptr) : 0;
+
     mem_t res;
-    const uint len = src ? strlen(src) : 0;
-    char *buf = MALLOC(2*len+1);
-    res.ptr = buf;
-    res.len = mysql_real_escape_string(my->mysql,buf,src,len);
+    if ( !ptr || !len && null_if_empty )
+    {
+	res.ptr = STRDUP("NULL");
+	res.len = 4;
+    }
+    else if (!len)
+    {
+	res.ptr = EmptyQuote;
+	res.len = 0;
+    }
+    else
+    {
+	char *buf = MALLOC(2*len+3);
+	res.ptr = buf;
+	res.len = mysql_real_escape_string(my->mysql,buf+1,ptr,len) + 2;
+	buf[0] = buf[res.len-1] = '"';
+	buf[res.len] = 0;
+    }
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+
+mem_t QuoteMYSQLCirc ( MySql_t *my, cvp ptr, int len, bool null_if_empty )
+{
+    if ( len < 0 )
+	len = ptr ? strlen(ptr) : 0;
+
+    mem_t res;
+    if ( !ptr || !len && null_if_empty )
+    {
+	res.ptr = CopyCircBuf("NULL",5);
+	res.len = 4;
+    }
+    else if (!len)
+    {
+	res.ptr = EmptyQuote;
+	res.len = 2;
+    }
+    else if ( len >= CIRC_BUF_MAX_ALLOC-2 )
+    {
+	// no chance
+	res.ptr = 0;
+	res.len = 0;
+    }
+    else
+    {
+	char buf[2*CIRC_BUF_MAX_ALLOC+10];
+	res.len = mysql_real_escape_string(my->mysql,buf+1,ptr,len) + 2;
+	if ( res.len < CIRC_BUF_MAX_ALLOC )
+	{
+	    buf[0] = buf[res.len-1] = '"';
+	    buf[res.len] = 0;
+	    res.ptr = CopyCircBuf(buf,res.len+1);
+	}
+	else
+	{
+	    res.ptr = 0;
+	    res.len = 0;
+	}
+    }
     return res;
 }
 
@@ -1402,9 +1518,9 @@ MySqlServerStats_t * Sub3MySqlServerStats
 	    DASSERT(src1);
 	    DASSERT(src2);
 	    dest->max_connections = src1->max_connections;
-	    dest->uptime      = src1->uptime      - src2->uptime;
-	    dest->connections = src1->connections - src2->connections;
-	    dest->queries     = src1->queries     - src2->queries;
+	    dest->uptime	  = src1->uptime      - src2->uptime;
+	    dest->connections	  = src1->connections - src2->connections;
+	    dest->queries	  = src1->queries     - src2->queries;
 	}
     }
     return dest;

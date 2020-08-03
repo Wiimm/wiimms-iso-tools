@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -428,6 +428,103 @@ uint CloseAllExcept
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////		CopyFile*(),  TransferFile()		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+// compare pathes and by stat()
+bool IsSameFile ( ccp path1, ccp path2 );
+
+///////////////////////////////////////////////////////////////////////////////
+
+// returns:
+//	ERR_OK			file copied
+//	ERR_NOTHING_TO_DO	src and dest are the same
+//	ERR_MISSING_PARAM	invalid parameters
+//	ERR_CANT_OPEN		can't open dest
+//	ERR_WRITE_FAILED	write error
+
+enumError CopyFileHelper
+(
+    ccp		src,		// source path
+    ccp		dest,		// destination path
+    int		open_flags,	// flags for open()
+    mode_t	open_mode,	// mode for open()
+    uint 	temp_and_move	// >0: ignore open_flags,
+				//     create temp, then move temp to dest
+);
+
+//-----------------------------------------------------------------------------
+
+enumError CopyFile
+(
+    ccp		src,		// source path
+    ccp		dest,		// destination path
+    mode_t	open_mode	// mode for open()
+);
+
+//-----------------------------------------------------------------------------
+
+enumError CopyFileCreate
+(
+    ccp		src,		// source path
+    ccp		dest,		// destination path
+    mode_t	open_mode	// mode for open()
+);
+
+//-----------------------------------------------------------------------------
+
+enumError CopyFileTemp
+(
+    ccp		src,		// source path
+    ccp		dest,		// destination path
+    mode_t	open_mode	// mode for open()
+);
+
+///////////////////////////////////////////////////////////////////////////////
+// [[TransferMode_t]]
+
+typedef enum TransferMode_t
+{
+    //--- jobs
+
+    TFMD_J_MOVE		= 0x01,  // move file
+    TFMD_J_MOVE1	= 0x02,  // move file, but only if not linked (ignore TFMD_J_MOVE)
+    TFMD_J_RM_DEST	= 0x04,  // remove dest before TFMD_J_LINK and TFMD_J_COPY
+    TFMD_J_LINK		= 0x08,  // link file
+    TFMD_J_COPY		= 0x10,  // copy file
+    TFMD_J_RM_SRC	= 0x20,  // remove source after TFMD_J_COPY
+//  TFMD_J_TOUCH	= 0x40,  // touch destination => not supported yet
+
+    //--- modes
+
+    TFMD_MOVE	= TFMD_J_MOVE  | TFMD_J_RM_DEST | TFMD_J_COPY | TFMD_J_RM_SRC,
+    TFMD_MOVE1	= TFMD_J_MOVE1 | TFMD_J_RM_DEST | TFMD_J_COPY | TFMD_J_RM_SRC,
+    TFMD_LINK	= TFMD_J_LINK  | TFMD_J_RM_DEST | TFMD_J_COPY,
+    TFMD_COPY	=	 	 TFMD_J_RM_DEST | TFMD_J_COPY,
+    TFMD_CAT	=				  TFMD_J_COPY,
+}
+__attribute__ ((packed)) TransferMode_t;
+
+//-----------------------------------------------------------------------------
+
+// returns:
+//	ERR_OK			file copied
+//	ERR_NOTHING_TO_DO	src and dest are the same
+//	ERR_MISSING_PARAM	invalid parameters
+//	ERR_CANT_OPEN		can't open dest
+//	ERR_WRITE_FAILED	write error
+//	ERR_ERROR		other error
+
+enumError TransferFile
+(
+    ccp			src,		// source path
+    ccp			dest,		// destination path
+    TransferMode_t	tfer_mode,	// transfer mode
+    mode_t		open_mode	// mode for CopyFile*() -> open()
+);
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct MemFile_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 // [[MemFile_t]]
@@ -556,6 +653,28 @@ enumError SaveMemFile
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			TraceLog_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[TraceLog_t]]
+
+typedef struct TraceLog_t
+{
+    ccp		fname;		// name of file to open
+    FILE	*log;		// NULL or open log file
+    int		level;		// log level, don't log if <0
+    
+}
+TraceLog_t;
+
+//-----------------------------------------------------------------------------
+
+bool OpenTraceLog  ( TraceLog_t *tl );
+bool TraceLogText  ( TraceLog_t *tl, ccp text );
+bool TraceLogPrint ( TraceLog_t *tl, ccp format, ... )
+	__attribute__ ((__format__(__printf__,2,3)));
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct LineBuffer_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 #ifndef __APPLE__
@@ -654,6 +773,8 @@ int ExistDirectory
     ccp			fname,		// NULL or path
     int			answer_if_empty	// answer, if !fname || !*fname
 );
+
+bool IsSameFilename ( ccp fn1, ccp fn2 );
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1122,6 +1243,31 @@ bool GetSocketInfoBySocket
 
 // returns a static string
 ccp PrintSocketInfo ( int protocol, int type );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			stat_file_count_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[stat_file_count_t]]
+
+typedef struct stat_file_count_t
+{
+    uint cur_files;	// currently open files
+    uint max_files;	// max open files
+    uint cur_limit;	// current limit
+    uint max_limit;	// max limit
+}
+stat_file_count_t;
+
+//-----------------------------------------------------------------------------
+
+extern stat_file_count_t stat_file_count;
+
+uint CountOpenFiles(void);
+void RegisterFileId ( int fd );
+void UpdateOpenFiles ( bool count_current );
+uint SetOpenFilesLimit ( uint limit );
+ccp PrintOpenFiles ( bool count_current ); // print to circ buffer
 
 //
 ///////////////////////////////////////////////////////////////////////////////

@@ -72,7 +72,7 @@ _wit_sha1_block_data_order:
 	movl	4(%ebp),%ebx
 	movl	8(%ebp),%ecx
 	movl	12(%ebp),%edx
-	# 00_15 0 
+	# 00_15 0
 	movl	%ecx,%esi
 	movl	%eax,%ebp
 	roll	$5,%ebp
@@ -84,7 +84,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%ebx
 	leal	1518500249(%ebp,%edi,1),%ebp
 	addl	%esi,%ebp
-	# 00_15 1 
+	# 00_15 1
 	movl	%ebx,%edi
 	movl	%ebp,%esi
 	roll	$5,%ebp
@@ -96,7 +96,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%eax
 	leal	1518500249(%ebp,%edx,1),%ebp
 	addl	%edi,%ebp
-	# 00_15 2 
+	# 00_15 2
 	movl	%eax,%edx
 	movl	%ebp,%edi
 	roll	$5,%ebp
@@ -108,7 +108,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%esi
 	leal	1518500249(%ebp,%ecx,1),%ebp
 	addl	%edx,%ebp
-	# 00_15 3 
+	# 00_15 3
 	movl	%esi,%ecx
 	movl	%ebp,%edx
 	roll	$5,%ebp
@@ -120,7 +120,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%edi
 	leal	1518500249(%ebp,%ebx,1),%ebp
 	addl	%ecx,%ebp
-	# 00_15 4 
+	# 00_15 4
 	movl	%edi,%ebx
 	movl	%ebp,%ecx
 	roll	$5,%ebp
@@ -132,7 +132,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%edx
 	leal	1518500249(%ebp,%eax,1),%ebp
 	addl	%ebx,%ebp
-	# 00_15 5 
+	# 00_15 5
 	movl	%edx,%eax
 	movl	%ebp,%ebx
 	roll	$5,%ebp
@@ -144,7 +144,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%ecx
 	leal	1518500249(%ebp,%esi,1),%ebp
 	addl	%eax,%ebp
-	# 00_15 6 
+	# 00_15 6
 	movl	%ecx,%esi
 	movl	%ebp,%eax
 	roll	$5,%ebp
@@ -156,7 +156,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%ebx
 	leal	1518500249(%ebp,%edi,1),%ebp
 	addl	%esi,%ebp
-	# 00_15 7 
+	# 00_15 7
 	movl	%ebx,%edi
 	movl	%ebp,%esi
 	roll	$5,%ebp
@@ -168,7 +168,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%eax
 	leal	1518500249(%ebp,%edx,1),%ebp
 	addl	%edi,%ebp
-	# 00_15 8 
+	# 00_15 8
 	movl	%eax,%edx
 	movl	%ebp,%edi
 	roll	$5,%ebp
@@ -180,7 +180,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%esi
 	leal	1518500249(%ebp,%ecx,1),%ebp
 	addl	%edx,%ebp
-	# 00_15 9 
+	# 00_15 9
 	movl	%esi,%ecx
 	movl	%ebp,%edx
 	roll	$5,%ebp
@@ -192,7 +192,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%edi
 	leal	1518500249(%ebp,%ebx,1),%ebp
 	addl	%ecx,%ebp
-	# 00_15 10 
+	# 00_15 10
 	movl	%edi,%ebx
 	movl	%ebp,%ecx
 	roll	$5,%ebp
@@ -204,7 +204,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%edx
 	leal	1518500249(%ebp,%eax,1),%ebp
 	addl	%ebx,%ebp
-	# 00_15 11 
+	# 00_15 11
 	movl	%edx,%eax
 	movl	%ebp,%ebx
 	roll	$5,%ebp
@@ -216,7 +216,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%ecx
 	leal	1518500249(%ebp,%esi,1),%ebp
 	addl	%eax,%ebp
-	# 00_15 12 
+	# 00_15 12
 	movl	%ecx,%esi
 	movl	%ebp,%eax
 	roll	$5,%ebp
@@ -228,7 +228,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%ebx
 	leal	1518500249(%ebp,%edi,1),%ebp
 	addl	%esi,%ebp
-	# 00_15 13 
+	# 00_15 13
 	movl	%ebx,%edi
 	movl	%ebp,%esi
 	roll	$5,%ebp
@@ -240,7 +240,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%eax
 	leal	1518500249(%ebp,%edx,1),%ebp
 	addl	%edi,%ebp
-	# 00_15 14 
+	# 00_15 14
 	movl	%eax,%edx
 	movl	%ebp,%edi
 	roll	$5,%ebp
@@ -252,7 +252,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%esi
 	leal	1518500249(%ebp,%ecx,1),%ebp
 	addl	%edx,%ebp
-	# 00_15 15 
+	# 00_15 15
 	movl	%esi,%ecx
 	movl	%ebp,%edx
 	roll	$5,%ebp
@@ -264,7 +264,7 @@ _wit_sha1_block_data_order:
 	rorl	$2,%edi
 	leal	1518500249(%ebp,%ebx,1),%ebp
 	addl	%ebp,%ecx
-	# 16_19 16 
+	# 16_19 16
 	movl	(%esp),%ebx
 	movl	%edi,%ebp
 	xorl	8(%esp),%ebx
@@ -281,7 +281,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%eax
 	addl	%ebp,%ebx
 	addl	%eax,%ebx
-	# 16_19 17 
+	# 16_19 17
 	movl	4(%esp),%eax
 	movl	%edx,%ebp
 	xorl	12(%esp),%eax
@@ -298,7 +298,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%esi
 	addl	%ebp,%eax
 	addl	%esi,%eax
-	# 16_19 18 
+	# 16_19 18
 	movl	8(%esp),%esi
 	movl	%ecx,%ebp
 	xorl	16(%esp),%esi
@@ -315,7 +315,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edi
 	addl	%ebp,%esi
 	addl	%edi,%esi
-	# 16_19 19 
+	# 16_19 19
 	movl	12(%esp),%edi
 	movl	%ebx,%ebp
 	xorl	20(%esp),%edi
@@ -332,7 +332,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edx
 	addl	%ebp,%edi
 	addl	%edx,%edi
-	# 20_39 20 
+	# 20_39 20
 	movl	%esi,%ebp
 	movl	16(%esp),%edx
 	rorl	$2,%esi
@@ -348,7 +348,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ecx
 	leal	1859775393(%edx,%ebp,1),%edx
 	addl	%ecx,%edx
-	# 20_39 21 
+	# 20_39 21
 	movl	%edi,%ebp
 	movl	20(%esp),%ecx
 	rorl	$2,%edi
@@ -364,7 +364,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ebx
 	leal	1859775393(%ecx,%ebp,1),%ecx
 	addl	%ebx,%ecx
-	# 20_39 22 
+	# 20_39 22
 	movl	%edx,%ebp
 	movl	24(%esp),%ebx
 	rorl	$2,%edx
@@ -380,7 +380,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%eax
 	leal	1859775393(%ebx,%ebp,1),%ebx
 	addl	%eax,%ebx
-	# 20_39 23 
+	# 20_39 23
 	movl	%ecx,%ebp
 	movl	28(%esp),%eax
 	rorl	$2,%ecx
@@ -396,7 +396,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%esi
 	leal	1859775393(%eax,%ebp,1),%eax
 	addl	%esi,%eax
-	# 20_39 24 
+	# 20_39 24
 	movl	%ebx,%ebp
 	movl	32(%esp),%esi
 	rorl	$2,%ebx
@@ -412,7 +412,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edi
 	leal	1859775393(%esi,%ebp,1),%esi
 	addl	%edi,%esi
-	# 20_39 25 
+	# 20_39 25
 	movl	%eax,%ebp
 	movl	36(%esp),%edi
 	rorl	$2,%eax
@@ -428,7 +428,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edx
 	leal	1859775393(%edi,%ebp,1),%edi
 	addl	%edx,%edi
-	# 20_39 26 
+	# 20_39 26
 	movl	%esi,%ebp
 	movl	40(%esp),%edx
 	rorl	$2,%esi
@@ -444,7 +444,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ecx
 	leal	1859775393(%edx,%ebp,1),%edx
 	addl	%ecx,%edx
-	# 20_39 27 
+	# 20_39 27
 	movl	%edi,%ebp
 	movl	44(%esp),%ecx
 	rorl	$2,%edi
@@ -460,7 +460,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ebx
 	leal	1859775393(%ecx,%ebp,1),%ecx
 	addl	%ebx,%ecx
-	# 20_39 28 
+	# 20_39 28
 	movl	%edx,%ebp
 	movl	48(%esp),%ebx
 	rorl	$2,%edx
@@ -476,7 +476,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%eax
 	leal	1859775393(%ebx,%ebp,1),%ebx
 	addl	%eax,%ebx
-	# 20_39 29 
+	# 20_39 29
 	movl	%ecx,%ebp
 	movl	52(%esp),%eax
 	rorl	$2,%ecx
@@ -492,7 +492,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%esi
 	leal	1859775393(%eax,%ebp,1),%eax
 	addl	%esi,%eax
-	# 20_39 30 
+	# 20_39 30
 	movl	%ebx,%ebp
 	movl	56(%esp),%esi
 	rorl	$2,%ebx
@@ -508,7 +508,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edi
 	leal	1859775393(%esi,%ebp,1),%esi
 	addl	%edi,%esi
-	# 20_39 31 
+	# 20_39 31
 	movl	%eax,%ebp
 	movl	60(%esp),%edi
 	rorl	$2,%eax
@@ -524,7 +524,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edx
 	leal	1859775393(%edi,%ebp,1),%edi
 	addl	%edx,%edi
-	# 20_39 32 
+	# 20_39 32
 	movl	%esi,%ebp
 	movl	(%esp),%edx
 	rorl	$2,%esi
@@ -540,7 +540,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ecx
 	leal	1859775393(%edx,%ebp,1),%edx
 	addl	%ecx,%edx
-	# 20_39 33 
+	# 20_39 33
 	movl	%edi,%ebp
 	movl	4(%esp),%ecx
 	rorl	$2,%edi
@@ -556,7 +556,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ebx
 	leal	1859775393(%ecx,%ebp,1),%ecx
 	addl	%ebx,%ecx
-	# 20_39 34 
+	# 20_39 34
 	movl	%edx,%ebp
 	movl	8(%esp),%ebx
 	rorl	$2,%edx
@@ -572,7 +572,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%eax
 	leal	1859775393(%ebx,%ebp,1),%ebx
 	addl	%eax,%ebx
-	# 20_39 35 
+	# 20_39 35
 	movl	%ecx,%ebp
 	movl	12(%esp),%eax
 	rorl	$2,%ecx
@@ -588,7 +588,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%esi
 	leal	1859775393(%eax,%ebp,1),%eax
 	addl	%esi,%eax
-	# 20_39 36 
+	# 20_39 36
 	movl	%ebx,%ebp
 	movl	16(%esp),%esi
 	rorl	$2,%ebx
@@ -604,7 +604,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edi
 	leal	1859775393(%esi,%ebp,1),%esi
 	addl	%edi,%esi
-	# 20_39 37 
+	# 20_39 37
 	movl	%eax,%ebp
 	movl	20(%esp),%edi
 	rorl	$2,%eax
@@ -620,7 +620,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edx
 	leal	1859775393(%edi,%ebp,1),%edi
 	addl	%edx,%edi
-	# 20_39 38 
+	# 20_39 38
 	movl	%esi,%ebp
 	movl	24(%esp),%edx
 	rorl	$2,%esi
@@ -636,7 +636,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ecx
 	leal	1859775393(%edx,%ebp,1),%edx
 	addl	%ecx,%edx
-	# 20_39 39 
+	# 20_39 39
 	movl	%edi,%ebp
 	movl	28(%esp),%ecx
 	rorl	$2,%edi
@@ -652,7 +652,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ebx
 	leal	1859775393(%ecx,%ebp,1),%ecx
 	addl	%ebx,%ecx
-	# 40_59 40 
+	# 40_59 40
 	movl	32(%esp),%ebx
 	movl	40(%esp),%ebp
 	xorl	%ebp,%ebx
@@ -674,7 +674,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%eax
 	addl	%ebp,%ebx
 	addl	%eax,%ebx
-	# 40_59 41 
+	# 40_59 41
 	movl	36(%esp),%eax
 	movl	44(%esp),%ebp
 	xorl	%ebp,%eax
@@ -696,7 +696,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%esi
 	addl	%ebp,%eax
 	addl	%esi,%eax
-	# 40_59 42 
+	# 40_59 42
 	movl	40(%esp),%esi
 	movl	48(%esp),%ebp
 	xorl	%ebp,%esi
@@ -718,7 +718,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edi
 	addl	%ebp,%esi
 	addl	%edi,%esi
-	# 40_59 43 
+	# 40_59 43
 	movl	44(%esp),%edi
 	movl	52(%esp),%ebp
 	xorl	%ebp,%edi
@@ -740,7 +740,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edx
 	addl	%ebp,%edi
 	addl	%edx,%edi
-	# 40_59 44 
+	# 40_59 44
 	movl	48(%esp),%edx
 	movl	56(%esp),%ebp
 	xorl	%ebp,%edx
@@ -762,7 +762,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ecx
 	addl	%ebp,%edx
 	addl	%ecx,%edx
-	# 40_59 45 
+	# 40_59 45
 	movl	52(%esp),%ecx
 	movl	60(%esp),%ebp
 	xorl	%ebp,%ecx
@@ -784,7 +784,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ebx
 	addl	%ebp,%ecx
 	addl	%ebx,%ecx
-	# 40_59 46 
+	# 40_59 46
 	movl	56(%esp),%ebx
 	movl	(%esp),%ebp
 	xorl	%ebp,%ebx
@@ -806,7 +806,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%eax
 	addl	%ebp,%ebx
 	addl	%eax,%ebx
-	# 40_59 47 
+	# 40_59 47
 	movl	60(%esp),%eax
 	movl	4(%esp),%ebp
 	xorl	%ebp,%eax
@@ -828,7 +828,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%esi
 	addl	%ebp,%eax
 	addl	%esi,%eax
-	# 40_59 48 
+	# 40_59 48
 	movl	(%esp),%esi
 	movl	8(%esp),%ebp
 	xorl	%ebp,%esi
@@ -850,7 +850,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edi
 	addl	%ebp,%esi
 	addl	%edi,%esi
-	# 40_59 49 
+	# 40_59 49
 	movl	4(%esp),%edi
 	movl	12(%esp),%ebp
 	xorl	%ebp,%edi
@@ -872,7 +872,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edx
 	addl	%ebp,%edi
 	addl	%edx,%edi
-	# 40_59 50 
+	# 40_59 50
 	movl	8(%esp),%edx
 	movl	16(%esp),%ebp
 	xorl	%ebp,%edx
@@ -894,7 +894,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ecx
 	addl	%ebp,%edx
 	addl	%ecx,%edx
-	# 40_59 51 
+	# 40_59 51
 	movl	12(%esp),%ecx
 	movl	20(%esp),%ebp
 	xorl	%ebp,%ecx
@@ -916,7 +916,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ebx
 	addl	%ebp,%ecx
 	addl	%ebx,%ecx
-	# 40_59 52 
+	# 40_59 52
 	movl	16(%esp),%ebx
 	movl	24(%esp),%ebp
 	xorl	%ebp,%ebx
@@ -938,7 +938,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%eax
 	addl	%ebp,%ebx
 	addl	%eax,%ebx
-	# 40_59 53 
+	# 40_59 53
 	movl	20(%esp),%eax
 	movl	28(%esp),%ebp
 	xorl	%ebp,%eax
@@ -960,7 +960,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%esi
 	addl	%ebp,%eax
 	addl	%esi,%eax
-	# 40_59 54 
+	# 40_59 54
 	movl	24(%esp),%esi
 	movl	32(%esp),%ebp
 	xorl	%ebp,%esi
@@ -982,7 +982,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edi
 	addl	%ebp,%esi
 	addl	%edi,%esi
-	# 40_59 55 
+	# 40_59 55
 	movl	28(%esp),%edi
 	movl	36(%esp),%ebp
 	xorl	%ebp,%edi
@@ -1004,7 +1004,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edx
 	addl	%ebp,%edi
 	addl	%edx,%edi
-	# 40_59 56 
+	# 40_59 56
 	movl	32(%esp),%edx
 	movl	40(%esp),%ebp
 	xorl	%ebp,%edx
@@ -1026,7 +1026,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ecx
 	addl	%ebp,%edx
 	addl	%ecx,%edx
-	# 40_59 57 
+	# 40_59 57
 	movl	36(%esp),%ecx
 	movl	44(%esp),%ebp
 	xorl	%ebp,%ecx
@@ -1048,7 +1048,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ebx
 	addl	%ebp,%ecx
 	addl	%ebx,%ecx
-	# 40_59 58 
+	# 40_59 58
 	movl	40(%esp),%ebx
 	movl	48(%esp),%ebp
 	xorl	%ebp,%ebx
@@ -1070,7 +1070,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%eax
 	addl	%ebp,%ebx
 	addl	%eax,%ebx
-	# 40_59 59 
+	# 40_59 59
 	movl	44(%esp),%eax
 	movl	52(%esp),%ebp
 	xorl	%ebp,%eax
@@ -1092,7 +1092,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%esi
 	addl	%ebp,%eax
 	addl	%esi,%eax
-	# 20_39 60 
+	# 20_39 60
 	movl	%ebx,%ebp
 	movl	48(%esp),%esi
 	rorl	$2,%ebx
@@ -1108,7 +1108,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edi
 	leal	3395469782(%esi,%ebp,1),%esi
 	addl	%edi,%esi
-	# 20_39 61 
+	# 20_39 61
 	movl	%eax,%ebp
 	movl	52(%esp),%edi
 	rorl	$2,%eax
@@ -1124,7 +1124,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edx
 	leal	3395469782(%edi,%ebp,1),%edi
 	addl	%edx,%edi
-	# 20_39 62 
+	# 20_39 62
 	movl	%esi,%ebp
 	movl	56(%esp),%edx
 	rorl	$2,%esi
@@ -1140,7 +1140,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ecx
 	leal	3395469782(%edx,%ebp,1),%edx
 	addl	%ecx,%edx
-	# 20_39 63 
+	# 20_39 63
 	movl	%edi,%ebp
 	movl	60(%esp),%ecx
 	rorl	$2,%edi
@@ -1156,7 +1156,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ebx
 	leal	3395469782(%ecx,%ebp,1),%ecx
 	addl	%ebx,%ecx
-	# 20_39 64 
+	# 20_39 64
 	movl	%edx,%ebp
 	movl	(%esp),%ebx
 	rorl	$2,%edx
@@ -1172,7 +1172,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%eax
 	leal	3395469782(%ebx,%ebp,1),%ebx
 	addl	%eax,%ebx
-	# 20_39 65 
+	# 20_39 65
 	movl	%ecx,%ebp
 	movl	4(%esp),%eax
 	rorl	$2,%ecx
@@ -1188,7 +1188,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%esi
 	leal	3395469782(%eax,%ebp,1),%eax
 	addl	%esi,%eax
-	# 20_39 66 
+	# 20_39 66
 	movl	%ebx,%ebp
 	movl	8(%esp),%esi
 	rorl	$2,%ebx
@@ -1204,7 +1204,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edi
 	leal	3395469782(%esi,%ebp,1),%esi
 	addl	%edi,%esi
-	# 20_39 67 
+	# 20_39 67
 	movl	%eax,%ebp
 	movl	12(%esp),%edi
 	rorl	$2,%eax
@@ -1220,7 +1220,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edx
 	leal	3395469782(%edi,%ebp,1),%edi
 	addl	%edx,%edi
-	# 20_39 68 
+	# 20_39 68
 	movl	%esi,%ebp
 	movl	16(%esp),%edx
 	rorl	$2,%esi
@@ -1236,7 +1236,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ecx
 	leal	3395469782(%edx,%ebp,1),%edx
 	addl	%ecx,%edx
-	# 20_39 69 
+	# 20_39 69
 	movl	%edi,%ebp
 	movl	20(%esp),%ecx
 	rorl	$2,%edi
@@ -1252,7 +1252,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ebx
 	leal	3395469782(%ecx,%ebp,1),%ecx
 	addl	%ebx,%ecx
-	# 20_39 70 
+	# 20_39 70
 	movl	%edx,%ebp
 	movl	24(%esp),%ebx
 	rorl	$2,%edx
@@ -1268,7 +1268,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%eax
 	leal	3395469782(%ebx,%ebp,1),%ebx
 	addl	%eax,%ebx
-	# 20_39 71 
+	# 20_39 71
 	movl	%ecx,%ebp
 	movl	28(%esp),%eax
 	rorl	$2,%ecx
@@ -1284,7 +1284,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%esi
 	leal	3395469782(%eax,%ebp,1),%eax
 	addl	%esi,%eax
-	# 20_39 72 
+	# 20_39 72
 	movl	%ebx,%ebp
 	movl	32(%esp),%esi
 	rorl	$2,%ebx
@@ -1300,7 +1300,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edi
 	leal	3395469782(%esi,%ebp,1),%esi
 	addl	%edi,%esi
-	# 20_39 73 
+	# 20_39 73
 	movl	%eax,%ebp
 	movl	36(%esp),%edi
 	rorl	$2,%eax
@@ -1316,7 +1316,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edx
 	leal	3395469782(%edi,%ebp,1),%edi
 	addl	%edx,%edi
-	# 20_39 74 
+	# 20_39 74
 	movl	%esi,%ebp
 	movl	40(%esp),%edx
 	rorl	$2,%esi
@@ -1332,7 +1332,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ecx
 	leal	3395469782(%edx,%ebp,1),%edx
 	addl	%ecx,%edx
-	# 20_39 75 
+	# 20_39 75
 	movl	%edi,%ebp
 	movl	44(%esp),%ecx
 	rorl	$2,%edi
@@ -1348,7 +1348,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%ebx
 	leal	3395469782(%ecx,%ebp,1),%ecx
 	addl	%ebx,%ecx
-	# 20_39 76 
+	# 20_39 76
 	movl	%edx,%ebp
 	movl	48(%esp),%ebx
 	rorl	$2,%edx
@@ -1364,7 +1364,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%eax
 	leal	3395469782(%ebx,%ebp,1),%ebx
 	addl	%eax,%ebx
-	# 20_39 77 
+	# 20_39 77
 	movl	%ecx,%ebp
 	movl	52(%esp),%eax
 	rorl	$2,%ecx
@@ -1380,7 +1380,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%esi
 	leal	3395469782(%eax,%ebp,1),%eax
 	addl	%esi,%eax
-	# 20_39 78 
+	# 20_39 78
 	movl	%ebx,%ebp
 	movl	56(%esp),%esi
 	rorl	$2,%ebx
@@ -1396,7 +1396,7 @@ _wit_sha1_block_data_order:
 	roll	$5,%edi
 	leal	3395469782(%esi,%ebp,1),%esi
 	addl	%edi,%esi
-	# 20_39 79 
+	# 20_39 79
 	movl	%eax,%ebp
 	movl	60(%esp),%edi
 	rorl	$2,%eax

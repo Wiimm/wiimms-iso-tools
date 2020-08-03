@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -65,6 +65,9 @@
 #define SIZEOFRANGE(type,a,b) \
 	( offsetof(type,b) + sizeof(((type*)0)->b) - offsetof(type,a) )
 
+#define PTR_DISTANCE(a,b) ( (u8*)(a) - (u8*)(b) )
+#define PTR_DISTANCE_INT(a,b) ( (int)( (u8*)(a) - (u8*)(b) ))
+
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			    bits			///////////////
@@ -97,11 +100,30 @@ static inline uint Count1Bits16 ( u16 data )
 
 static inline uint Count1Bits32 ( u32 data )
 {
+    // __builtin_popcount(unsigned int) is slower than table based summary
+
     const u8 * d = (u8*)&data;
     return TableBitCount[d[0]]
 	 + TableBitCount[d[1]]
 	 + TableBitCount[d[2]]
 	 + TableBitCount[d[3]];
+}
+
+static inline uint Count1Bits64 ( u64 data )
+{
+ #if __GNUC__ > 3
+    return __builtin_popcountll(data);
+ #else
+    const u8 * d = (u8*)&data;
+    return TableBitCount[d[0]]
+	 + TableBitCount[d[1]]
+	 + TableBitCount[d[2]]
+	 + TableBitCount[d[3]]
+	 + TableBitCount[d[4]]
+	 + TableBitCount[d[5]]
+	 + TableBitCount[d[6]]
+	 + TableBitCount[d[7]];
+ #endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -605,6 +627,15 @@ static inline mem_t MemByChar ( char ch )
     return mem;
 }
 
+static inline mem_t MemByString0 ( ccp str )
+{
+    if (!str)
+	return NullMem;
+
+    mem_t mem = { str, strlen(str) };
+    return mem;
+}
+
 static inline mem_t MemByString ( ccp str )
 {
     mem_t mem = { str, strlen(str) };
@@ -691,6 +722,14 @@ mem_t BehindMem ( const mem_t src, ccp ref );
 
 //-----------------------------------------------------------------------------
 
+// Alloc dest buffer and terminate with 0.
+// If m*.len < 0, then use strlen().
+
+mem_t MemCat2A ( const mem_t m1, const mem_t m2 );
+mem_t MemCat3A ( const mem_t m1, const mem_t m2, const mem_t m3 );
+
+//-----------------------------------------------------------------------------
+
 int  CmpMem		( const mem_t s1, const mem_t s2 );
 int  StrCmpMem		( const mem_t mem, ccp str );
 bool LeftStrCmpMemEQ	( const mem_t mem, ccp str );
@@ -735,7 +774,7 @@ typedef struct mem_list_t
 {
     mem_t	*list;		// List of mem_t objects.
 				// Elements are always terminated with NULL.
-				// Content is stored in 'buf' or points to EmptyString.
+				// Content is NULL or EmptyString or stored in 'buf'
 
     uint	used;		// Number of active 'list' elements
     uint	size;		// Number of alloced 'list' elements
@@ -747,13 +786,25 @@ typedef struct mem_list_t
 mem_list_t;
 
 //-----------------------------------------------------------------------------
+// [[mem_list_mode_t]]
+
+typedef enum mem_list_mode_t
+{
+    MEMLM_ALL,		// insert all
+    MEMLM_IGN_NULL,	// ignore NULL
+    MEMLM_IGN_EMPTY,	// ignore NULL and empty
+    MEMLM_REPL_NULL,	// replace NULL by EmptyString
+}
+mem_list_mode_t;
+
+//-----------------------------------------------------------------------------
 
 void InitializeMemList ( mem_list_t *ml );
 void ResetMemList ( mem_list_t *ml );
 void MoveMemList ( mem_list_t *dest, mem_list_t *src );
 
-void GrowBufMemList ( mem_list_t *ml, uint need_size );
-void PrepareMemList ( mem_list_t *ml, uint n_elem, uint buf_size );
+void NeedBufMemList ( mem_list_t *ml, uint need_size, uint extra_size );
+void NeedElemMemList ( mem_list_t *ml, uint n_elem, uint need_size );
 
 //-----------------------------------------------------------------------------
 
@@ -763,10 +814,7 @@ void InsertMemListN
     int			pos,		// insert position => CheckIndex1()
     const mem_t		*src,		// source list
     uint		src_len,	// number of elements in source list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 );
 
 //-----------------------------------------------------------------------------
@@ -776,10 +824,7 @@ static inline void InsertMemList2
     mem_list_t		*ml,		// valid destination mem_list
     int			pos,		// insert position => CheckIndex1()
     const mem_list_t	*src,		// source mem_list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(src);
@@ -793,10 +838,7 @@ static inline void AppendMemListN
     mem_list_t		*ml,		// valid destination mem_list
     const mem_t		*src,		// source list
     uint		src_len,	// number of elements in source list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(ml);
@@ -809,10 +851,7 @@ static inline void AppendMemList2
 (
     mem_list_t		*ml,		// valid destination mem_list
     const mem_list_t	*src,		// source mem_list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(ml);
@@ -827,10 +866,7 @@ static inline void AssignMemListN
     mem_list_t		*ml,		// valid destination mem_list
     const mem_t		*src,		// source list
     uint		src_len,	// number of elements in source list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(ml);
@@ -844,10 +880,7 @@ static inline void AssignMemList2
 (
     mem_list_t		*ml,		// valid destination mem_list
     const mem_list_t	*src,		// source mem_list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     DASSERT(ml);
@@ -863,10 +896,7 @@ void CatMemListN
     mem_list_t		*dest,		// valid destination mem_list
     const mem_list_t	**src_list,	// list with mem lists, element may be NULL
     uint		n_src_list,	// number of elements in 'src'
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 );
 
 //-----------------------------------------------------------------------------
@@ -876,10 +906,7 @@ static inline void CatMemList2
     mem_list_t		*dest,		// valid destination mem_list
     const mem_list_t	*src1,		// source mem_list
     const mem_list_t	*src2,		// source mem_list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     const mem_list_t *ml[2] = { src1, src2 };
@@ -894,10 +921,7 @@ static inline void CatMemList3
     const mem_list_t	*src1,		// source mem_list
     const mem_list_t	*src2,		// source mem_list
     const mem_list_t	*src3,		// source mem_list
-    uint		src_ignore	// 0: insert all
-					// 1: ignore NULL
-					// 2: ignore NULL and empty
-					// 3: replace NULL by EmptyString
+    mem_list_mode_t	src_ignore	// how to manage NULL and empty strings
 )
 {
     const mem_list_t *ml[3] = { src1, src2, src3 };
@@ -1081,7 +1105,7 @@ extern uint alloc_info_mask;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-uint SetupAllocInfo();
+uint SetupAllocInfo(void);
 
 static inline uint GetGoodAllocSize ( uint need )
 {
@@ -1107,8 +1131,9 @@ static inline uint GetGoodAllocSizeA ( uint need, uint align )
 ///////////////		some basic string functions		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-extern const char EmptyString[4];	// ""  + 4*NULL, Ignored by FreeString()
-extern const char MinusString[4];	// "-" + 3*NULL, Ignored by FreeString()
+extern const char EmptyQuote[];		// »""«		  Ignored by FreeString()
+extern const char EmptyString[4];	// »«   + 4*NULL, Ignored by FreeString()
+extern const char MinusString[4];	// »-«  + 3*NULL, Ignored by FreeString()
 
 extern const char LoDigits[0x41];	// 0-9 a-z A-Z .+ NULL
 extern const char HiDigits[0x41];	// 0-9 A-Z a-z .+ NULL
@@ -1126,21 +1151,21 @@ extern const char ThinLine300_3[901];	// 300 * '─' (U+2500) + NULL
 
 //-----------------------------------------------------------------------------
 
-void SetupMultiProcessing();
+void SetupMultiProcessing(void);
 void PrintSettingsDCLIB ( FILE *f, int indent );
 void SetupProgname ( int argc, char ** argv,
 			ccp tool_name, ccp tool_vers, ccp tool_title );
 
 // return NULL or 'progpath', calc GetProgramPath() once if needed
-ccp ProgramPath();
+ccp ProgramPath(void);
 
 // return NULL or 'progdir', calc ProgramPath() once if needed
-ccp ProgramDirectory();
+ccp ProgramDirectory(void);
 
 #ifdef __CYGWIN__
-    ccp ProgramPathNoExt();
+    ccp ProgramPathNoExt(void);
 #else
-    static inline ccp ProgramPathNoExt() { return ProgramPath(); }
+    static inline ccp ProgramPathNoExt(void) { return ProgramPath(); }
 #endif
 
 int GetProgramPath
@@ -1168,6 +1193,10 @@ char * StringCopyE  ( char * buf, ccp buf_end, ccp src );
 char * StringCopyEM ( char * buf, ccp buf_end, ccp src, size_t max_copy );
 char * StringCat2E  ( char * buf, ccp buf_end, ccp src1, ccp src2 );
 char * StringCat3E  ( char * buf, ccp buf_end, ccp src1, ccp src2, ccp src3 );
+
+// alloc space and return
+char * StringCat2A  ( ccp src1, ccp src2 );
+char * StringCat3A  ( ccp src1, ccp src2, ccp src3 );
 
 static inline char * StringCopySMem ( char * buf, size_t bufsize, mem_t mem )
 	{ return StringCopySM(buf,bufsize,mem.ptr,mem.len); }
@@ -1295,26 +1324,6 @@ char * ScanName
 );
 
 //-----------------------------------------------------
-
-#define CIRC_BUF_MAX_ALLOC 1024  // request limit
-#define CIRC_BUF_SIZE      4096	 // internal buffer size
-
-char * GetCircBuf
-(
-    // never returns NULL, but always ALIGN(4)
-
-    u32		buf_size	// wanted buffer size, add 1 for NULL-term
-				// if buf_size > CIRC_BUF_MAX_ALLOC:
-				//  ==> ERROR0(ERR_OUT_OF_MEMORY)
-);
-
-void ReleaseCircBuf
-(
-    ccp	    end_buf,		// pointer to end of previous alloced buffer
-    uint    release_size	// number of bytes to give back from end
-);
-
-//-----------------------------------------------------
 // Format of version number: AABBCCDD = A.BB | A.BB.CC
 // If D != 0x00 && D != 0xff => append: 'beta' D
 //-----------------------------------------------------
@@ -1335,7 +1344,247 @@ char * PrintID
 					// If NULL, a local circulary static buffer is used
 );
 
-//-----
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			    circ buf			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+#define CIRC_BUF_MAX_ALLOC 0x0400  // request limit
+#define CIRC_BUF_SIZE      0x4000  // internal buffer size
+
+char * GetCircBuf
+(
+    // never returns NULL, but always ALIGN(4)
+
+    u32		buf_size	// wanted buffer size, caller must add 1 for NULL-term
+				// if buf_size > CIRC_BUF_MAX_ALLOC:
+				//  ==> ERROR0(ERR_OUT_OF_MEMORY)
+);
+
+char * CopyCircBuf
+(
+    // never returns NULL, but always ALIGN(4)
+
+    cvp		data,		// source to copy
+    u32		data_size	// see GetCircBuf()
+);
+
+char * CopyCircBuf0
+(
+    // never returns NULL, but always ALIGN(4)
+    // an additional char is alloced and set to NULL
+
+    cvp		data,		// source to copy
+    u32		data_size	// see GetCircBuf()
+);
+
+char * PrintCircBuf
+(
+    ccp		format,		// format string for vsnprintf()
+    ...				// arguments for 'format'
+)
+__attribute__ ((__format__(__printf__,1,2)));
+
+void ReleaseCircBuf
+(
+    ccp	    end_buf,		// pointer to end of previous alloced buffer
+    uint    release_size	// number of bytes to give back from end
+);
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct IntMode_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[IntMode_t]]
+
+typedef enum IntMode_t
+{
+	IMD_UNSET = 0,	// default, always 0
+
+	//--- big endian modes
+
+	IMD_BE0,	// default big endian
+	IMD_BE1,
+	IMD_BE2,
+	IMD_BE3,
+	IMD_BE4,
+	IMD_BE5,
+	IMD_BE6,
+	IMD_BE7,
+	IMD_BE8,
+
+	//--- little endian modes
+
+	IMD_LE0,	// default little endian
+	IMD_LE1,
+	IMD_LE2,
+	IMD_LE3,
+	IMD_LE4,
+	IMD_LE5,
+	IMD_LE6,
+	IMD_LE7,
+	IMD_LE8,
+
+	//--- local endian modes
+
+     #ifdef LITTLE_ENDIAN
+
+	IMD_0 = IMD_LE0,
+	IMD_1 = IMD_LE1,
+	IMD_2 = IMD_LE2,
+	IMD_3 = IMD_LE3,
+	IMD_4 = IMD_LE4,
+	IMD_5 = IMD_LE5,
+	IMD_6 = IMD_LE6,
+	IMD_7 = IMD_LE7,
+	IMD_8 = IMD_LE8,
+
+     #else
+
+	IMD_0 = IMD_BE0,
+	IMD_1 = IMD_BE1,
+	IMD_2 = IMD_BE2,
+	IMD_3 = IMD_BE3,
+	IMD_4 = IMD_BE4,
+	IMD_5 = IMD_BE5,
+	IMD_6 = IMD_BE6,
+	IMD_7 = IMD_BE7,
+	IMD_8 = IMD_BE8,
+
+     #endif
+}
+__attribute__ ((packed)) IntMode_t;
+
+//-----------------------------------------------------------------------------
+
+ccp GetIntModeName ( IntMode_t mode );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct FastBuf_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[FastBuf_t]]
+
+typedef struct FastBuf_t
+{
+    char *buf;		// pointer to buffer
+    char *ptr;		// pointer to first unused char (always space for 0-term)
+    char *end;		// pointer to end of buffer := buf+size-1
+
+    uint fast_buf_size;	// size of 'fast_buf+space'
+    char fast_buf[4];	// first use buffer with minimal space
+    char space[];	// additional space
+}
+FastBuf_t;
+
+///////////////////////////////////////////////////////////////////////////////
+
+//------------------------------------------------------------------
+//
+// 4 examples for initialization:
+//
+//	FastBuf_t fb1;
+//	InitializeFastBufAlloc(&fb1,1000);
+//	printf("fb1: %s: %s\n", GetFastBufStatus(&fb1), fb1.buf );
+//
+//	FastBuf_t fb2;
+//	InitializeFastBuf(&fb2,sizeof(fb2));
+//	printf("fb2: %s: %s\n", GetFastBufStatus(&fb2), fb2.buf );
+//
+//	struct { FastBuf_t b; char space[2000]; } fb3;
+//	InitializeFastBuf(&fb3,sizeof(fb3));
+//	printf("fb3: %s: %s\n", GetFastBufStatus(&fb.b), fb3.b.buf );
+//
+//	char fb4x[2000];
+//	FastBuf_t *fb4 = InitializeFastBuf(fb4x,sizeof(fb4x));
+//	printf("fb4: %s: %s\n", GetFastBufStatus(fb4), fb4->buf );
+//
+//------------------------------------------------------------------
+
+FastBuf_t * InitializeFastBuf ( cvp mem, uint size );
+FastBuf_t * InitializeFastBufAlloc ( FastBuf_t *fb, uint size );
+
+void ResetFastBuf	( FastBuf_t *fb );
+static inline void ClearFastBuf ( FastBuf_t *fb )
+	{ DASSERT(fb); fb->ptr = fb->buf; }
+
+ccp GetFastBufStatus	( const FastBuf_t *fb );
+int ReserveSpaceFastBuf ( FastBuf_t *fb, uint size );
+char * GetSpaceFastBuf	( FastBuf_t *fb, uint size );
+
+uint   InsertFastBuf	( FastBuf_t *fb, int index,   cvp source, int size );
+char * AppendFastBuf	( FastBuf_t *fb,              cvp source, int size );
+char * WriteFastBuf	( FastBuf_t *fb, uint offset, cvp source, int size );
+uint   AssignFastBuf	( FastBuf_t *fb, cvp source,              int size );
+uint   AlignFastBuf	( FastBuf_t *fb, uint align, u8 fill );
+uint   DropFastBuf	( FastBuf_t *fb, int index,               int size );
+
+void CopyFastBuf	( FastBuf_t *dest, const FastBuf_t *src );
+void MoveFastBuf	( FastBuf_t *dest, FastBuf_t *src );
+
+static inline void AppendMemFastBuf ( FastBuf_t *fb, const mem_t mem )
+	{ AppendFastBuf(fb,mem.ptr,mem.len); }
+
+static inline void AppendCharFastBuf ( FastBuf_t *fb, char ch )
+{
+    DASSERT(fb);
+    GetSpaceFastBuf(fb,1)[0] = ch;
+}
+
+void AppendUTF8CharFastBuf ( FastBuf_t *fb, u32 code );
+void AppendBE16FastBuf  ( FastBuf_t *fb, u16 num );
+void AppendBE32FastBuf  ( FastBuf_t *fb, u32 num );
+void AppendInt64FastBuf ( FastBuf_t *fb, u64 val, IntMode_t mode );
+
+static inline void AppendU16FastBuf ( FastBuf_t *fb, u16 num )
+	{ AppendFastBuf(fb,&num,sizeof(num)); }
+static inline void AppendU32FastBuf ( FastBuf_t *fb, u32 num )
+	{ AppendFastBuf(fb,&num,sizeof(num)); }
+static inline void AppendU64FastBuf ( FastBuf_t *fb, u64 num )
+	{ AppendFastBuf(fb,&num,sizeof(num)); }
+
+static inline int GetFastBufLen ( const FastBuf_t *fb )
+	{ DASSERT(fb); return fb->ptr - fb->buf; }
+
+//-----------------------------------------------------------------------------
+// The resulting strings of GetFastBufString() and GetFastBufMem0() are always
+// terminated by an additional NULL byte.
+// The resulting strings of GetFastBufMem() is not terminated by a NULL byte.
+//-----------------------------------------------------------------------------
+
+static inline char * GetFastBufString ( const FastBuf_t *fb )
+{
+    DASSERT(fb);
+    *fb->ptr = 0;
+    return fb->buf;
+}
+
+static inline mem_t GetFastBufMem0 ( const FastBuf_t *fb )
+{
+    DASSERT(fb);
+    *fb->ptr = 0;
+    mem_t mem = { fb->buf, fb->ptr - fb->buf };
+    return mem;
+}
+
+static inline mem_t GetFastBufMem ( const FastBuf_t *fb )
+{
+    DASSERT(fb);
+    mem_t mem = { fb->buf, fb->ptr - fb->buf };
+    return mem;
+}
+
+//-----------------------------------------------------------------------------
+// The allocated result is always terminated by an additional NULL byte.
+// FastBuf_t itself is reset, similar to ResetFastBuf()
+
+char * MoveFromFastBufString ( FastBuf_t *fb );
+mem_t  MoveFromFastBufMem    ( FastBuf_t *fb );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			 MatchPattern()			///////////////
+///////////////////////////////////////////////////////////////////////////////
 
 #define PATTERN_WILDCARDS "*# ?[{"
 
@@ -1421,6 +1670,7 @@ int ScanSplitArg
 //				OVERVIEW
 //-----------------------------------------------------------------------------
 // Container_t * CreateContainer ( Container_t, protect, data,size, CopyMode_t )
+// Container_t * InheritContainer ( Container_t cur, protect, Container_t parent, data,size )
 // bool AssignContainer ( Container_t, protect, data,size, CopyMode_t )
 // void ResetContainer ( Container_t )
 // void DeleteContainer ( Container_t )
@@ -1429,7 +1679,11 @@ int ScanSplitArg
 // ContainerData_t * MoveContainerData ( Container_t )
 // Container_t * CatchContainerData ( Container_t, int protect, ContainerData_t )
 // Container_t * UseContainerData ( Container_t, int protect, Container_t )
+//------------
+// ContainerData_t DisjoinContainerData ( Container_t )
+// void JoinContainerData ( Container_t, ContainerData_t )
 // void FreeContainerData ( ContainerData_t )
+//------------
 // static inline bool ModificationAllowed ( const Container_t )
 // void ModifyAllContainer ( Container_t )
 // void ModifyContainer ( Container_t, data, size, CopyMode_t )
@@ -1473,11 +1727,24 @@ Container_t * CreateContainer
     // returns 'c' or the alloced container
     // 'c' is always initialized
 
-    Container_t		*c,		// if NULL: alloc a container
+    Container_t		*c,		// valid container, alloc one if NULL
     int			protect,	// initial value for protection
     const void		*data,		// data to copy/move/link
     uint		size,		// size of 'data'
     CopyMode_t		mode		// copy mode on creation
+);
+
+//-----------------------------------------------------------------------------
+
+Container_t * InheritContainer
+(
+    // returns 'c' or the alloced container
+
+    Container_t		*c,		// valid container, alloc one if NULL
+    int			protect,	// initial value for protection
+    const Container_t	*parent,	// NULL or valid parent container
+    const void		*data,		// data to copy/move/link
+    uint		size		// size of 'data'
 );
 
 //-----------------------------------------------------------------------------
@@ -1520,7 +1787,8 @@ ContainerData_t * LinkContainerData
 (
     // increment 'ref_count' and return NULL or current ContainerData
     // => use CatchContainerData() to complete operation
-    Container_t		*c		// NULL or valid container
+
+    const Container_t	*c		// NULL or valid container
 );
 
 //-----------------------------------------------------------------------------
@@ -1539,7 +1807,7 @@ Container_t * CatchContainerData
     // returns 'c' or the alloced container
     // 'c' is always initialized
 
-    Container_t		*c,		// if NULL: alloc a container
+    Container_t		*c,		// valid container, alloc one if NULL
     int			protect,	// initial value for protection
     ContainerData_t	*cdata		// if not NULL: catch this
 );
@@ -1549,18 +1817,45 @@ Container_t * CatchContainerData
 static inline Container_t * UseContainerData
 (
     // returns 'c' or the alloced container
-    Container_t		*c,		// if NULL: alloc a container
+
+    Container_t		*c,		// valid container, alloc one if NULL
     int			protect,	// initial value for protection
-    Container_t		*src		// if not NULL: catch this
+    const Container_t	*src		// if not NULL: catch this
 )
 {
     return CatchContainerData(c,protect,LinkContainerData(src));
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
+ContainerData_t * DisjoinContainerData
+(
+    // Disjoin data container date without freeing it. Call either
+    // JoinContainerData() or FreeContainerData() to finish operation.
+    // Reference counters are not modified.
+    // Return the data container or NULL
+
+    Container_t		*c		// NULL or valid container
+);
+
+//-----------------------------------------------------------------------------
+
+void JoinContainerData
+(
+    // Join a data container, that was diojoined by DisjoinContainerData()
+    // Reference counters are not modified.
+
+    Container_t		*c,		// if NULL: FreeContainerData()
+    ContainerData_t	*cdata		// NULL or container-data to join
+);
+
 //-----------------------------------------------------------------------------
 
 void FreeContainerData
 (
+    // Decrement the reference counter of an already disjoined data container
+    // and free it if unused.
+
     ContainerData_t	*cdata		// NULL or container-data to free
 );
 
@@ -1600,7 +1895,7 @@ bool ModifyContainer
 int SetProtectContainer
 (
     // returns 'c' new protection level
-    Container_t		*c,		// if NULL: alloc a container
+    Container_t		*c,		// valid container, alloc one if NULL
     int			new_protect	// new protection value
 );
 
@@ -1609,7 +1904,7 @@ int SetProtectContainer
 static inline int AddProtectContainer
 (
     // returns 'c' new protection level
-    Container_t		*c,		// if NULL: alloc a container
+    Container_t		*c,		// valid container, alloc one if NULL
     int			add_protect	// new protection value
 )
 {
@@ -1792,6 +2087,10 @@ extern const u32 TableCRC32[0x100];
 u32 CalcCRC32 ( u32 crc, cvp buf, uint size );
 
 ///////////////////////////////////////////////////////////////////////////////
+
+extern const u16 TableCP1252_80[0x20];
+
+///////////////////////////////////////////////////////////////////////////////
 // [[CharMode_t]]
 
 typedef enum CharMode_t // select encodig/decoding method
@@ -1820,6 +2119,12 @@ typedef enum EncodeMode_t // select encodig/decoding method
     ENCODE__N		// number of encoding modes
 }
 EncodeMode_t;
+
+// [[doxygen]]
+static inline bool NeedsQuotesByEncoding ( EncodeMode_t em )
+	{ return em > ENCODE_OFF && em < ENCODE_BASE64 || em > ENCODE_BASE64XML; }
+
+ccp GetEncodingName ( EncodeMode_t em );
 
 ///////////////////////////////////////////////////////////////////////////////
 // [[DecodeType_t]]
@@ -1859,13 +2164,13 @@ char * PrintEscapedString
 (
     // returns 'buf'
 
-    char	*buf,			// valid destination buffer
-    uint	buf_size,		// size of 'buf', >= 10
-    ccp		source,			// NULL string to print
-    int		len,			// length of string. if -1, str is null terminated
-    CharMode_t	char_mode,		// modes, bit field (CHMD_*)
-    char	quote,			// NULL or quotation char, that must be quoted
-    uint	*scanned_len		// not NULL: Store number of scanned 'str' bytes here
+    char	*buf,		// valid destination buffer
+    uint	buf_size,	// size of 'buf', >= 10
+    ccp		source,		// NULL string to print
+    int		len,		// length of string. if -1, str is null terminated
+    CharMode_t	char_mode,	// modes, bit field (CHMD_*)
+    char	quote,		// NULL or quotation char, that must be quoted
+    uint	*dest_len	// not NULL: Store length of result here
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1874,12 +2179,13 @@ uint ScanEscapedString
 (
     // returns the number of valid bytes in 'buf' (NULL term not counted)
 
-    char	*buf,			// valid destination buffer, maybe source
-    uint	buf_size,		// size of 'buf'
-    ccp		source,			// string to scan
-    int		len,			// length of string. if -1, str is null terminated
-    bool	utf8,			// true: source and output is UTF-8
-    uint	*scanned_len		// not NULL: Store number of scanned 'source' bytes here
+    char	*buf,		// valid destination buffer, maybe source
+    uint	buf_size,	// size of 'buf'
+    ccp		source,		// string to scan
+    int		len,		// length of string. if -1, str is null terminated
+    bool	utf8,		// true: source and output is UTF-8
+    int		quote,		// 0:none, -1:auto, >0: quotation char
+    uint	*scanned_len	// not NULL: Store number of scanned 'source' bytes here
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1920,6 +2226,19 @@ uint DecodeBase64
     uint	*scanned_len		// not NULL: Store number of scanned 'str' bytes here
 );
 
+//-----------------------------------------------------------------------------
+
+mem_t DecodeBase64Circ
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    ccp		source,			// NULL or string to decode
+    int		len,			// length of string. if -1, str is null terminated
+    const char	decode64[256]		// decoding table; if NULL: use TableDecode64default
+);
+
 ///////////////////////////////////////////////////////////////////////////////
 
 uint EncodeBase64
@@ -1934,6 +2253,19 @@ uint EncodeBase64
     bool	use_filler,		// use filler for aligned output
     ccp		next_line,		// not NULL: use this string as new line sep
     uint	next_line_trigger	// >0: use 'next_line' every # input bytes
+);
+
+//-----------------------------------------------------------------------------
+
+mem_t EncodeBase64Circ
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    const void	*source,		// NULL or data to encode
+    int		source_len,		// length of 'source'; if <0: use strlen(source)
+    const char	encode64[64+1]		// encoding table; if NULL: use TableEncode64default
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1954,15 +2286,29 @@ static inline uint DecodeJSON
 (
     // returns the number of valid bytes in 'buf'
 
-    char	*buf,			// valid destination buffer
-    uint	buf_size,		// size of 'buf', >= 3
-    ccp		source,			// NULL or string to decode
-    int		source_len,		// length of 'source'. If -1, str is NULL terminated
-    uint	*scanned_len		// not NULL: Store number of scanned 'str' bytes here
+    char	*buf,		// valid destination buffer
+    uint	buf_size,	// size of 'buf', >= 3
+    ccp		source,		// NULL or string to decode
+    int		source_len,	// length of 'source'. If -1, str is NULL terminated
+    int		quote,		// 0:none, -1:auto, >0: quotation char
+    uint	*scanned_len	// not NULL: Store number of scanned 'str' bytes here
 )
 {
-    return ScanEscapedString(buf,buf_size,source,source_len,true,scanned_len);
+    return ScanEscapedString(buf,buf_size,source,source_len,true,quote,scanned_len);
 }
+
+//-----------------------------------------------------------------------------
+
+mem_t DecodeJSONCirc
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    ccp		source,		// NULL or string to decode
+    int		source_len,	// length of 'source'. If -1, str is NULL terminated
+    int		quote		// 0:none, -1:auto, >0: quotation char
+);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1976,6 +2322,34 @@ uint EncodeJSON
     int		source_len		// length of 'source'; if <0: use strlen(source)
 );
 
+//-----------------------------------------------------------------------------
+
+mem_t EncodeJSONCirc
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    const void	*source,		// NULL or data to encode
+    int		source_len		// length of 'source'; if <0: use strlen(source)
+);
+
+//-----------------------------------------------------------------------------
+
+mem_t QuoteJSONCirc
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    const void	*source,		// NULL or data to encode
+    int		source_len,		// length of 'source'; if <0: use strlen(source)
+    int		null_if			// return 'null' without quotes ...
+					//	<=0: never
+					//	>=1: if source == NULL
+					//	>=2: if source_len == 0
+);
+
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1987,9 +2361,41 @@ uint DecodeByMode
     uint		buf_size,	// size of 'buf', >= 3
     ccp			source,		// string to decode
     int			slen,		// length of string. if -1, str is null terminated
-    EncodeMode_t	emode		// encoding mode
+    EncodeMode_t	emode,		// encoding mode
+    uint		*scanned_len	// not NULL: Store number of scanned 'str' bytes here
 );
 
+///////////////////////////////////////////////////////////////////////////////
+
+mem_t DecodeByModeMem
+(
+    // Returns the decoded 'source'. Result is NULL-terminated.
+    // It points either to 'buf' or is alloced (on buf==NULL or too less space)
+    // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
+
+    char		*buf,		// NULL or destination buffer
+    uint		buf_size,	// size of 'buf'
+    ccp			source,		// string to decode
+    int			slen,		// length of string. if -1, str is null terminated
+    EncodeMode_t	emode,		// encoding mode
+    uint		*scanned_len	// not NULL: Store number of scanned 'str' bytes here
+);
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint DecodeByModeMemList
+(
+    // returns the number of scanned strings
+
+    mem_list_t		*res,		// result
+    uint		res_mode,	// 0:append, 1:clear, 2:init
+    ccp			source,		// string to decode
+    int			slen,		// length of string. if -1, str is null terminated
+    EncodeMode_t	emode,		// encoding mode
+    uint		*scanned_len	// not NULL: Store number of scanned 'str' bytes here
+);
+
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 uint EncodeByMode
@@ -2005,25 +2411,10 @@ uint EncodeByMode
 
 ///////////////////////////////////////////////////////////////////////////////
 
-mem_t DecodeByModeMem
-(
-    // Returns the decoded 'source'. Result is NULL-terminated.
-    // It points either to 'buf' or is alloced (on buf==NULL or to less space)
-    // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
-
-    char		*buf,		// NULL or destination buffer
-    uint		buf_size,	// size of 'buf'
-    ccp			source,		// string to decode
-    int			slen,		// length of string. if -1, str is null terminated
-    EncodeMode_t	emode		// encoding mode
-);
-
-///////////////////////////////////////////////////////////////////////////////
-
 mem_t EncodeByModeMem
 (
-    // Returns the encode 'source'. Result is NULL-terminated.
-    // It points either to 'buf' or is alloced (on buf==NULL or to less space)
+    // Returns the encoded 'source'. Result is NULL-terminated.
+    // It points either to 'buf' or is alloced (on buf==NULL or too less space)
     // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
 
     char		*buf,		// NULL or destination buffer
@@ -2032,6 +2423,25 @@ mem_t EncodeByModeMem
     int			slen,		// length of string. if -1, str is null terminated
     EncodeMode_t	emode		// encoding mode
 );
+
+///////////////////////////////////////////////////////////////////////////////
+
+#define SJIS_TAB_MAPPING_BEG	0xeea0  // first code used for table mapping
+#define SJIS_TAB_MAPPING_END	0xeecf  // last code used for table mapping
+#define SJIS_INVALID_CODE	0xffff  // invalid code
+#define SJIS_CACHE_SIZE		0xffff  // number of elements in cache
+
+static inline bool IsValidShiftJIS ( uint code )
+	{ return code < SJIS_TAB_MAPPING_BEG
+	      || code > SJIS_TAB_MAPPING_END && code < SJIS_INVALID_CODE; }
+
+int ScanShiftJISChar ( cucp * str );
+int ScanShiftJISCharE ( cucp * str, cvp end );
+
+void SetupGetShiftJISCache(void);
+int GetShiftJISChar ( u32 code );
+
+ccp GetShiftJISStatistics(void);
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -2229,14 +2639,15 @@ enumError Command_COLORS
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			OFF/AUTO/ON/FORCE		///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[OffOn_t]]
 
 typedef enum OffOn_t
 {
-    OFFON_ERROR	= -999,
-    OFFON_OFF	=   -1,
-    OFFON_AUTO	=    0,
-    OFFON_ON	=    1,
-    OFFON_FORCE	=    2,
+    OFFON_ERROR	= -99,
+    OFFON_OFF	=  -1,
+    OFFON_AUTO	=   0,
+    OFFON_ON	=   1,
+    OFFON_FORCE	=   2,
 }
 OffOn_t;
 
@@ -2244,13 +2655,15 @@ extern const KeywordTab_t KeyTab_OFF_AUTO_ON[];
 
 int ScanKeywordOffAutoOn
 (
-    // returns one of OFFON_* (OFFON_ON on empty argument)
+    // returns one of OFFON_*
 
     ccp			arg,		// argument to scan
     int			on_empty,	// return this value on empty
     uint		max_num,	// >0: additionally accept+return number <= max_num
     ccp			object		// NULL (silent) or object for error messages
 );
+
+ccp GetKeywordOffAutoOn ( OffOn_t value );
 
 ////
 ///////////////////////////////////////////////////////////////////////////////
@@ -2268,9 +2681,10 @@ int ScanKeywordOffAutoOn
 //
 // CONTROLS are possible before and behind the '=' and at the end of param.
 // Only BLANK* are allowed between command NAME and BINARY block.
-// BINARY data is stored as '->bin' and '->bin_len' and inludes SIZE and DATA.
-// The BINARY.SIZE includes itself and is a 16-bit big-endian number.
-// In '->bin[]', 'be16:SIZE' is excluded, but '->bin[].ptr-2' points to be16:SIZE.
+// BINARY data starts with \1 and is stored as '->bin' and '->bin_len' and
+// inludes SIZE and DATA. The BINARY.SIZE includes itself and is a 16-bit
+// big-endian number. In '->bin[]', member 'be16:SIZE' is excluded,
+// but '->bin[].ptr - 2' points to be16:SIZE.
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -2300,6 +2714,9 @@ typedef struct CommandList_t
     void	*user_ptr;	// any pointer
     int		user_int;	// any number or id
 
+    ccp		log_fname;	// not NULL: open log file
+    uint	log_level;	// 0:off, 1:stat+err, 2:+cmd, 3:+bin+param, 4:+func
+
     //--- analysed data, only valid at callback
 
     char	cmd[100];	// scanned command name
@@ -2317,7 +2734,7 @@ typedef struct CommandList_t
 
     //--- statistics
 
-    uint	scanned_len;	// number of used bytes of 'commands'
+    uint	read_cmd_len;	// number of used bytes of 'command'
     uint	fail_count;	// number of failed commands
     uint	cmd_count;	// number of commands
 }
@@ -2363,7 +2780,7 @@ uint ReadFromUrandom ( void *dest, uint size );
 
 u32 MyRandom ( u32 max );
 u64 MySeed ( u64 base );
-u64 MySeedByTime();
+u64 MySeedByTime(void);
 
 void MyRandomFill ( void * buf, size_t size );
 
@@ -2529,6 +2946,9 @@ typedef enum sizeform_mode_t
     DC_SFORM_INC	= 0x08,	// increment to next factor if no fraction is lost
     DC_SFORM_PLUS	= 0x10,	// on signed output: print PLUS sign for values >0
     DC_SFORM_DASH	= 0x20,	// on NULL: print only a dash (minus sign)
+
+    DC_SFORM__MASK	= 0x3f,	// mask of above
+    DC_SFORM__AUTO	= 0x40,	// hint for some functions to decide by themself
 
     DC_SFORM_TINY	= DC_SFORM_NARROW | DC_SFORM_UNIT1,
 }
@@ -2925,19 +3345,37 @@ typedef s64  s_msec_t;	//   signed type to store time as milliseconds
 typedef u64  u_usec_t;	// unsigned type to store time as microseconds
 typedef s64  s_usec_t;	//   signed type to store time as microseconds
 
+// [[DayTime_t]]
+typedef struct DayTime_t
+{
+    time_t	time;	// seconds since epoch, like time()
+    int		day;	// days since epoch
+    int		hour;	// hour of day
+    int		min;	// minute of hour
+    int		sec;	// second of minute
+    int		usec;	// microsecond of second
+}
+DayTime_t;
+
 //--- only valid after call to SetupTimezone()
 
 extern s64 timezone_adjust_sec;
 extern s64 timezone_adjust_usec;
+extern int timezone_adjust_isdst;
+
+///////////////////////////////////////////////////////////////////////////////
 
 void SetupTimezone ( bool force );
+int GetTimezoneAdjust ( time_t tim );
 
-u_sec_t  GetTimeSec  ( bool localtime );
-u_msec_t GetTimeMSec ( bool localtime );
-u_usec_t GetTimeUSec ( bool localtime );
+struct timeval	GetTimeOfDay ( bool localtime );
+DayTime_t	GetDayTime   ( bool localtime );
+u_sec_t		GetTimeSec   ( bool localtime );
+u_msec_t	GetTimeMSec  ( bool localtime );
+u_usec_t	GetTimeUSec  ( bool localtime );
 
-u_msec_t GetTimerMSec();
-u_usec_t GetTimerUSec();
+u_msec_t GetTimerMSec(void);
+u_usec_t GetTimerUSec(void);
 
 static inline u64 double2msec ( double d ) { return d>0.0 ? (u64)trunc( 1e3*d+0.5 ) : 0; }
 static inline u64 double2usec ( double d ) { return d>0.0 ? (u64)trunc( 1e6*d+0.5 ) : 0; }
@@ -2951,7 +3389,65 @@ static inline double usec2double ( u64 num ) { return num * 1e-6; }
 #define EPOCH_2001_MSEC (EPOCH_2001_SEC*MSEC_PER_SEC)
 #define EPOCH_2001_USEC (EPOCH_2001_SEC*USEC_PER_SEC)
 
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintTimeByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    time_t		time		// seconds since epoch -> time()
+);
+
+ccp PrintTimeByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    time_t		time		// seconds since epoch -> time()
+);
+
 //-----------------------------------------------------------------------------
+
+ccp PrintUsecByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    time_t		time,		// seconds since epoch -> time()
+    uint		usec		// micro second of second
+);
+
+ccp PrintUsecByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    time_t		time,		// seconds since epoch -> time()
+    uint		usec		// micro second of second
+);
+
+//-----------------------------------------------------------------------------
+
+
+ccp PrintTimevalByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    const struct timeval *tv		// time to print, if NULL use gettimeofday()
+);
+
+
+ccp PrintTimevalByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    const struct timeval *tv		// time to print, if NULL use gettimeofday()
+);
+
+///////////////////////////////////////////////////////////////////////////////
 
 ccp PrintTimeSec
 (
@@ -3107,7 +3603,8 @@ ccp PrintTimer6 // helper function
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     u64			sec,		// seconds to print
-    int			usec,		// 0...999999: usec fraction, otherwise suppress ms/us output
+    int			usec,		// 0...999999: usec fraction,
+					//    otherwise suppress ms/us output
     bool		aligned		// true: print aligned 6 character output
 );
 
@@ -3273,6 +3770,209 @@ char * ScanDateTime64
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			Since 2001			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+// Values for day and week are exact.
+// Values for month, quarter and year are based on 365.2425 days/year.
+
+//-----------------------------------------------------------------------
+// name		full/13		short/11	alt/10		tiny/8
+//-----------------------------------------------------------------------
+// hour		YYYY-MM-DD HH	YY-MM-DD HH	DD. HH:xx	MM-DD HH
+// day		YYYY-MM-DD	<<		<<		YY-MM-DD
+// week		YYYYwWW		<<		<<		<<
+// month	YYYY-MM		<<		<<		<<
+// quarter	YYYYqQ		<<		<<		<<
+// year		YYYY		<<		<<		<<
+//-----------------------------------------------------------------------
+
+enum
+{
+    S2001_FW_FULL	= 13, ///< Standard-Text mit vollem Jahr (maximal 13 Zeichen).
+    S2001_FW_SHORT	= 11, ///< Verkürzte Stundenangabe (maximal 11 Zeichen).
+    S2001_FW_ALT	= 10, ///< Alternative Stundenangabe mit »:xx« (maximal 10 Zeichen).
+    S2001_FW_TINY	=  8, ///< Verkürzte Stunden- und Wochenangabe (maximal 8 Zeichen).
+
+    S2001_DUR_HOUR	=     3600, ///< Dauer einer Stunde in Sekunden.
+    S2001_DUR_DAY	=    86400, ///< Dauer eines Tages in Sekunden.
+    S2001_DUR_WEEK	=   604800, ///< Dauer einer Woche in Sekunden.
+    S2001_DUR_MONTH	=  2629746, ///< Dauer eines Monats in Sekunden (365.2425/12 Tage).
+    S2001_DUR_QUARTER	=  7889238, ///< Dauer eines Quartals in Sekunden (365.2425/4 Tage).
+    S2001_DUR_YEAR	= 31556952, ///< Dauer eines Jahres in Sekunden (365.2425 Tage).
+};
+
+///////////////////////////////////////////////////////////////////////////
+// hour support
+
+static inline int time2hour ( s64 time )
+	{ return time / 3600 - 271752; }
+
+static inline double time2hourF ( s64 time )
+	{ return time / 3600.0 - 271752; }
+
+static inline s64 hour2time ( int hour )
+	{ return ( hour + 271752 ) * 3600; }
+
+static inline int hour2duration ( int hour )
+	{ return S2001_DUR_HOUR; }
+
+ccp hour2text
+(
+	int hour,	// hour to print
+	int fw,		// wanted field width assuming separators are 1 char
+	ccp sep_date,	// NULL or separator within date
+			// if NULL: use '-'
+	ccp sep_dt	// NULL or separator of between date and time
+			// if NULL: use ' '
+);
+
+///////////////////////////////////////////////////////////////////////////
+// day support
+
+static inline int time2day ( s64 time )
+	{ return time / 86400 - 11323; }
+
+static inline double time2dayF ( s64 time )
+	{ return time / 86400.0 - 11323; }
+
+static inline s64 day2time ( int day )
+	{ return ( day + 11323 ) * 86400; }
+
+static inline int day2duration ( int day )
+	{ return S2001_DUR_DAY; }
+
+ccp day2text
+(
+	int day,	// day to print
+	int fw,		// wanted field width assuming separators are 1 char
+	ccp sep_date,	// NULL or separator within date
+			// if NULL: use '-'
+	ccp sep_dt	// ignored
+);
+
+///////////////////////////////////////////////////////////////////////////
+// week support
+
+static inline int time2week ( s64 time )
+	{ return ( time - 978307200 ) / 604800; }
+
+static inline double time2weekF ( s64 time )
+	{ return ( time - 978307200 ) / 604800.0; }
+
+static inline s64 week2time ( int week )
+	{ return week * 604800 + 978307200; }
+
+static inline int week2duration ( int week )
+	{ return S2001_DUR_WEEK; }
+
+ccp week2text
+(
+	int week,	// week to print
+	int fw,		// wanted field width assuming separators are 1 char
+	ccp sep_date,	// NULL or separator within date
+			// if NULL: use 'w'
+	ccp sep_dt	// ignored
+);
+
+///////////////////////////////////////////////////////////////////////////
+// month support
+
+int time2month ( time_t tim );
+time_t month2time ( int month );
+
+static inline int month2duration ( int month )
+	{ return month2time(month+1) - month2time(month); }
+
+ccp month2text
+(
+	int month,	// month to print
+	int fw,		// wanted field width assuming separators are 1 char
+	ccp sep_date,	// NULL or separator within date
+			// if NULL: use '-'
+	ccp sep_dt	// ignored
+);
+
+///////////////////////////////////////////////////////////////////////////
+// quarter support
+
+int time2quarter ( time_t tim );
+time_t quarter2time ( int quarter );
+
+static inline int quarter2duration ( int quarter )
+	{ return quarter2time(quarter+1) - quarter2time(quarter); }
+
+ccp quarter2text
+(
+	int quarter,	// quarter to print
+	int fw,		// wanted field width assuming separators are 1 char
+	ccp sep_date,	// NULL or separator within date
+			// if NULL: use 'q'
+	ccp sep_dt	// ignored
+);
+
+///////////////////////////////////////////////////////////////////////////
+// year support
+
+int time2year ( time_t tim );
+time_t year2time ( int year );
+
+static inline int year2duration ( int year )
+	{ return year2time(year+1) - year2time(year); }
+
+static inline ccp year2text
+(
+	int year,	// year to print
+	int fw,		// wanted field width assuming separators are 1 char
+	ccp sep_date,	// ignored
+	ccp sep_dt	// ignored
+)
+{
+    return PrintCircBuf("%04d",year);
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			sockaddr support		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[sockaddr_t]] [[sockaddr_in_t]] [[sockaddr_un_t]] [[sockaddr_info_t]]
+
+typedef struct sockaddr sockaddr_t;
+typedef struct sockaddr_in sockaddr_in_t;
+typedef struct sockaddr_un sockaddr_un_t;
+
+typedef struct sockaddr_info_t
+{
+    sockaddr_t	*sa;	    // pointer to sockaddr or sockaddr_*
+    uint	size;	    // size of '*sa'
+}
+sockaddr_info_t;
+
+//-----------------------------------------------------------------------------
+
+// [[doxygen]]
+static inline sockaddr_info_t CreateSockaddrInfo ( cvp sa, uint size )
+{
+    sockaddr_info_t i =
+    {
+	.sa   = (sockaddr_t*)sa,
+	.size = size
+    };
+    return i;
+}
+
+//-----------------------------------------------------------------------------
+
+// [[doxygen]]
+static inline void SetupSockaddrInfo ( sockaddr_info_t *sai, cvp sa, uint size )
+{
+    DASSERT(sai);
+    sai->sa   = (sockaddr_t*)sa;
+    sai->size = size ? size : sizeof(sockaddr_in_t);
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			PrintIP4*()			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -3399,14 +4099,15 @@ static inline char * PrintAlignedIP4sa
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			dynamic data support		///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[DynData_t]]
 
 typedef struct DynData_t
 {
     u8		*data;		// pointer to data, alloced
     uint	len;		// length of used data
     uint	size;		// size of allocated data
-
-} DynData_t;
+}
+DynData_t;
 
 //-----------------------------------------------------------------------------
 
@@ -3414,14 +4115,15 @@ void ResetDD  ( DynData_t *dd );
 void InsertDD ( DynData_t *dd, const void *data, uint data_size );
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[DynDataList_t]]
 
 typedef struct DynDataList_t
 {
     DynData_t	*list;		// pointer to the data list
     uint	used;		// number of used data elements
     uint	size;		// number of allocated pointer in 'list'
-
-} DynDataList_t;
+}
+DynDataList_t;
 
 //-----------------------------------------------------------------------------
 
@@ -3967,9 +4669,9 @@ bool NextResize  ( ResizeHelper_t *r );
 
 //
 ///////////////////////////////////////////////////////////////////////////////
-///////////////			scan configuration		///////////////
+///////////////			restore configuration		///////////////
 ///////////////////////////////////////////////////////////////////////////////
-// Definitons placed here because it is used scattered by dcLib
+// [[RestoreStateLog_t]]
 
 typedef enum RestoreStateLog_t
 {
@@ -4064,11 +4766,47 @@ uint GetParamFieldUINT
 
 //-----------------------------------------------------------------------------
 
+u64 GetParamFieldS64
+(
+    const RestoreState_t *rs,		// valid restore-state structure
+    ccp			name,		// name of member
+    s64			not_found	// return this value if not found
+);
+
+//-----------------------------------------------------------------------------
+
 u64 GetParamFieldU64
 (
     const RestoreState_t *rs,		// valid restore-state structure
     ccp			name,		// name of member
     u64			not_found	// return this value if not found
+);
+
+//-----------------------------------------------------------------------------
+
+float GetParamFieldFLOAT
+(
+    const RestoreState_t *rs,		// valid restore-state structure
+    ccp			name,		// name of member
+    float		not_found	// return this value if not found
+);
+
+//-----------------------------------------------------------------------------
+
+double GetParamFieldDBL
+(
+    const RestoreState_t *rs,		// valid restore-state structure
+    ccp			name,		// name of member
+    double		not_found	// return this value if not found
+);
+
+//-----------------------------------------------------------------------------
+
+long double GetParamFieldLDBL
+(
+    const RestoreState_t *rs,		// valid restore-state structure
+    ccp			name,		// name of member
+    long double		not_found	// return this value if not found
 );
 
 //-----------------------------------------------------------------------------
@@ -4085,6 +4823,154 @@ int GetParamFieldBUF
     EncodeMode_t	decode,		// decoding mode, fall back to OFF
 					// supported: STRING, UTF8, BASE64, BASE64X
     ccp			not_found	// not NULL: store this value if not found
+);
+
+//-----------------------------------------------------------------------------
+
+mem_t GetParamFieldMEM
+(
+    // Returns the decoded 'source'. Result is NULL-terminated.
+    // It points either to 'buf' or is alloced (on buf==NULL or too less space)
+    // If alloced (mem.ptr!=buf) => call FreeMem(&mem)
+
+    char		*buf,		// buffer to store result
+    uint		buf_size,	// size of buffer
+
+    const RestoreState_t *rs,		// valid restore-state structure
+    ccp			name,		// name of member
+    EncodeMode_t	decode,		// decoding mode, fall back to OFF
+					// supported: STRING, UTF8, BASE64, BASE64X
+    mem_t		not_found	// not NULL: return this value
+);
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////		save + restore config by table		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[SaveRestoreType_t]]
+
+typedef enum SaveRestoreType_t
+{
+    SRT__TERM,		// list terminator
+
+    SRT_BOOL,		// type bool
+    SRT_UINT,		// unsigned int of any size (%llu)
+    SRT_HEX,		// unsigned int of any size as hex (%#llx)
+    SRT_INT,		// signed int of any size (%lld)
+    SRT_FLOAT,		// float (%.8g) or double (%.16g) or long double (%.20g)
+    SRT_XFLOAT,		// float or double or long double as hex-float (%a/%La)
+
+    SRT_STRING_SIZE,	// string with max size, var is char[]
+    SRT_STRING_ALLOC,	// alloced string, var is ccp or char*
+    SRT_MEM,		// alloced string, var is mem_t
+
+    SRT__IS_LIST,	//----- from here: print lists; also used as separator
+
+    SRT_STRING_FIELD,	// var is StringField_t
+    SRT_PARAM_FIELD,	// var is ParamField_t
+}
+SaveRestoreType_t;
+
+///////////////////////////////////////////////////////////////////////////////
+// [[SaveRestoreTab_t]]
+
+typedef struct SaveRestoreTab_t
+{
+    uint	offset;	// offset of variable
+    uint	size;	// sizeof( var or string )
+    ccp		name;	// name in configuration file
+    u16		n_elem;	// >0: is array with N elements
+    u8		type;	// SaveRestoreType_t
+    u8		emode;	// EncodeMode_t
+}
+__attribute__ ((packed)) SaveRestoreTab_t;
+
+//-----------------------------------------------------------------------------
+
+// At the very beginning of the table, define 'SRT_NAME' by 2 lines:
+// 	#undef  SRT_NAME
+//	#define SRT_NAME name_of_the_struct
+
+#define DEF_SRT_VAR(v,ne,n,t,e)		{offsetof(SRT_NAME,v),sizeof(((SRT_NAME*)0)->v),n,ne,t,e}
+
+#define DEF_SRT_BOOL(v,n)		DEF_SRT_VAR(v,1,n,SRT_BOOL,0)
+#define DEF_SRT_UINT(v,n)		DEF_SRT_VAR(v,1,n,SRT_UINT,0)
+#define DEF_SRT_HEX(v,n)		DEF_SRT_VAR(v,1,n,SRT_HEX,0)
+#define DEF_SRT_INT(v,n)		DEF_SRT_VAR(v,1,n,SRT_INT,0)
+#define DEF_SRT_FLOAT(v,n)		DEF_SRT_VAR(v,1,n,SRT_FLOAT,0)
+#define DEF_SRT_XFLOAT(v,n)		DEF_SRT_VAR(v,1,n,SRT_XFLOAT,0)
+
+#define DEF_SRT_STR_SIZE(v,n,e)		DEF_SRT_VAR(v,1,n,SRT_STRING_SIZE,e)
+#define DEF_SRT_STR_ALLOC(v,n,e)	DEF_SRT_VAR(v,1,n,SRT_STRING_ALLOC,e)
+#define DEF_SRT_MEM(v,n,e)		DEF_SRT_VAR(v,1,n,SRT_MEM,e)
+
+#define DEF_SRT_STRING_FIELD(v,n,e)	DEF_SRT_VAR(v,1,n,SRT_STRING_FIELD,e)
+#define DEF_SRT_PARAM_FIELD(v,n,e)	DEF_SRT_VAR(v,1,n,SRT_PARAM_FIELD,e)
+
+//--- n elements
+
+#define DEF_SRT_BOOL_N(v,ne,n)		DEF_SRT_VAR(v,ne,n,SRT_BOOL,0)
+#define DEF_SRT_UINT_N(v,ne,n)		DEF_SRT_VAR(v,ne,n,SRT_UINT,0)
+#define DEF_SRT_HEX_N(v,ne,n)		DEF_SRT_VAR(v,ne,n,SRT_HEX,0)
+#define DEF_SRT_INT_N(v,ne,n)		DEF_SRT_VAR(v,ne,n,SRT_INT,0)
+#define DEF_SRT_FLOAT_N(v,ne,n)		DEF_SRT_VAR(v,ne,n,SRT_FLOAT,0)
+#define DEF_SRT_XFLOAT_N(v,ne,n)	DEF_SRT_VAR(v,ne,n,SRT_XFLOAT,0)
+
+#define DEF_SRT_STR_SIZE_N(v,ne,n,e)	DEF_SRT_VAR(v,ne,n,SRT_STRING_SIZE,e)
+#define DEF_SRT_STR_ALLOC_N(v,ne,n,e)	DEF_SRT_VAR(v,ne,n,SRT_STRING_ALLOC,e)
+#define DEF_SRT_MEM_N(v,ne,n,e)		DEF_SRT_VAR(v,ne,n,SRT_MEM,e)
+
+//--- auto array
+
+#define DEF_SRT_ARRAY(v,n,t,e)		\
+	{offsetof(SRT_NAME,v), sizeof(((SRT_NAME*)0)->v[0]), n, \
+	 sizeof(((SRT_NAME*)0)->v)/sizeof(*((SRT_NAME*)0)->v), t, e }
+
+#define DEF_SRT_BOOL_A(v,n)		DEF_SRT_ARRAY(v,n,SRT_BOOL,0)
+#define DEF_SRT_UINT_A(v,n)		DEF_SRT_ARRAY(v,n,SRT_UINT,0)
+#define DEF_SRT_HEX_A(v,n)		DEF_SRT_ARRAY(v,n,SRT_HEX,0)
+#define DEF_SRT_INT_A(v,n)		DEF_SRT_ARRAY(v,n,SRT_INT,0)
+#define DEF_SRT_FLOAT_A(v,n)		DEF_SRT_ARRAY(v,n,SRT_FLOAT,0)
+#define DEF_SRT_XFLOAT_A(v,n)		DEF_SRT_ARRAY(v,n,SRT_XFLOAT,0)
+
+#define DEF_SRT_STR_SIZE_A(v,n,e)	DEF_SRT_ARRAY(v,n,SRT_STRING_SIZE,e)
+#define DEF_SRT_STR_ALLOC_A(v,n,e)	DEF_SRT_ARRAY(v,n,SRT_STRING_ALLOC,e)
+#define DEF_SRT_MEM_A(v,n,e)		DEF_SRT_ARRAY(v,n,SRT_MEM,e)
+
+//--- special
+
+#define DEF_SRT_SEPARATOR()		{0,0,0,0,SRT__IS_LIST,0}
+#define DEF_SRT_COMMENT(c)		{0,0,c,0,SRT__IS_LIST,0}
+#define DEF_SRT_TERM()			{0,0,0,0,SRT__TERM,0}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void DumpStateTable
+(
+    FILE	*f,		// valid output file
+    int		indent,
+    const SaveRestoreTab_t
+		*srt		// list of variables
+);
+
+void SaveCurrentStateByTable
+(
+    FILE	*f,		// valid output file
+    cvp		data0,		// valid pointer to source struct
+    const SaveRestoreTab_t
+		*srt,		// list of variables
+    ccp		prefix,		// NULL or prefix for names
+    uint	fw_name		// field width of name, 0=AUTO
+				// tabs are used for multiple of 8 and for AUTO
+);
+
+void RestoreStateByTable
+(
+    RestoreState_t	*rs,	// info data, can be modified (cleaned after call)
+    void		*data0,	// valid pointer to destination struct
+    const SaveRestoreTab_t
+			*srt,	// list of variables
+    ccp		prefix		// NULL or prefix for names
 );
 
 //
@@ -4350,6 +5236,10 @@ float double2float ( double d ); // reduce precision
 
 uint CreateUniqueId ( int range );
 
+void Sha1Hex2Bin ( sha1_hash_t bin, ccp src, ccp end );
+void Sha1Bin2Hex ( sha1_hex_t hex, cvp bin );
+ccp GetSha1Hex ( cvp bin );
+
 ///////////////////////////////////////////////////////////////////////////////
 
 static uint snprintfS ( char *buf, size_t size, ccp format, ... )
@@ -4380,6 +5270,14 @@ static inline char * snprintfE ( char *buf, char *end, ccp format, ... )
 
     return buf + ( res < 0 ? 0 : res < size ? res : size - 1 );
 }
+
+///////////////////////////////////////////////////////////////////////////////
+
+void * dc_memrchr ( cvp src, int ch, size_t size );
+
+#ifdef __APPLE__
+ #define memrchr dc_memrchr
+#endif
 
 //
 ///////////////////////////////////////////////////////////////////////////////

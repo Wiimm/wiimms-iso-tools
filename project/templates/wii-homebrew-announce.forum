@@ -2,11 +2,11 @@
 [img]https://wit.wiimm.de/images/wiimms-tools.png[/img]
 
 [size=18][color=#0000FF][b]@@TOOLSET-SHORT@@: @@TOOLSET-LONG@@ v@@VERSION@@ - @@@@-@@-@@[/b][/color][/size]
-[size=15][color=#800000][b]Ein Kommandozeilen-Toolkit für ISO und WBFS Dateien.[/b][/color][/size]
+[size=15][color=#800000][b]Ein Kommandozeilen-Toolkit fÃ¼r ISO und WBFS Dateien.[/b][/color][/size]
 
-Dieses ist das Ankündigungsthema für [url=@@URI-HOME@@][b]@@TOOLSET-SHORT@@[/b][/url] (@@TOOLSET-LONG@@). [url=@@URI-HOME@@]@@URI-HOME@@[/url] gibt es eine ausführlichere Übersicht über die Möglichkeiten, allerdings in englisch.
+Dieses ist das AnkÃ¼ndigungsthema fÃ¼r [url=@@URI-HOME@@][b]@@TOOLSET-SHORT@@[/b][/url] (@@TOOLSET-LONG@@). [url=@@URI-HOME@@]@@URI-HOME@@[/url] gibt es eine ausfÃ¼hrlichere Ãœbersicht Ã¼ber die MÃ¶glichkeiten, allerdings in englisch.
 
-[b]wit+wwt[/b] sind [url=@@URI-HOME@@info/command-line.html]Kommandozeilen-Tools[/url]. Das bedeutet, dass man zur Ausführung vorher ein Kommandofenster aufmacht um dann die Kommandos einzugeben. Dieses hat aber den Vorteil, dass man sich Batch-Dateien für immer wiederkehrende Aufgaben schreiben kann. Zum Ansprechen der Laufwerke (WBFS Platten) muss das Kommandofenster im Admin-Modus arbeiten. Die Syntax der Kommandos ist stark an Unix angelehnt, da die Programme auch unter Linux entwickelt werden.
+[b]wit+wwt[/b] sind [url=@@URI-HOME@@info/command-line.html]Kommandozeilen-Tools[/url]. Das bedeutet, dass man zur AusfÃ¼hrung vorher ein Kommandofenster aufmacht um dann die Kommandos einzugeben. Dieses hat aber den Vorteil, dass man sich Batch-Dateien fÃ¼r immer wiederkehrende Aufgaben schreiben kann. Zum Ansprechen der Laufwerke (WBFS Platten) muss das Kommandofenster im Admin-Modus arbeiten. Die Syntax der Kommandos ist stark an Unix angelehnt, da die Programme auch unter Linux entwickelt werden.
 
 [color=#0000c0][size=12][b]Eigenschaften:[/b][/size]
 (Die Links zeigen auf die englischsprachige Website)[/color]
@@ -19,9 +19,9 @@ Dieses ist das Ankündigungsthema für [url=@@URI-HOME@@][b]@@TOOLSET-SHORT@@[/b][
 [*] [url=@@URI-DOWNLOAD-X86_64@@][b]@@DISTRIB-X86_64@@[/b][/url] : Linux/x86_64 Version
 ~[*] [url=@@URI-DOWNLOAD-MAC@@][b]@@DISTRIB-MAC@@[/b][/url] : Mac OS Universal Binaries (ppc, i386 und x86-64)
 [*] [url=@@URI-DOWNLOAD-CYGWIN@@][b]@@DISTRIB-CYGWIN@@[/b][/url] : Cygwin (Windows) Version
-[/list] Weitere Versionen sind unter [url=@@URI-HOME@@download.html][b]@@URI-HOME@@download.html[/b][/url] verfügbar.
+[/list] Weitere Versionen sind unter [url=@@URI-HOME@@download.html][b]@@URI-HOME@@download.html[/b][/url] verfÃ¼gbar.
 
-[size=12][color=#0000c0][b]Es existieren auch mehrere graphische Oberflächen (GUI) zur Bedienung von WIT. Die beiden wichtigsten sind:[/b][/color][/size]
+[size=12][color=#0000c0][b]Es existieren auch mehrere graphische OberflÃ¤chen (GUI) zur Bedienung von WIT. Die beiden wichtigsten sind:[/b][/color][/size]
 [list]
 [*] [url=@@URI-QTWITGUI@@][b]QtWitGui[/b], Bearbeitung einzelner Wii ISO discs.[/url]
     Dieses QT basierte GUI bietet Dinge rund um die Bearbeitung (Kopieren, modifizieren) von einzelnen WIi ISO discs.
@@ -29,14 +29,14 @@ Dieses ist das Ankündigungsthema für [url=@@URI-HOME@@][b]@@TOOLSET-SHORT@@[/b][
 [*] [url=@@URI-WIIBAFU@@][b]Wii Backup Fusion[/b], ein WBFS- und ISO-Manager.[/url]
     [i]WiiBaFu[/i] ist ein ausgereiftes GUI, welches auf QT basiert.
 
-[*] [url=@@URI-MACWITGUI@@][b]Witgui[/b] für Mac.[/url]
-    [i]Witgui[/i] ist eine graphische Oberfläche für die Mac-Version von [i]wit[/i].
+[*] [url=@@URI-MACWITGUI@@][b]Witgui[/b] fÃ¼r Mac.[/url]
+    [i]Witgui[/i] ist eine graphische OberflÃ¤che fÃ¼r die Mac-Version von [i]wit[/i].
 [/list]
 
-[size=12][color=#0000c0][b]Letzte Änderungen:[/b][/color][/size]
+[size=12][color=#0000c0][b]Letzte Ã„nderungen:[/b][/color][/size]
 
 [code]
 @@MODULE(last-history.txt)@@
 [/code]
 
-Die Quellen stehen unter der GPL2 Lizenz und können entweder direkt aus dem [url=@@URI-REPOS@@][b]SVN Repository[/b][/url] exportiert oder mit einem [url=@@URI-VIEWVC@@][b]Browser besurft werden[/b][/url]. Unter [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url] gibt es weitere Informationen.
+Die Quellen stehen unter der GPL2 Lizenz und kÃ¶nnen entweder direkt aus dem [url=@@URI-REPOS@@][b]SVN Repository[/b][/url] exportiert oder mit einem [url=@@URI-VIEWVC@@][b]Browser besurft werden[/b][/url]. Unter [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url] gibt es weitere Informationen.

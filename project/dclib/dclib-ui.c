@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -424,7 +424,6 @@ void DumpText
 
 		case '@':
 		case '$':
-		case '§':
 		    if (!is_makedoc)
 		    {
 			if ( text[1] == *text )
@@ -574,11 +573,11 @@ static void print_help_options
 
     if (title)
     {
-	const bool is_col = IsFileColorized(f);
+	const ColorMode_t colmode = GetFileColorized(f);
 	fprintf(f,"%*s%s%s:%s\n\n",
 		indent,"",
-		GetTextMode(is_col,TTM_COL_HEADING), title,
-		GetTextMode(is_col,TTM_RESET) );
+		GetTextMode(colmode,TTM_COL_HEADING), title,
+		GetTextMode(colmode,TTM_RESET) );
     }
 
     const int fw = GetTermWidth(80,40) - 1;

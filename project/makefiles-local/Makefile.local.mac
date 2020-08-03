@@ -1,19 +1,28 @@
 
 # optimize mac binaries and/or build universal binaries
 
-#-----------------------------------------------------------------------------
-
-SDKROOT		= $(shell ls -d /Developer/SDKs/MacOSX* | tail -n1 )
-SDKVERSION	= $(shell echo "$(SDKROOT)" | sed -E 's/.*MacOSX//; s/([0-9]*\.[0-9*]).*/\1/g' )
-
-CC	 = "gcc-4.0"
-CFLAGS	+= -mmacosx-version-min=${SDKVERSION} -isysroot ${SDKROOT}
-LDFLAGS	+= -mmacosx-version-min=${SDKVERSION} -isysroot ${SDKROOT}
+CFLAGS += -Wno-gnu-variable-sized-type-not-at-end -Wno-address-of-packed-member
 
 #-----------------------------------------------------------------------------
 
 .PHONY : mac-distrib
-mac-distrib: mac3 doc $(INSTALL_SCRIPTS) gen-mac-distrib
+mac-distrib: mac1 doc $(INSTALL_SCRIPTS) gen-mac-distrib
+
+.PHONY : mac1
+mac1: mac-x86_64
+
+	@echo
+	@echo "----- building universal binaries -----"
+	@for i in $(MAIN_TOOLS); do \
+	    lipo -create bin/x86_64/$${i} -output $${i}; \
+	    ln -f $${i} bin/$${i}; \
+	done;
+	@for i in $(WDF_LINKS); do \
+	    ln -f wdf $${i}; \
+	    ln -f wdf bin/$${i}; \
+	done;
+	@rm -rf bin/i386 bin/x86_64
+	@echo "done"
 
 .PHONY : mac2
 mac2: mac-i386 mac-x86_64
@@ -86,7 +95,8 @@ gen-mac-distrib:
 	@printf "$(LOGFORMAT)" create "$(DISTRIB_PATH)" ""
 
 	@rm -rf $(DISTRIB_PATH)
-	@mkdir -p $(DISTRIB_PATH)/bin $(DISTRIB_PATH)/scripts $(DISTRIB_PATH)/share $(DISTRIB_PATH)/doc
+	@mkdir -p $(DISTRIB_PATH)/bin $(DISTRIB_PATH)/scripts
+	@mkdir -p $(DISTRIB_PATH)/share $(DISTRIB_PATH)/doc
 
 	@cp -p $(DISTRIB_FILES) $(DISTRIB_PATH)
 	@ln -f $(MAIN_TOOLS) $(WDF_LINKS) $(DISTRIB_PATH)/bin
@@ -99,4 +109,5 @@ gen-mac-distrib:
 	@chmod -R a+X $(DISTRIB_PATH)
 
 	@tar -czf $(DISTRIB_PATH).tar.gz $(DISTRIB_PATH)
+	@ln $(DISTRIB_PATH).tar.gz latest-mac.tar.gz
 

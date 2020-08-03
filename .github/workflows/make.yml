@@ -1,0 +1,20 @@
+name: make mac distrib
+
+on:
+  push:
+    branches: [ master, test-mac-build ]
+
+jobs:
+  build:
+
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - run: make -C project distrib
+      - name: Upload distribution
+        uses: actions/upload-artifact@v2
+        with:
+          name: latest-wit@mac-distribution
+          path: project/latest-mac.tar.gz
+

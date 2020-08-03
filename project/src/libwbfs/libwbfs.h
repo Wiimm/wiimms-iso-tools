@@ -90,6 +90,7 @@ typedef int (*rw_sector_callback_t)(void*fp,u32 lba,u32 count,void*iobuf);
 typedef void (*progress_callback_t) (u64 done, u64 total, void * callback_data );
 
 //-----------------------------------------------------------------------------
+// [[wbfs_slot_mode_t]]
 
 typedef enum wbfs_slot_mode_t
 {
@@ -114,6 +115,7 @@ typedef enum wbfs_slot_mode_t
 extern char wbfs_slot_mode_info[WBFS_SLOT__MASK+1];
 
 //-----------------------------------------------------------------------------
+// [[wbfs_balloc_mode_t]]
 
 typedef enum wbfs_balloc_mode_t // block allocation mode
 {
@@ -129,6 +131,7 @@ typedef enum wbfs_balloc_mode_t // block allocation mode
 } wbfs_balloc_mode_t;
 
 //-----------------------------------------------------------------------------
+// [[wbfs_t]]
 
 typedef struct wbfs_t
 {
@@ -189,6 +192,7 @@ typedef struct wbfs_t
 } wbfs_t;
 
 //-----------------------------------------------------------------------------
+// [[wbfs_disc_t]]
 
 typedef struct wbfs_disc_t
 {
@@ -223,6 +227,7 @@ int wbfs_is_inode_info_valid
 );
 
 //-----------------------------------------------------------------------------
+// [[wbfs_param_t]]
 
 typedef struct wbfs_param_t // function parameters
 {

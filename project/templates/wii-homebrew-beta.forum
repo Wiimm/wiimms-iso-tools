@@ -13,20 +13,20 @@ v@@VERSION@@ - @@@@-@@-@@[/b][/color][/size]
 [*] [url=@@URI-DOWNLOAD-X86_64@@][b]@@DISTRIB-X86_64@@[/b][/url] : Linux/x86_64 Version
 ~[*] [url=@@URI-DOWNLOAD-MAC@@][b]@@DISTRIB-MAC@@[/b][/url] : Mac OS Universal Binaries (ppc, i386 und x86-64)
 [*] [url=@@URI-DOWNLOAD-CYGWIN@@][b]@@DISTRIB-CYGWIN@@[/b][/url] : Cygwin (Windows) Version
-[/list] Weitere Versionen sind unter [url=@@URI-HOME@@download.html][b]@@URI-HOME@@download.html[/b][/url] verfügbar.
+[/list] Weitere Versionen sind unter [url=@@URI-HOME@@download.html][b]@@URI-HOME@@download.html[/b][/url] verfÃ¼gbar.
 
 ~ Highlights
-[size=12][color=#0000c0][b]Höhepunkte dieser Version:[/b][/color][/size]
+[size=12][color=#0000c0][b]HÃ¶hepunkte dieser Version:[/b][/color][/size]
 [list]
 [*]
 [color=#800000]Bitte testet es![/color]
 [/list]
 
 
-[size=12][color=#0000c0][b]Letzte Änderungen:[/b][/color][/size]
+[size=12][color=#0000c0][b]Letzte Ã„nderungen:[/b][/color][/size]
 
 [code]
 @@MODULE(last-history.txt)@@
 [/code]
 
-Die Quellen stehen unter der GPL2 Lizenz und können entweder direkt aus dem [url=@@URI-REPOS@@][b]SVN repository[/b][/url] exportiert oder mit einem [url=@@URI-VIEWVC@@][b]Browser besurft werden[/b][/url]. Diese beiden Links zeigen auf den Beta-Zweig des SVN-Repositories. Unter [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url] gibt es weitere Informationen.
+Die Quellen stehen unter der GPL2 Lizenz und kÃ¶nnen entweder direkt aus dem [url=@@URI-REPOS@@][b]SVN repository[/b][/url] exportiert oder mit einem [url=@@URI-VIEWVC@@][b]Browser besurft werden[/b][/url]. Diese beiden Links zeigen auf den Beta-Zweig des SVN-Repositories. Unter [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url] gibt es weitere Informationen.

@@ -636,7 +636,7 @@ static enumError flush_block
     GCZ_t *gcz = sf->gcz;
     DASSERT(gcz);
 
-    if ( gcz->block == next_block )
+    if ( gcz->block == next_block || !sf->f.is_writing )
 	return ERR_OK; // block is still active
 
     if (!IS_M1(gcz->block))

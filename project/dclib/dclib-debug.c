@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -70,7 +70,7 @@ ccp GetErrorName
 (
     int		stat,		// error status, err := abs(stat)
     ccp		ret_not_found	// not NULL: return this, if no message is found
-				//     NULL: return a generic message
+				// GENERIC_ERROR_MESSAGE: return a generic message
 )
 {
     if (GetErrorNameHook)
@@ -191,7 +191,7 @@ ccp GetErrorText
 (
     int		stat,		// error status, err := abs(stat)
     ccp		ret_not_found	// not NULL: return this, if no message is found
-				//     NULL: return a generic message
+				// GENERIC_ERROR_MESSAGE: return a generic message
 )
 {
     if (GetErrorTextHook)
@@ -551,7 +551,7 @@ enumError PrintErrorStat ( enumError err, int verbose, ccp cmdname )
 	|| verbose > 1 && err
 	|| err == ERR_NOT_IMPLEMENTED )
     {
-        if (!stdwrn)
+	if (!stdwrn)
 	{
 	    SetupStdMsg();
 	    if (!stdwrn)
@@ -570,14 +570,16 @@ enumError PrintErrorStat ( enumError err, int verbose, ccp cmdname )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void mark_used ( ccp name, ... )
+bool mark_used ( ccp name, ... )
 {
+    return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 #if HAVE_PRINT
 
+ #undef PRINT_TIME
  void PRINT_TIME ( time_t time, ccp title )
  {
     struct tm utc, loc;
@@ -653,6 +655,15 @@ uint HexDump16 ( FILE * f, int indent, u64 addr,
 {
     // return the number of printed lines
     return HexDump(f,indent,addr,4,16,data,count);
+}
+
+//-----------------------------------------------------------------------------
+
+uint HexDump20 ( FILE * f, int indent, u64 addr,
+		 const void * data, size_t count )
+{
+    // return the number of printed lines
+    return HexDump(f,indent,addr,4,20,data,count);
 }
 
 //-----------------------------------------------------------------------------
@@ -763,6 +774,43 @@ uint HexDump ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
 
 //-----------------------------------------------------------------------------
 
+uint HexDump016 ( FILE * f, int indent, u64 addr,
+		 const void * data, size_t count )
+{
+    // return the number of printed lines
+    return HexDump0(f,indent,addr,4,16,data,count);
+}
+
+//-----------------------------------------------------------------------------
+
+uint HexDump0 ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
+		const void * p_data, size_t count )
+{
+    // return the number of printed lines
+    if ( !f || !p_data || !count )
+	return 0;
+
+ #if ENABLE_HEXDUMP_WRAPPER == 1 || ENABLE_HEXDUMP_WRAPPER == 2
+  if (enable_xdump_wrapper)
+ #endif
+
+ #if ENABLE_HEXDUMP_WRAPPER > 0
+  {
+    XDump_t xd;
+    SetupXDumpWrapper(&xd,f,indent,addr,addr_fw,row_len);
+    xd.mode_ignore = true;
+    const int stat = XDump(&xd,p_data,count,true);
+    return stat < 0 ? 0 : stat;
+  }
+ #endif
+
+ #if ENABLE_HEXDUMP_WRAPPER < 3
+    return HexDump( f, indent, addr, addr_fw, row_len, p_data, count );
+ #endif
+}
+
+//-----------------------------------------------------------------------------
+
 void HexDiff16 ( FILE * f, int indent, u64 addr,
 		 const void * data1, size_t count1,
 		 const void * data2, size_t count2 )
@@ -787,7 +835,7 @@ void HexDiff ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
   {
     XDump_t xd;
     SetupXDumpWrapper(&xd,f,indent,addr,addr_fw,row_len);
-    XDiff(&xd, p_data1,count1,true, p_data2,count2,true, false );
+    XDiff(&xd, p_data1,count1,true, p_data2,count2,true, 0,false );
     return;
   }
  #endif
@@ -944,6 +992,9 @@ u_msec_t GetTimerMSec();
 
 static void trace_helper ( int print_stderr, ccp format, va_list arg )
 {
+    static uint last_day = 0;
+    DayTime_t dt = GetDayTime(true);
+
     if (!TRACE_FILE)
     {
 	char extend[16];
@@ -951,7 +1002,7 @@ static void trace_helper ( int print_stderr, ccp format, va_list arg )
 	    snprintf(extend,sizeof(extend),"-%u",getpid());
 	else
 	    *extend = 0;
-	
+
 	char fname[1000];
 	if ( progname && *progname && *progname != '?' )
 	    snprintf( fname, sizeof(fname), "_trace-%s%s.tmp", progname, extend );
@@ -960,17 +1011,36 @@ static void trace_helper ( int print_stderr, ccp format, va_list arg )
 
 	TRACE_FILE = fopen(fname,"wb");
 	if (TRACE_FILE)
+	{
 	    fcntl(fileno(TRACE_FILE),F_SETFD,FD_CLOEXEC);
+	    fprintf(TRACE_FILE,"\n#\f\n#OPEN %s, pid=%d\n\n",
+			PrintTimeByFormat("%F %T %z",dt.time), getpid() );
+	}
 	else
 	    TRACE_FILE = stderr;
+	last_day = dt.day;
     }
 
-    unsigned msec = GetTimerMSec();
+    char pre[200];
+    if ( last_day != dt.day )
+    {
+	SetupTimezone(true);
+	dt = GetDayTime(true);
+	last_day = dt.day;
+	snprintf(pre,sizeof(pre),
+		"\n#DAY: %s, pid=%d\n%02u:%02u:%02u.%03u ",
+		PrintTimeByFormat("%F %T %z",dt.time), getpid(),
+		dt.hour, dt.min, dt.sec, dt.usec/1000 );
+    }
+    else
+	snprintf(pre,sizeof(pre),"%02u:%02u:%02u.%03u ",
+		dt.hour, dt.min, dt.sec, dt.usec/1000 );
 
     if ( print_stderr || TRACE_FILE == stderr )
     {
 	fflush(stdout);
-	fprintf(stderr,"%4d.%03d  %s",msec/1000,msec%1000,TRACE_PREFIX);
+	fputs(pre,stderr);
+	fputs(TRACE_PREFIX,stderr);
 	va_list arg2;
 	va_copy(arg2,arg);
 	vfprintf(stderr,format,arg2);
@@ -980,7 +1050,8 @@ static void trace_helper ( int print_stderr, ccp format, va_list arg )
 
     if ( TRACE_FILE && TRACE_FILE != stderr )
     {
-	fprintf(TRACE_FILE,"%4d.%03d  %s",msec/1000,msec%1000,TRACE_PREFIX);
+	fputs(pre,TRACE_FILE);
+	fputs(TRACE_PREFIX,TRACE_FILE);
 	vfprintf(TRACE_FILE,format,arg);
 	fflush(TRACE_FILE);
     }
@@ -1258,6 +1329,15 @@ void * dclib_memdup ( MPARAM const void * src, size_t copylen )
     return dest;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
+void * dclib_allocdup ( MPARAM const void * src, size_t copylen )
+{
+    char * dest = dclib_malloc( MCALL copylen);
+    memcpy(dest,src,copylen);
+    return dest;
+}
+
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -1292,18 +1372,22 @@ static FILE * OpenMemLog()
     if (!done)
     {
 	done = true;
-	char fname_buf[1000], *fname;
+	char fname[500];
 	if ( progname && *progname && *progname != '?' )
-	{
-	    snprintf(fname_buf,sizeof(fname_buf),"_trace_alloc-%s.tmp",progname);
-	    fname = fname_buf;
-	}
+	    snprintf(fname,sizeof(fname),"_trace_alloc-%s-%u.tmp",progname,getpid());
 	else
-	    fname = "_trace_alloc.tmp";
-	MEM_LOG_FILE = fopen(fname,"wb");
+	    snprintf(fname,sizeof(fname),"_trace_alloc-%u.tmp",getpid());
+
+	MEM_LOG_FILE = fopen(fname,"ab");
 	if (MEM_LOG_FILE)
+	{
 	    fcntl(fileno(MEM_LOG_FILE),F_SETFD,FD_CLOEXEC);
+	    fprintf(MEM_LOG_FILE,"#\f\n# OPEN FILE %s\n",
+			PrintTimeByFormat("%F %T %z",time(0)));
+	    fflush(MEM_LOG_FILE);
+	}
     }
+
     return MEM_LOG_FILE;
 }
 
@@ -1471,7 +1555,7 @@ void DumpTraceAlloc ( ccp func, ccp file, uint line, FILE * f )
     {
 	ccp file = strrchr(ptr->file,'/');
 	file = file ? file+1 : ptr->file;
-	fprintf(f,"%5u %p %5u %-20.20s %5u %-.25s\n",
+	fprintf(f,"%6u %p %6u %-20.20s %5u %-.25s\n",
 		ptr->seqnum, ptr->data, ptr->size,
 		ptr->func, ptr->line, file );
     }
@@ -1728,11 +1812,22 @@ char * trace_strdup3 ( ccp func, ccp file, uint line, ccp src1, ccp src2, ccp sr
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void * trace_memdup ( ccp func, ccp file, uint line, const void * src, size_t copylen )
+void * trace_memdup
+	( ccp func, ccp file, uint line, const void * src, size_t copylen )
 {
     char * dest = trace_malloc(func,file,line,copylen+1);
     memcpy(dest,src,copylen);
     dest[copylen] = 0;
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void * trace_allocdup
+	( ccp func, ccp file, uint line, const void * src, size_t copylen )
+{
+    char * dest = trace_malloc(func,file,line,copylen);
+    memcpy(dest,src,copylen);
     return dest;
 }
 

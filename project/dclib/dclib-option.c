@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -538,7 +538,7 @@ ccp PrintGParam ( const GParam_t *par )
 
 	case GOPT_IDX_SIZE:
 	    snprintf(buf,sizeof(buf),"[SIZE] %llu = %s",
-		par->un64, PrintSize1024(0,0,par->un64,false) );
+		par->un64, PrintSize1024(0,0,par->un64,0) );
 	    break;
 
 	case GOPT_IDX_DOUBLE:
@@ -615,6 +615,7 @@ enumError ScanGOptionsHelper
 (
     GOptions_t		*gopt,		// valid pointer
     GenericOpt_t	*go,		// NULL or list with options
+					//	=> ResetGenericOpt() is called at finish
     int			argc,		// argument counter
     char		**argv,		// list of arguments
     int			max_param,	// >=0: max allowed parameters

@@ -866,7 +866,7 @@ static enumError PatchDol ( dol_patch_t *dol, hex_patch_t *hex )
 
     const uint size = hex->n_cmp > hex->n_patch ? hex->n_cmp : hex->n_patch;
     if ( !size || !hex->addr || !hex->n_patch )
-	return false;
+	return ERR_WARNING;
 
     const dol_record_t *rec = search_dol_record(dol->rec,dol->n_rec,hex->addr,size);
     if (!rec)
@@ -985,7 +985,7 @@ static enumError PatchDol ( dol_patch_t *dol, hex_patch_t *hex )
 	memcpy(ptr,patch,hex->n_patch);
 
     dol->patch_count++;
-    return true;
+    return ERR_OK;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

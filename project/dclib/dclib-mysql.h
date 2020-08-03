@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -369,10 +369,59 @@ int CountColumnsMYSQL
 static inline int LastInsertIdMYSQL ( MySql_t *my )
 	{ return mysql_insert_id(my->mysql); }
 
-mem_t EscapeMemMYSQL ( MySql_t *my, mem_t src );
-mem_t EscapeStringMYSQL ( MySql_t *my, ccp src );
-
 struct TransferStats_t GetStatsMYSQL ( MySql_t *my );
+
+
+//-----------------------------------------------------------------------------
+// escaping and quoting
+
+// All functions are robust for NULL pointers.
+//	If len<0 und ptr!=0, then strlen(ptr) is used.
+// The `circ´ variants return a buffer alloced by GetCircBuf() with
+//	valid pointer and null terminated. If result is too large
+//	(>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+// The result of `circ´ variants must not be freed!
+//	All others results must be freed by `FreeString(mem.ptr)´.
+
+//---------------------------------------------------
+// In general: Use faster `circ´ variants if you can
+// guarantee, that src_len < CIRC_BUF_MAX_ALLOC/2.
+//---------------------------------------------------
+
+	      mem_t EscapeMYSQL		( MySql_t *my, cvp ptr, int len );
+	      mem_t EscapeMYSQLCirc	( MySql_t *my, cvp ptr, int len );
+static inline mem_t EscapeMemMYSQL	( MySql_t *my, mem_t src );
+static inline mem_t EscapeMemMYSQLCirc	( MySql_t *my, mem_t src );
+static inline mem_t EscapeStringMYSQL	( MySql_t *my, ccp src );
+static inline mem_t EscapeStringMYSQLCirc(MySql_t *my, ccp src );
+
+	      mem_t QuoteMYSQL		( MySql_t *my, cvp ptr, int len, bool null_if_empty );
+	      mem_t QuoteMYSQLCirc	( MySql_t *my, cvp ptr, int len, bool null_if_empty );
+static inline mem_t QuoteMemMYSQL	( MySql_t *my, mem_t src, bool null_if_empty );
+static inline mem_t QuoteMemMYSQLCirc	( MySql_t *my, mem_t src, bool null_if_empty );
+static inline mem_t QuoteStringMYSQL	( MySql_t *my, ccp   src, bool null_if_empty );
+static inline mem_t QuoteStringMYSQLCirc( MySql_t *my, ccp   src, bool null_if_empty );
+
+//-----------------------------------------------------------------------------
+// inlines of escaping and quoting
+
+static inline mem_t EscapeMemMYSQL ( MySql_t *my, mem_t src )
+	{ return EscapeMYSQL(my,src.ptr,src.len); }
+static inline mem_t EscapeMemMYSQLCirc ( MySql_t *my, mem_t src )
+	{ return EscapeMYSQLCirc(my,src.ptr,src.len); }
+static inline mem_t EscapeStringMYSQL ( MySql_t *my, ccp src )
+	{ return EscapeMYSQL(my,src,-1); }
+static inline mem_t EscapeStringMYSQLCirc( MySql_t *my, ccp src )
+	{ return EscapeMYSQLCirc(my,src,-1); }
+
+static inline mem_t QuoteMemMYSQL ( MySql_t *my, mem_t src, bool null_if_empty )
+	{ return QuoteMYSQL(my,src.ptr,src.len,null_if_empty); }
+static inline mem_t QuoteMemMYSQLCirc ( MySql_t *my, mem_t src, bool null_if_empty )
+	{ return QuoteMYSQLCirc(my,src.ptr,src.len,null_if_empty); }
+static inline mem_t QuoteStringMYSQL ( MySql_t *my, ccp   src, bool null_if_empty )
+	{ return QuoteMYSQL(my,src,-1,null_if_empty); }
+static inline mem_t QuoteStringMYSQLCirc ( MySql_t *my, ccp   src, bool null_if_empty )
+	{ return QuoteMYSQLCirc(my,src,-1,null_if_empty); }
 
 //
 ///////////////////////////////////////////////////////////////////////////////

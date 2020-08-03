@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -139,6 +139,7 @@ typedef struct XDump_t
     bool		print_format;	// print an info line about the format
     bool		print_addr;	// print address field
     bool		print_number;	// print number field
+    bool		print_endmarker;// print "/" as end of data marker
     bool		print_text;	// print ascii text field
     bool		print_summary;	// print a summary at end of dump
     bool		print_diff_sep;	// print an empty line after differ lines
@@ -181,6 +182,8 @@ typedef struct XDump_t
     u64			written;	// total written bytes
     u64			addr;		// current address
     uint		addr_fw;	// field width of address
+    const u64		*addr_break;	// NULL or null terminated list:
+					//	break line at this addresses
 
     uint		bytes_per_col;	// bytes per column
     uint		cols_per_line;	// columns per line
@@ -204,6 +207,8 @@ XDump_t;
 
 void InitializeXDump ( XDump_t *xd );
 void SetupXDump ( XDump_t *xd, XDumpCommand_t cmd );
+
+static inline void ResetXDump ( XDump_t *xd ) {}
 
 void PrintXDumpParam
 (
@@ -269,6 +274,7 @@ int XDiff
     uint		size2,		// size of 'data2'
     bool		term2,		// true: 'data2' completed
 
+    uint		limit_lines,	// >0: limit number of differ-lines
     bool		colorize	// true: use red and green on output
 );
 
@@ -281,6 +287,7 @@ int XDiffByFile
     FILE		*f1,		// first input file
     FILE		*f2,		// second input file
     u64			max_size,	// >0: limit comparing size
+    uint		limit_lines,	// >0: limit number of differ-lines
     bool		colorize	// true: use red and green on output
 );
 
@@ -300,6 +307,7 @@ int XDiff16
     const void		*data2,		// data
     uint		size2,		// size of 'data'
 
+    uint		limit_lines,	// >0: limit number of differ-lines
     bool		colorize	// true: use red and green on output
 );
 
@@ -312,8 +320,9 @@ int XScan
 (
     // returns <0 on error, or number of dumped bytes
     XDump_t		*xd,		// params; if NULL: use local version
+    FastBuf_t		*dest,		// not NULL: append scanned data here
 
-    const void		*data,		// data to compare
+    const void		*data,		// data to scan
     uint		size,		// size of 'data'
     bool		term,		// true: accept uncomplete last line
     u64			max_size	// >0: limit output size
@@ -325,6 +334,7 @@ s64 XScanByFile
 (
     // returns <0 on error, or number of written bytes
     XDump_t		*xd,		// params; if NULL: use local version
+    FastBuf_t		*dest,		// not NULL: append scanned data here
     FILE		*f,		// input file
     u64			max_size	// >0: limit output size
 );

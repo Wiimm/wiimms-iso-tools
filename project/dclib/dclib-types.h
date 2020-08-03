@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2018 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -348,16 +348,18 @@ typedef float float32; // float as 32 bit binary data, endian is file dependent
 
 #ifndef DCLIB_BASIC_TYPES
   #define DCLIB_BASIC_TYPES 1
-  typedef const void *  cvp;
-  typedef const char *  ccp;
   typedef unsigned char uchar;
   typedef unsigned int  uint;
   typedef unsigned long ulong;
+  typedef const void *  cvp;
+  typedef const char *  ccp;
+  typedef const uchar * cucp;
 #endif
 
-// [[sha1_hash_t]] [[sha1_id_t]]
-typedef u8 sha1_hash_t[20];
-typedef u8 sha1_id_t[9];	// 8*chars + NULL
+// [[sha1_hash_t]] [[sha1_hex_t]] [[sha1_id_t]]
+typedef u8   sha1_hash_t[20];
+typedef char sha1_hex_t[41];	// 40 chars + NULL
+typedef u8   sha1_id_t[9];	// 8*chars + NULL
 
 // [[uuid_buf_t]] [[uuid_text_t]]
 typedef u8 uuid_buf_t[16];

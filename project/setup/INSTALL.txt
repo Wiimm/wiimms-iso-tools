@@ -9,12 +9,12 @@
 	##                      \/  \/     |_|    |_|                      ##
 	##                                                                 ##
 	##                        Wiimms ISO Tools                         ##
-	##                      https://wit.wiimm.de/                       ##
+	##                      https://wit.wiimm.de/                      ##
 	##                                                                 ##
 	#####################################################################
 	##                                                                 ##
 	##   This file is part of the WIT project.                         ##
-	##   Visit https://wit.wiimm.de/ for project details and sources.   ##
+	##   Visit https://wit.wiimm.de/ for project details and sources.  ##
 	##                                                                 ##
 	##   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>      ##
 	##                                                                 ##

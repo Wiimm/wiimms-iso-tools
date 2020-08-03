@@ -1120,7 +1120,7 @@ enumError Dump_TIK_MEM
     fprintf(f,"%*sIssuer:            %s\n", indent,"", tik->issuer );
 
     dump_sig_type(f,indent,ntohl(tik->sig_type),sig_status,false);
-    if ( !tik->sig && !memcmp(tik->sig,tik->sig+1,sizeof(tik->sig)-1) )
+    if ( !tik->sig[0] && !memcmp(tik->sig,tik->sig+1,sizeof(tik->sig)-1) )
 	fprintf(f,"\n%*sSignature is cleared (all zero)\n", indent,"" );
 
     u32 val = ntohs(tik->n_dlc);
@@ -1233,7 +1233,7 @@ enumError Dump_TMD_MEM
     fprintf(f,"%*sIssuer:            %s\n", indent,"", tmd->issuer );
 
     dump_sig_type(f,indent,ntohl(tmd->sig_type),sig_status,false);
-    if ( !tmd->sig && !memcmp(tmd->sig,tmd->sig+1,sizeof(tmd->sig)-1) )
+    if ( !tmd->sig[0] && !memcmp(tmd->sig,tmd->sig+1,sizeof(tmd->sig)-1) )
 	fprintf(f,"\n%*sSignature is cleared (all zero)\n", indent,"" );
 
     fprintf(f,"%*sVersion:         %11u\n", indent, "", tmd->version);
@@ -5811,8 +5811,8 @@ enumError Skeletonize
     const enumOFT oft = CalcOFT(output_file_type,0,0,OFT__WDF_DEF);
 
     {
-	WIT_SHA_CTX ctx;
-	if (!WIT_SHA1_Init(&ctx))
+	WIIMM_SHA_CTX ctx;
+	if (!WIIMM_SHA1_Init(&ctx))
 	{
 	    ASSERT(0);
 	    exit(0);
@@ -5823,10 +5823,10 @@ enumError Skeletonize
 	{
 	    wd_memmap_item_t * mi = mm.item + i;
 	    noPRINT("### %p %9llx %6llx\n",mi->data,mi->offset,mi->size);
-	    WIT_SHA1_Update(&ctx,mi->data,mi->size);
+	    WIIMM_SHA1_Update(&ctx,mi->data,mi->size);
 	}
 	u8 h[WII_HASH_SIZE];
-	WIT_SHA1_Final(h,&ctx);
+	WIIMM_SHA1_Final(h,&ctx);
 
 	snprintf(fname,sizeof(fname),
 		"%s/%.6s-%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x"

@@ -87,6 +87,7 @@ enumEncoding SetEncoding
 	( enumEncoding val, enumEncoding set_mask, enumEncoding default_mask );
 
 //-----------------------------------------------------------------------------
+// [[enumRegion]]
 
 typedef enum enumRegion
 {
@@ -121,7 +122,7 @@ const RegionInfo_t * GetRegionInfo ( char region_code );
 
 //-----------------------------------------------------------------------------
 
-extern enumRegion opt_common_key;
+extern wd_ckey_index_t opt_common_key;
 wd_ckey_index_t ScanCommonKey ( ccp arg );
 int ScanOptCommonKey ( ccp arg );
 
