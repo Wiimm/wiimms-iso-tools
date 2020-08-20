@@ -625,7 +625,7 @@ void PrintColorSetHelper
 ///////////////			color helpers			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-u32 ColorTab_M0_M15[16]; // first 16 colors of "\e[m"
+extern u32 ColorTab_M0_M15[16]; // first 16 colors of "\e[m"
 
 // return a m256 index
 u8 ConvertColorRGB3ToM256 ( u8 r, u8 g, u8 b );
