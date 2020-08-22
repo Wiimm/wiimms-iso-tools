@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -499,16 +499,16 @@ void SetupLib ( int argc, char ** argv, ccp p_progname, enumProgID prid )
     #endif
 
 
-    //----- setup progname
+    //----- setup ProgInfo.progname
 
     if ( argc > 0 && *argv && **argv )
 	p_progname = *argv;
-    progname = strrchr(p_progname,'/');
-    progname = progname ? progname+1 : p_progname;
-    argv[0] = (char*)progname;
+    ProgInfo.progname = strrchr(p_progname,'/');
+    ProgInfo.progname = ProgInfo.progname ? ProgInfo.progname+1 : p_progname;
+    argv[0] = (char*)ProgInfo.progname;
 
     TRACE("##PROG## REV-ID=%08x, PROG-ID=%d, PROG-NAME=%s\n",
-		revision_id, prog_id, progname );
+		revision_id, prog_id, ProgInfo.progname );
 
 
     //----- setup signals

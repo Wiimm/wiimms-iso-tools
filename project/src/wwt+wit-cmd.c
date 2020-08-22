@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -699,7 +699,7 @@ enumError PrintErrorStatWit ( enumError err, ccp cmdname )
 	putchar('\n');
 	if ( err )
 	    printf("[error]\nprogram=%s\ncommand=%s\ncode=%u\nname=%s\ntext=%s\n\n",
-			progname, cmdname, err,
+			ProgInfo.progname, cmdname, err,
 			GetErrorName(err,"?"), GetErrorText(err,"?") );
     }
 
@@ -708,7 +708,7 @@ enumError PrintErrorStatWit ( enumError err, ccp cmdname )
 	|| err == ERR_NOT_IMPLEMENTED )
     {
 	fprintf(stderr,"%s: Command '%s' returns with status #%d [%s]\n",
-			progname, cmdname, err, GetErrorName(err,"?") );
+			ProgInfo.progname, cmdname, err, GetErrorName(err,"?") );
     }
 
     return err;

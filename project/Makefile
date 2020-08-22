@@ -16,7 +16,7 @@
 ##   This file is part of the WIT project.                         ##
 ##   Visit https://wit.wiimm.de/ for project details and sources.  ##
 ##                                                                 ##
-##   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>      ##
+##   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>      ##
 ##                                                                 ##
 #####################################################################
 
@@ -45,7 +45,7 @@ WDF_LONG		= Wiimms WDF Tool
 WFUSE_SHORT		= wfuse
 WFUSE_LONG		= Wiimms FUSE Tool
 
-VERSION_NUM		= 3.03a
+VERSION_NUM		= 3.03b
 BETA_VERSION		= 0
 			# 0:off  -1:"beta"  >0:"beta#"
 

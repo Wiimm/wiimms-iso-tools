@@ -632,7 +632,7 @@ static inline uint ReadMemFile
 enumError LoadMemFile
 (
     MemFile_t	*mf,		// MemFile_t data
-    bool	init_mf,	// true: initalize 'mf' first
+    bool	init_mf,	// true: initialize 'mf' first
 
     ccp		path1,		// NULL or part #1 of path
     ccp		path2,		// NULL or part #2 of path

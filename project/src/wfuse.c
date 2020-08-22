@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -177,7 +177,7 @@ static void hint_exit ( enumError stat )
 {
     fprintf(stderr,
 	"-> Type '%s -h' (pipe it to a pager like 'less') for more help.\n\n",
-	progname );
+	ProgInfo.progname );
     exit(stat);
 }
 

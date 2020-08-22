@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -1427,7 +1427,6 @@ char * AllocRealPath ( ccp source );
 
 extern enumProgID	prog_id;
 extern u32		revision_id;
-extern ccp		progname;
 extern ccp		search_path[];
 extern ccp		lang_info;
 extern volatile int	SIGINT_level;

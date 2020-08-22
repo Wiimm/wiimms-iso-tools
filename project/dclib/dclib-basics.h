@@ -1156,11 +1156,17 @@ void PrintSettingsDCLIB ( FILE *f, int indent );
 void SetupProgname ( int argc, char ** argv,
 			ccp tool_name, ccp tool_vers, ccp tool_title );
 
-// return NULL or 'progpath', calc GetProgramPath() once if needed
+// return NULL or 'ProgInfo.progpath', calc GetProgramPath() once if needed
 ccp ProgramPath(void);
 
-// return NULL or 'progdir', calc ProgramPath() once if needed
+// return NULL or 'ProgInfo.progdir', calc ProgramPath() once if needed
 ccp ProgramDirectory(void);
+
+// path0 can be a directory or a filename (->dir extracted)
+void DefineLogDirectory ( ccp path0, bool force );
+
+// get 'ProgInfo.logdir' without tailing '/' ("." as fall back)
+ccp GetLogDirectory();
 
 #ifdef __CYGWIN__
     ccp ProgramPathNoExt(void);
@@ -3396,7 +3402,7 @@ ccp PrintTimeByFormat
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time		// seconds since epoch -> time()
+    time_t		tim		// seconds since epoch; 0 is replaced by time()
 );
 
 ccp PrintTimeByFormatUTC
@@ -3404,7 +3410,7 @@ ccp PrintTimeByFormatUTC
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time		// seconds since epoch -> time()
+    time_t		tim		// seconds since epoch; 0 is replaced by time()
 );
 
 //-----------------------------------------------------------------------------
@@ -3414,7 +3420,8 @@ ccp PrintUsecByFormat
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time,		// seconds since epoch -> time()
+					// 1-6 '@' in row replaced by digits of 'usec'
+    time_t		tim,		// seconds since epoch
     uint		usec		// micro second of second
 );
 
@@ -3423,12 +3430,12 @@ ccp PrintUsecByFormatUTC
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time,		// seconds since epoch -> time()
+					// 1-6 '@' in row replaced by digits of 'usec'
+    time_t		tim,		// seconds since epoch
     uint		usec		// micro second of second
 );
 
 //-----------------------------------------------------------------------------
-
 
 ccp PrintTimevalByFormat
 (
@@ -3437,7 +3444,6 @@ ccp PrintTimevalByFormat
     ccp			format,		// format string for strftime()
     const struct timeval *tv		// time to print, if NULL use gettimeofday()
 );
-
 
 ccp PrintTimevalByFormatUTC
 (
@@ -4856,6 +4862,7 @@ typedef enum SaveRestoreType_t
     SRT_BOOL,		// type bool
     SRT_UINT,		// unsigned int of any size (%llu)
     SRT_HEX,		// unsigned int of any size as hex (%#llx)
+    SRT_COUNT,		// unsigned int of any size (%llu), used as array counter
     SRT_INT,		// signed int of any size (%lld)
     SRT_FLOAT,		// float (%.8g) or double (%.16g) or long double (%.20g)
     SRT_XFLOAT,		// float or double or long double as hex-float (%a/%La)
@@ -4864,10 +4871,15 @@ typedef enum SaveRestoreType_t
     SRT_STRING_ALLOC,	// alloced string, var is ccp or char*
     SRT_MEM,		// alloced string, var is mem_t
 
+    SRT_DEF_ARRAY,	// define/end an array of structs
+
     SRT__IS_LIST,	//----- from here: print lists; also used as separator
 
     SRT_STRING_FIELD,	// var is StringField_t
     SRT_PARAM_FIELD,	// var is ParamField_t
+
+
+    SRT_F_SIZE = 0x100,	// factor for implicit size-modes for numerical types
 }
 SaveRestoreType_t;
 
@@ -4879,7 +4891,8 @@ typedef struct SaveRestoreTab_t
     uint	offset;	// offset of variable
     uint	size;	// sizeof( var or string )
     ccp		name;	// name in configuration file
-    u16		n_elem;	// >0: is array with N elements
+    s16		n_elem;	// >0: is array with N elements
+			// <0: is array with -N elements, use last SRT_COUNT
     u8		type;	// SaveRestoreType_t
     u8		emode;	// EncodeMode_t
 }
@@ -4896,6 +4909,7 @@ __attribute__ ((packed)) SaveRestoreTab_t;
 #define DEF_SRT_BOOL(v,n)		DEF_SRT_VAR(v,1,n,SRT_BOOL,0)
 #define DEF_SRT_UINT(v,n)		DEF_SRT_VAR(v,1,n,SRT_UINT,0)
 #define DEF_SRT_HEX(v,n)		DEF_SRT_VAR(v,1,n,SRT_HEX,0)
+#define DEF_SRT_COUNT(v,n)		DEF_SRT_VAR(v,1,n,SRT_COUNT,0)
 #define DEF_SRT_INT(v,n)		DEF_SRT_VAR(v,1,n,SRT_INT,0)
 #define DEF_SRT_FLOAT(v,n)		DEF_SRT_VAR(v,1,n,SRT_FLOAT,0)
 #define DEF_SRT_XFLOAT(v,n)		DEF_SRT_VAR(v,1,n,SRT_XFLOAT,0)
@@ -4907,7 +4921,7 @@ __attribute__ ((packed)) SaveRestoreTab_t;
 #define DEF_SRT_STRING_FIELD(v,n,e)	DEF_SRT_VAR(v,1,n,SRT_STRING_FIELD,e)
 #define DEF_SRT_PARAM_FIELD(v,n,e)	DEF_SRT_VAR(v,1,n,SRT_PARAM_FIELD,e)
 
-//--- n elements
+//--- n elements : if n<0, then n_elem=-n && use last SRT_COUNT
 
 #define DEF_SRT_BOOL_N(v,ne,n)		DEF_SRT_VAR(v,ne,n,SRT_BOOL,0)
 #define DEF_SRT_UINT_N(v,ne,n)		DEF_SRT_VAR(v,ne,n,SRT_UINT,0)
@@ -4937,6 +4951,40 @@ __attribute__ ((packed)) SaveRestoreTab_t;
 #define DEF_SRT_STR_ALLOC_A(v,n,e)	DEF_SRT_ARRAY(v,n,SRT_STRING_ALLOC,e)
 #define DEF_SRT_MEM_A(v,n,e)		DEF_SRT_ARRAY(v,n,SRT_MEM,e)
 
+//--- auto array, use last SRT_COUNT for element-count
+
+#define DEF_SRT_ARRAY_C(v,n,t,e)		\
+	{offsetof(SRT_NAME,v), sizeof(((SRT_NAME*)0)->v[0]), n, \
+	 -(s16)(sizeof(((SRT_NAME*)0)->v)/sizeof(*((SRT_NAME*)0)->v)), t, e }
+
+#define DEF_SRT_BOOL_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_BOOL,0)
+#define DEF_SRT_UINT_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_UINT,0)
+#define DEF_SRT_HEX_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_HEX,0)
+#define DEF_SRT_INT_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_INT,0)
+#define DEF_SRT_FLOAT_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_FLOAT,0)
+#define DEF_SRT_XFLOAT_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_XFLOAT,0)
+
+#define DEF_SRT_STR_SIZE_AC(v,n,e)	DEF_SRT_ARRAY_C(v,n,SRT_STRING_SIZE,e)
+#define DEF_SRT_STR_ALLOC_AC(v,n,e)	DEF_SRT_ARRAY_C(v,n,SRT_STRING_ALLOC,e)
+#define DEF_SRT_MEM_AC(v,n,e)		DEF_SRT_ARRAY_C(v,n,SRT_MEM,e)
+
+//--- array of structs
+
+#define DEF_SRT_ARRAY_FL(f,l) \
+	{offsetof(SRT_NAME,f), sizeof(((SRT_NAME*)0)->f), 0, \
+	 (offsetof(SRT_NAME,l)-offsetof(SRT_NAME,f))/sizeof(((SRT_NAME*)0)->f)+1, \
+	 SRT_DEF_ARRAY, 0 }
+
+#define DEF_SRT_ARRAY_FLC(f,l) \
+	{offsetof(SRT_NAME,f), sizeof(((SRT_NAME*)0)->f), 0, \
+	 -(s16)((offsetof(SRT_NAME,l)-offsetof(SRT_NAME,f)) \
+		/sizeof(((SRT_NAME*)0)->f)+1), SRT_DEF_ARRAY, 0 }
+
+#define DEF_SRT_ARRAY_N(v,ne)		DEF_SRT_VAR(v[0],ne,0,SRT_DEF_ARRAY,0)
+#define DEF_SRT_ARRAY_A(v)		DEF_SRT_ARRAY(v,0,SRT_DEF_ARRAY,0)
+#define DEF_SRT_ARRAY_AC(v)		DEF_SRT_ARRAY_C(v,0,SRT_DEF_ARRAY,0)
+#define DEF_SRT_ARRAY_END()		{0,0,0,0,SRT_DEF_ARRAY,0}
+
 //--- special
 
 #define DEF_SRT_SEPARATOR()		{0,0,0,0,SRT__IS_LIST,0}
@@ -4944,6 +4992,9 @@ __attribute__ ((packed)) SaveRestoreTab_t;
 #define DEF_SRT_TERM()			{0,0,0,0,SRT__TERM,0}
 
 ///////////////////////////////////////////////////////////////////////////////
+
+extern int srt_auto_dump;
+extern FILE *srt_auto_dump_file;
 
 void DumpStateTable
 (

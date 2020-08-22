@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -170,11 +170,11 @@ static void hint_exit ( enumError stat )
     if ( current_command )
 	fprintf(stderr,
 	    "-> Type '%s help %s' (pipe it to a pager like 'less') for more help.\n\n",
-	    progname, CommandInfo[current_command->id].name1 );
+	    ProgInfo.progname, CommandInfo[current_command->id].name1 );
     else
 	fprintf(stderr,
 	    "-> Type '%s -h' or '%s help' (pipe it to a pager like 'less') for more help.\n\n",
-	    progname, progname );
+	    ProgInfo.progname, ProgInfo.progname );
     exit(stat);
 }
 
@@ -2300,7 +2300,7 @@ static enumError cmd_fragments()
 	ERROR0(ERR_WARNING,
 	    "This version of %s can determine the file system mapping"
 	    " only for WBFS partitions.",
-	    progname);
+	    ProgInfo.progname);
 
     ParamList_t * param;
     for ( param = first_param; param; param = param->next )
@@ -2783,7 +2783,7 @@ enumError exec_extract ( SuperFile_t * fi, Iterator_t * it )
 		*split_buf = 0;
 
 	    printf( "%s: %sEXTRACT %*u/%u %s%s:%s -> %s\n",
-		progname, testmode ? "WOULD " : "",
+		ProgInfo.progname, testmode ? "WOULD " : "",
 		count_fw, it->source_index+1, it->source_list.used,
 		oft_info[fi->iod.oft].name,
 		split_buf, fi->f.fname, dest_dir );
@@ -3268,12 +3268,12 @@ enumError exec_edit ( SuperFile_t * fi, Iterator_t * it )
 #else
     if (testmode)
     {
-	printf( "%s: WOULD EDIT %s:%s\n", progname, oinfo->name, fi->f.fname );
+	printf( "%s: WOULD EDIT %s:%s\n", ProgInfo.progname, oinfo->name, fi->f.fname );
 	return ERR_OK;
     }
 
     if ( verbose >= 0 )
-	printf( "%s: EDIT %s:%s\n", progname, oinfo->name, fi->f.fname );
+	printf( "%s: EDIT %s:%s\n", ProgInfo.progname, oinfo->name, fi->f.fname );
 #endif
 
     enumError err = PatchSF(fi,ERR_OK);
@@ -3748,7 +3748,7 @@ enumError exec_verify ( SuperFile_t * fi, Iterator_t * it )
     if ( testmode || verbose >= 999 )
     {
 	printf( "%s: %sVERIFY %s:%s\n",
-		progname, testmode ? "WOULD " : "",
+		ProgInfo.progname, testmode ? "WOULD " : "",
 		oft_info[fi->iod.oft].name, fi->f.fname );
 	if (testmode)
 	    return ERR_OK;
@@ -4110,7 +4110,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
     if ( verbose > 3 && !is_env )
     {
 	print_title(stdout);
-	printf("PROGRAM_NAME   = %s\n",progname);
+	printf("PROGRAM_NAME   = %s\n",ProgInfo.progname);
 	if (lang_info)
 	    printf("LANG_INFO      = %s\n",lang_info);
 	ccp * sp;
@@ -4119,7 +4119,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	printf("\n");
     }
 
-    return !err ? ERR_OK : max_error ? max_error : ERR_SYNTAX;
+    return !err ? ERR_OK : ProgInfo.max_error ? ProgInfo.max_error : ERR_SYNTAX;
 }
 
 //

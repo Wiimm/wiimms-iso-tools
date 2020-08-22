@@ -625,7 +625,7 @@ void PrintColorSetHelper
 ///////////////			color helpers			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-u32 ColorTab_M0_M15[16]; // first 16 colors of "\e[m"
+extern u32 ColorTab_M0_M15[16]; // first 16 colors of "\e[m"
 
 // return a m256 index
 u8 ConvertColorRGB3ToM256 ( u8 r, u8 g, u8 b );
@@ -719,12 +719,12 @@ void PrintColorModes
 //	RedirectStdFiles() don't cange it, if it is NULL.
 //
 //   stdmsg, colmsg:
-//	Special output for catcable messages. Initalized by SetupStdMsg()
+//	Special output for catcable messages. Initialized by SetupStdMsg()
 //	and set to the first not NULL of stdout, stderr and stdlog.
 //
 //   stdwrn, colwrn:
 //	Output file of PrintError() functions.
-//	Initalized to a copy of stderr.
+//	Initialized to a copy of stderr.
 //
 ////////////////////////////////////////////////////////////////////////////
 

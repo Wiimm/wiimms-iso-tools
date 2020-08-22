@@ -1,11 +1,6 @@
 wit v@@VERSION@@ r@@REV-NEXT@@ - @@@@-@@-@@
 
- - Windows version only: Update to Cygwin DLL 3.0.7 / 2019-04-30.
- - wit COPY accpets patch options now.
- - Option --domain=DOMAIN: Bug fixed if DOMAIN contains exactly 16 characters.
- - Bug fix: Gamecube games are accessible again.
- - Bug fix for command wit CERT: Correct algorithm to verify signatures of
-   type 'Elliptic Curve'.
+ - Bug fixed: 2 missed "extern" added.
 
 ~
 ~Known bugs:

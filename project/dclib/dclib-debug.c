@@ -381,18 +381,7 @@ void ListErrorCodes
 ///////////////			error handling			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-ccp progpath	= 0;
-ccp progdir	= 0;
-ccp progname	= 0;
-
-ccp toolname	= 0;
-ccp toolversion	= 0;
-ccp tooltitle	= 0;
-
-bool multi_processing	= false;
-enumError last_error	= ERR_OK;
-enumError max_error	= ERR_OK;
-u32 error_count		= 0;
+ProgInfo_t ProgInfo = {0};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -436,9 +425,9 @@ enumError PrintErrorArg ( ccp func, ccp file, unsigned int line,
     }
 
     char msg[1000];
-    if (!progname)
-	progname = "?";
-    const int plen = strlen(progname)+2;
+    if (!ProgInfo.progname)
+	ProgInfo.progname = "?";
+    const int plen = strlen(ProgInfo.progname)+2;
 
     if ( !format && err_code > ERR_NOT_IMPLEMENTED )
 	format = "Program is aborted immediately!";
@@ -491,21 +480,21 @@ enumError PrintErrorArg ( ccp func, ccp file, unsigned int line,
 	{
 	    if ( err_code > ERR_WARNING )
 		fprintf(stdwrn,"%s%s%s:%s ERROR #%d [%s] in %s() @ %s#%d%s\n",
-		    prefix, coln, progname, col1, err_code,
+		    prefix, coln, ProgInfo.progname, col1, err_code,
 		    GetErrorName(err_code,0), func, file, line, col0 );
 	    else
 		fprintf(stdwrn,"%s%s%s:%s WARNING in %s() @ %s#%d%s\n",
-		    prefix, coln, progname, col1, func, file, line, col0 );
+		    prefix, coln, ProgInfo.progname, col1, func, file, line, col0 );
 	}
 	else
 	{
 	    if ( err_code > ERR_WARNING )
 		fprintf(stdwrn,"%s%s%s:%s ERROR #%d [%s]%s\n",
-		    prefix, coln, progname, col1, err_code,
+		    prefix, coln, ProgInfo.progname, col1, err_code,
 		    GetErrorName(err_code,0), col0 );
 	    else
 		fprintf(stdwrn,"%s%s%s:%s WARNING%s\n",
-		    prefix, coln, progname, col1, col0 );
+		    prefix, coln, ProgInfo.progname, col1, col0 );
 	}
 
      #if defined(EXTENDED_ERRORS) && EXTENDED_ERRORS > 1
@@ -518,8 +507,8 @@ enumError PrintErrorArg ( ccp func, ccp file, unsigned int line,
     }
     else
     {
-	fprintf(stdwrn,"%s%s:",prefix,progname);
-	PutLines(stdwrn,plen,fw,strlen(progname)+1,prefix,msg,0);
+	fprintf(stdwrn,"%s%s:",prefix,ProgInfo.progname);
+	PutLines(stdwrn,plen,fw,strlen(ProgInfo.progname)+1,prefix,msg,0);
     }
 
     if (syserr)
@@ -531,14 +520,16 @@ enumError PrintErrorArg ( ccp func, ccp file, unsigned int line,
     fflush(stdwrn);
 
     if ( err_code > ERR_OK )
-	error_count++;
+    {
+	ProgInfo.error_count++;
 
-    last_error = err_code;
-    if ( max_error < err_code )
-	max_error = err_code;
+	ProgInfo.last_error = err_code;
+	if ( ProgInfo.max_error < err_code )
+	    ProgInfo.max_error = err_code;
 
-    if ( err_code > ERR_NOT_IMPLEMENTED )
-	exit(err_code);
+	if ( err_code > ERR_NOT_IMPLEMENTED )
+	    exit(err_code);
+    }
 
     return err_code;
 }
@@ -563,7 +554,7 @@ enumError PrintErrorStat ( enumError err, int verbose, ccp cmdname )
 	}
 
 	fprintf(stdwrn,"%s: Command '%s' returns with status #%d [%s]\n",
-			progname, cmdname, err, GetErrorName(err,0) );
+			ProgInfo.progname, cmdname, err, GetErrorName(err,0) );
     }
     return err;
 }
@@ -998,14 +989,14 @@ static void trace_helper ( int print_stderr, ccp format, va_list arg )
     if (!TRACE_FILE)
     {
 	char extend[16];
-	if (multi_processing)
+	if (ProgInfo.multi_processing)
 	    snprintf(extend,sizeof(extend),"-%u",getpid());
 	else
 	    *extend = 0;
 
 	char fname[1000];
-	if ( progname && *progname && *progname != '?' )
-	    snprintf( fname, sizeof(fname), "_trace-%s%s.tmp", progname, extend );
+	if ( ProgInfo.progname && *ProgInfo.progname && *ProgInfo.progname != '?' )
+	    snprintf( fname, sizeof(fname), "_trace-%s%s.tmp", ProgInfo.progname, extend );
 	else
 	    snprintf( fname, sizeof(fname), "_trace-%s.tmp", extend );
 
@@ -1373,8 +1364,8 @@ static FILE * OpenMemLog()
     {
 	done = true;
 	char fname[500];
-	if ( progname && *progname && *progname != '?' )
-	    snprintf(fname,sizeof(fname),"_trace_alloc-%s-%u.tmp",progname,getpid());
+	if ( ProgInfo.progname && *ProgInfo.progname && *ProgInfo.progname != '?' )
+	    snprintf(fname,sizeof(fname),"_trace_alloc-%s-%u.tmp",ProgInfo.progname,getpid());
 	else
 	    snprintf(fname,sizeof(fname),"_trace_alloc-%u.tmp",getpid());
 

@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -94,9 +94,9 @@ static void print_title ( FILE * f )
     {
 	done = true;
 	if ( verbose >= 1 && f == stdout )
-	    fprintf(f,"\n%s%s\n\n",progname,TITLE);
+	    fprintf(f,"\n%s%s\n\n",ProgInfo.progname,TITLE);
 	else
-	    fprintf(f,"*****  %s%s  *****\n",progname,TITLE);
+	    fprintf(f,"*****  %s%s  *****\n",ProgInfo.progname,TITLE);
 	fflush(f);
     }
 }
@@ -129,7 +129,7 @@ static void version_exit()
 	fputs( VERSION " r" REVISION " " SYSTEM "\n", stdout );
     else 
 	printf("%s%s\n%.*s",
-		progname, TITLE,
+		ProgInfo.progname, TITLE,
 		(int)strlen(default_settings)-1, default_settings );
     exit(ERR_OK);
 }
@@ -143,11 +143,11 @@ void hint_exit ( enumError stat )
     if ( current_command )
 	fprintf(stderr,
 	    "-> Type '%s help %s' (pipe it to a pager like 'less') for more help.\n\n",
-	    progname, CommandInfo[current_command->id].name1 );
+	    ProgInfo.progname, CommandInfo[current_command->id].name1 );
     else
 	fprintf(stderr,
 	    "-> Type '%s -h' or '%s help' (pipe it to a pager like 'less') for more help.\n\n",
-	    progname, progname );
+	    ProgInfo.progname, ProgInfo.progname );
     exit(stat);
 }
 
@@ -171,7 +171,7 @@ static enumError OpenOutput
     if (testmode)
     {
 	if (testmode_msg)
-	    fprintf(logout,"%s: %s\n",progname,testmode_msg);
+	    fprintf(logout,"%s: %s\n",ProgInfo.progname,testmode_msg);
 	fname = 0;
     }
 
@@ -1520,13 +1520,13 @@ int main ( int argc, char ** argv )
     logout = stdout;
     SetupLib(argc,argv,NAME,PROG_WDF);
     opt_chunk_mode = CHUNK_MODE_32KIB;
-    progname0 = progname;
+    progname0 = ProgInfo.progname;
 
     //----- setup default options
 
-    if (progname)
+    if (ProgInfo.progname)
     {
-	ccp src = progname;
+	ccp src = ProgInfo.progname;
 	char *dest = iobuf, *end = iobuf + sizeof(iobuf) - 1;
 	while ( *src && dest < end )
 	    *dest++ = tolower((int)*src++);
@@ -1573,7 +1573,7 @@ int main ( int argc, char ** argv )
 	    snprintf(progname_buf,sizeof(progname_buf), "%s", fmname );
 	    break;
     }
-    progname = progname_buf;
+    ProgInfo.progname = progname_buf;
 
     snprintf( default_settings, sizeof(default_settings),
 		"Default settings for '%s': %s --%s\n\n",
@@ -1584,7 +1584,7 @@ int main ( int argc, char ** argv )
     if ( argc < 2 )
     {
 	printf("\n%s\n%s%s\nVisit %s%s for more info.\n\n",
-		text_logo, progname, TITLE, URI_HOME, NAME );
+		text_logo, ProgInfo.progname, TITLE, URI_HOME, NAME );
 	hint_exit(ERR_OK);
     }
 
@@ -1607,7 +1607,7 @@ int main ( int argc, char ** argv )
 
     if (SIGINT_level)
 	ERROR0(ERR_INTERRUPT,"Program interrupted by user.");
-    return err > max_error ? err : max_error;
+    return err > ProgInfo.max_error ? err : ProgInfo.max_error;
 }
 
 //

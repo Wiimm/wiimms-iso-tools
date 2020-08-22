@@ -58,6 +58,17 @@ wit v3.02a r7679 - 2018-11-23
    default of --dsync is changed.
  - Some minor bug fixes.
 
+
+wit v3.03a r8245 - 2020-08-03
+
+ - Windows version only: Update to Cygwin DLL 3.0.7 / 2019-04-30.
+ - wit COPY accepts patch options now.
+ - Option --domain=DOMAIN: Bug fixed if DOMAIN contains exactly 16 characters.
+ - Bug fix: Gamecube games are accessible again.
+ - Bug fix for command wit CERT: Correct algorithm to verify signatures of
+   type 'Elliptic Curve'.
+
+
 @@MODULE(last-history.txt)@@
 
 ~

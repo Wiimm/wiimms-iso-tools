@@ -2050,11 +2050,14 @@ ccp PrintTimeByFormat
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time		// seconds since epoch -> time()
+    time_t		tim		// seconds since epoch; 0 is replaced by time()
 )
 {
+    if (!tim)
+	tim = time(0);
+
     char buf[100];
-    struct tm *tm = localtime(&time);
+    struct tm *tm = localtime(&tim);
     const uint len = strftime(buf,sizeof(buf),format,tm);
     return CopyCircBuf(buf,len+1);
 }
@@ -2066,11 +2069,14 @@ ccp PrintTimeByFormatUTC
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time		// seconds since epoch -> time()
+    time_t		tim		// seconds since epoch; 0 is replaced by time()
 )
 {
+    if (!tim)
+	tim = time(0);
+
     char buf[100];
-    struct tm *tm = gmtime(&time);
+    struct tm *tm = gmtime(&tim);
     const uint len = strftime(buf,sizeof(buf),format,tm);
     return CopyCircBuf(buf,len+1);
 }
@@ -2082,12 +2088,13 @@ ccp PrintUsecByFormat
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time,		// seconds since epoch -> time()
+					// 1-6 '@' in row replaced by digits of 'usec'
+    time_t		tim,		// seconds since epoch
     uint		usec		// micro second of second
 )
 {
     char buf[100];
-    struct tm *tm = localtime(&time);
+    struct tm *tm = localtime(&tim);
     const uint len = strftime(buf,sizeof(buf),format,tm);
     char *at = strchr(buf,'@');
     if (at)
@@ -2109,12 +2116,13 @@ ccp PrintUsecByFormatUTC
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time,		// seconds since epoch -> time()
+					// 1-6 '@' in row replaced by digits of 'usec'
+    time_t		tim,		// seconds since epoch
     uint		usec		// micro second of second
 )
 {
     char buf[100];
-    struct tm *tm = gmtime(&time);
+    struct tm *tm = gmtime(&tim);
     const uint len = strftime(buf,sizeof(buf),format,tm);
     char *at = strchr(buf,'@');
     if (at)

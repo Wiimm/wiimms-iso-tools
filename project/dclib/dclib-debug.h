@@ -41,23 +41,37 @@
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			program info			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[ProgInfo_t]]
+
+typedef struct ProgInfo_t
+{
+    ccp  progpath;		// full path of program, use ProgramPath() to access
+    ccp  progdir;		// directory part of progpath, use ProgramDirectory() to access
+    ccp  progname;		// program name, based on path or directly set
+
+    ccp  logdir;		// log directory, set by DefineLogDirectory()
+				// and GetLogDirectory()
+
+    ccp  toolname;		// name of the tool, set by SetupProgname()
+    ccp  toolversion;		// version of the tool, set by SetupProgname()
+    ccp  tooltitle;		// title of the tool, set by SetupProgname()
+
+    bool multi_processing;	// TRUE: program uses multiple thread
+
+    enumError	last_error;	// last error, set by PrintErrorArg()
+    enumError	max_error;	// max error, set by PrintErrorArg()
+    u32		error_count;	// number of errors, set by PrintErrorArg()
+}
+ProgInfo_t;
+
+extern ProgInfo_t ProgInfo;
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			error handling			///////////////
 ///////////////////////////////////////////////////////////////////////////////
-
-extern ccp progpath;	// full path of program, use ProgramPath() to access
-extern ccp progdir;	// directory part of progpath, use ProgramDirectory() to access
-extern ccp progname;	// program name, based on path or directly set
-
-extern ccp toolname;	// name of the tool, set by SetupProgname()
-extern ccp toolversion;	// version of the tool, set by SetupProgname()
-extern ccp tooltitle;	// title of the tool, set by SetupProgname()
-
-extern bool multi_processing;
-extern enumError last_error;
-extern enumError max_error;
-extern u32 error_count;
-
-//-----------------------------------------------------------------------------
 
 extern ccp (*GetErrorNameHook)( int stat, ccp ret_not_found );
 extern ccp (*GetErrorTextHook)( int stat, ccp ret_not_found );

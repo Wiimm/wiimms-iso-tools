@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -4222,8 +4222,8 @@ enumError AddWDisc ( WBFS_t * w, SuperFile_t * sf, const wd_select_t * psel )
     CloseWDisc(w);
 
     // this is needed for detailed error messages
-    const enumError saved_max_error = max_error;
-    max_error = 0;
+    const enumError saved_max_error = ProgInfo.max_error;
+    ProgInfo.max_error = 0;
 
     wbfs_param_t par;
     memset(&par,0,sizeof(par));
@@ -4273,9 +4273,9 @@ enumError AddWDisc ( WBFS_t * w, SuperFile_t * sf, const wd_select_t * psel )
     }
 
     // catch read/write errors
-    err = max_error = max_error > err ? max_error : err;
-    if ( max_error < saved_max_error )
-	max_error = saved_max_error;
+    err = ProgInfo.max_error = ProgInfo.max_error > err ? ProgInfo.max_error : err;
+    if ( ProgInfo.max_error < saved_max_error )
+	ProgInfo.max_error = saved_max_error;
 
     PrintSummarySF(sf);
 
@@ -4304,8 +4304,8 @@ enumError RemoveWDisc
 	return ERROR0(ERR_INTERNAL,0);
 
     // this is needed for detailed error messages
-    const enumError saved_max_error = max_error;
-    max_error = 0;
+    const enumError saved_max_error = ProgInfo.max_error;
+    ProgInfo.max_error = 0;
 
     // remove the disc
     enumError err = ERR_OK;
@@ -4336,9 +4336,9 @@ enumError RemoveWDisc
     }
 
     // catch read/write errors
-    err = max_error = max_error > err ? max_error : err;
-    if ( max_error < saved_max_error )
-	max_error = saved_max_error;
+    err = ProgInfo.max_error = ProgInfo.max_error > err ? ProgInfo.max_error : err;
+    if ( ProgInfo.max_error < saved_max_error )
+	ProgInfo.max_error = saved_max_error;
 
     // calculate the wbfs usage again
     CalcWBFSUsage(w);
