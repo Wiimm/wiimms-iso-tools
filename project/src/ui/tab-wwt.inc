@@ -766,6 +766,9 @@
   { T_OPT_CP,	"SORT",		"S|sort",
 		0, 0 /* copy of wit */ },
 
+  { T_OPT_CP,	"NO_SORT",	"no-sort|nosort",
+		0, 0 /* copy of wit */ },
+
   { T_OPT_CP,	"LIMIT",	"limit",
 		0, 0 /* copy of wit */ },
 
@@ -1119,6 +1122,7 @@
   { T_COPT,	"MIXED",	0,0,0 },
   { T_COPT,	"UNIQUE",	0,0,0 },
   { T_COPT,	"SORT",		0,0,0 },
+  { T_COPT,	"NO_SORT",	0,0,0 },
   { T_COPY_GRP,	"TIME",		0,0,0 },
   { T_COPT_M,	"LONG",		0,0,
 	"If set, the size in MiB and the region is printed too."

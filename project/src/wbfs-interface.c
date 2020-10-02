@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -171,7 +171,7 @@ int ScanDevForPartitions ( ccp dev_prefix )
 	}
 	closedir(dir);
     }
-    
+
     return count;
 }
 
@@ -999,7 +999,7 @@ enumError OpenParWBFS
     if ( maybe_wbfs_file && id_list[0][0] && wbfs_count_discs(w->wbfs) == 1 )
     {
 	noPRINT("A WBFS FILE\n");
-    	w->is_wbfs_file = true;
+	w->is_wbfs_file = true;
     }
 
  #ifdef DEBUG
@@ -1072,7 +1072,7 @@ enumError CreateGrowingWBFS ( WBFS_t * w, SuperFile_t * sf, off_t size, int sect
     par.num_hd_sector	= (u32)( size / sector_size );
     par.hd_sector_size	= sector_size;
     par.reset		= 1;
-    par.iinfo.mtime	= hton64(sf->f.fatt.mtime);
+    par.iinfo.mtime	= hton64(sf->f.fatt.mtime.tv_sec);
 
     sf->f.read_behind_eof = 2;
 
@@ -1504,7 +1504,7 @@ static void print_wbfs_section
 	,term_string
 	);
 }
- 
+
 //-----------------------------------------------------------------------------
 
 void LogOpenedWBFS
@@ -1525,7 +1525,7 @@ void LogOpenedWBFS
 
     if (!path)
 	path = w->sf ? w->sf->f.fname : "";
-	
+
     if (print_sections)
 	print_wbfs_section(w,count,total,path,"open","\n");
     else if (!count)
@@ -1579,7 +1579,7 @@ uint GetIdWBFS ( WBFS_t * wbfs, IdField_t * idf )
     DASSERT(wbfs);
     DASSERT(idf);
     uint count = 0;
-    
+
     wbfs_t *w = wbfs->wbfs;
     if (w)
     {
@@ -1587,7 +1587,7 @@ uint GetIdWBFS ( WBFS_t * wbfs, IdField_t * idf )
 	wd_header_t head;
 	char slot_name[20];
 	const int slot_fw = snprintf(slot_name,sizeof(slot_name),"#%u",w->max_disc-1);
-	
+
 	for ( slot = 0; slot < w->max_disc; slot++ )
 	    if (!wbfs_get_disc_info_by_slot(w,slot,(u8*)&head,sizeof(head),0,0,0,0))
 	    {
@@ -1597,7 +1597,7 @@ uint GetIdWBFS ( WBFS_t * wbfs, IdField_t * idf )
 		InsertIdField(idf,&head.disc_id,0,mtime,slot_name);
 	    }
     }
-    
+
     return count;
 }
 
@@ -1945,7 +1945,7 @@ enumError DumpWBFS
 		    off_t size = (idx-start) * wii_sec_per_wbfs_sect * (u64)WII_SECTOR_SIZE;
 
 		    if ( start == idx - 1 )
-		    	fprintf(f,"%*s%11u      : %9u      :%10llx ..%10llx :%9llx\n",
+			fprintf(f,"%*s%11u      : %9u      :%10llx ..%10llx :%9llx\n",
 			    ind,"",
 			    start,
 			    start + delta,
@@ -1953,7 +1953,7 @@ enumError DumpWBFS
 			    (u64)( off + size ),
 			    (u64)size );
 		    else
-		    	fprintf(f,"%*s%7u ..%6u : %5u .. %5u :%10llx ..%10llx :%9llx\n",
+			fprintf(f,"%*s%7u ..%6u : %5u .. %5u :%10llx ..%10llx :%9llx\n",
 			    ind,"",
 			    start,
 			    idx - 1,
@@ -2086,7 +2086,7 @@ int ScanOptWbfsAlloc ( ccp arg )
 	{ WBFS_BA_AVOID_FRAG,	"NO-FRAG",	"NOFRAG",	0 },
 	{0,0,0,0}
     };
-    
+
     const KeywordTab_t * cmd = ScanKeyword(0,arg,tab);
     if (cmd)
     {
@@ -2182,7 +2182,7 @@ static AWRecord_t * AW_insert_inode
     r->wbfs_sector_size	= 1 << inode->wbfs_sec_sz_s;
 
     snprintf(r->title,sizeof(r->title),"INODE-%s:",head);
-    
+
     if (inode->xtime)
     {
 	struct tm * tm = localtime(&inode->xtime);
@@ -2279,7 +2279,7 @@ static void AW_inodes ( AWData_t * awd, WFile_t * f, ccp data )
     }
 
     //----- find newest inode
-    
+
     if (max_time)
 	for ( iptr = inode_tab; iptr < inode_end; iptr++ )
 	    if ( iptr->xtime == max_time )
@@ -2316,10 +2316,10 @@ static void AW_discs ( AWData_t * awd, WFile_t * f, ccp data )
 
     const size_t WSS_MIN_LEVEL = 20;
     const size_t WSS_MAX_LEVEL = 28;
-    
+
     // helper vars
     int sec, level, total_count = 0;
-    
+
     // hss vars
     int first_sec_found = 0, max_level = 0;
     u32 sec_count[SEC_LEVEL];
@@ -2330,7 +2330,7 @@ static void AW_discs ( AWData_t * awd, WFile_t * f, ccp data )
     int wss_count[WSS_MAX_LEVEL], max_wss_count = 0;
     memset(wss_count,0,sizeof(wss_count));
     char buf[SEC_SIZE];
-    
+
     for ( sec = 1; sec <= SEC_MAX; sec++ )
     {
 	wd_header_t *wd = (wd_header_t *)( data + sec * SEC_SIZE );
@@ -2381,7 +2381,7 @@ static void AW_discs ( AWData_t * awd, WFile_t * f, ccp data )
 			    max_wss_count = wss_count[level];
 			    if ( max_wss_count >= 3 )
 			    {
-			  	wss = 1 << level;
+				wss = 1 << level;
 				break;
 			    }
 			}
@@ -2440,7 +2440,7 @@ static void AW_calc ( AWData_t * awd, WFile_t * f, u32 sec_size, bool old )
 
     if ( !f || f->st.st_size < sizeof(wbfs_head_t) )
 	return;
- 
+
     const int version	= old ? 0 : WBFS_VERSION;
     const u64 num_sec	= f->st.st_size / sec_size;
     const u32 n_wii_sec	= old
@@ -2480,7 +2480,7 @@ static void AW_calc ( AWData_t * awd, WFile_t * f, u32 sec_size, bool old )
 	snprintf(title,sizeof(title),"CALC %4u:",sec_size);
 	info = "calculation of init function";
     }
-    
+
     r = AW_get_record(awd);
     r->status		= old ? AW_OLD_CALC : AW_CALC;
     r->magic_found	= false;
@@ -2507,7 +2507,7 @@ int AnalyzeWBFS ( AWData_t * awd, WFile_t * f )
     TRACE("AnalyzeWBFS(%p,%p)\n",awd,f);
 
     //----- scan wbfs header
-    
+
     AW_header(awd,f);
 
     //----- scan disc infos
@@ -2582,7 +2582,7 @@ int PrintAnalyzeWBFS
 {
     DASSERT(out);
     DASSERT(awd);
-    
+
     if ( !out || !awd->n_record )
 	return 0;
     if ( print_calc < 2 && ( awd->rec->status == AW_CALC || awd->rec->status == AW_OLD_CALC ))
@@ -2609,7 +2609,7 @@ int PrintAnalyzeWBFS
 	const bool is_calc =  ar->status == AW_CALC || ar->status == AW_OLD_CALC;
 	if ( !print_calc && is_calc )
 	    continue;
-	
+
 	ccp info = ar->info;
 	if ( i > 0 && ar->status == ar[-1].status && is_calc )
 	{
@@ -3753,7 +3753,7 @@ static int sort_by_size ( const void * va, const void * vb )
 
     const u32 ab = a->used_blocks ? a->used_blocks : a->size_mib * WII_SECTORS_PER_MIB;
     const u32 bb = b->used_blocks ? b->used_blocks : b->size_mib * WII_SECTORS_PER_MIB;
-    
+
     return ab < bb ? -1 : ab > bb ? +1 : sort_by_title(va,vb);
 }
 
@@ -3775,15 +3775,22 @@ static int sort_by_mtime ( const void * va, const void * vb )
     const WDiscListItem_t * a = (const WDiscListItem_t *)va;
     const WDiscListItem_t * b = (const WDiscListItem_t *)vb;
 
-    return a->fatt.mtime > b->fatt.mtime ?  1
-	 : a->fatt.mtime < b->fatt.mtime ? -1
-	 : a->fatt.itime > b->fatt.itime ?  1
-	 : a->fatt.itime < b->fatt.itime ? -1
-	 : a->fatt.ctime > b->fatt.ctime ?  1
-	 : a->fatt.ctime < b->fatt.ctime ? -1
-	 : a->fatt.atime > b->fatt.atime ?  1
-	 : a->fatt.atime < b->fatt.atime ? -1
-	 : sort_by_title(va,vb);
+    int stat = CompareTimeSpec(&a->fatt.mtime,&b->fatt.mtime);
+    if (!stat)
+    {
+	stat = CompareTimeSpec(&a->fatt.itime,&b->fatt.itime);
+	if (!stat)
+	{
+	    stat = CompareTimeSpec(&a->fatt.ctime,&b->fatt.ctime);
+	    if (!stat)
+	    {
+		stat = CompareTimeSpec(&a->fatt.atime,&b->fatt.atime);
+		if (!stat)
+		    stat = sort_by_title(va,vb);
+	    }
+	}
+    }
+    return stat;
 }
 
 //-----------------------------------------------------------------------------
@@ -3793,11 +3800,14 @@ static int sort_by_itime ( const void * va, const void * vb )
     const WDiscListItem_t * a = (const WDiscListItem_t *)va;
     const WDiscListItem_t * b = (const WDiscListItem_t *)vb;
 
-    return a->fatt.itime > b->fatt.itime ?  1
-	 : a->fatt.itime < b->fatt.itime ? -1
-	 : a->fatt.ctime > b->fatt.ctime ?  1
-	 : a->fatt.ctime < b->fatt.ctime ? -1
-	 : sort_by_mtime(va,vb);
+    int stat = CompareTimeSpec(&a->fatt.itime,&b->fatt.itime);
+    if (!stat)
+    {
+	stat = CompareTimeSpec(&a->fatt.ctime,&b->fatt.ctime);
+	if (!stat)
+	    stat = sort_by_mtime(va,vb);
+    }
+    return stat;
 }
 
 //-----------------------------------------------------------------------------
@@ -3807,9 +3817,8 @@ static int sort_by_ctime ( const void * va, const void * vb )
     const WDiscListItem_t * a = (const WDiscListItem_t *)va;
     const WDiscListItem_t * b = (const WDiscListItem_t *)vb;
 
-    return a->fatt.ctime > b->fatt.ctime ?  1
-	 : a->fatt.ctime < b->fatt.ctime ? -1
-	 : sort_by_mtime(va,vb);
+    const int stat = CompareTimeSpec(&a->fatt.ctime,&b->fatt.ctime);
+    return stat ? stat : sort_by_mtime(va,vb);
 }
 
 //-----------------------------------------------------------------------------
@@ -3819,9 +3828,8 @@ static int sort_by_atime ( const void * va, const void * vb )
     const WDiscListItem_t * a = (const WDiscListItem_t *)va;
     const WDiscListItem_t * b = (const WDiscListItem_t *)vb;
 
-    return a->fatt.atime > b->fatt.atime ?  1
-	 : a->fatt.atime < b->fatt.atime ? -1
-	 : sort_by_mtime(va,vb);
+    const int stat = CompareTimeSpec(&a->fatt.atime,&b->fatt.atime);
+    return stat ? stat : sort_by_mtime(va,vb);
 }
 
 //-----------------------------------------------------------------------------
@@ -4006,10 +4014,10 @@ void PrintSectWDiscListItem ( FILE * f, WDiscListItem_t * witem, ccp def_fname )
     if (witem->used_blocks)
 	fprintf(f,"used-blocks=%u\n",witem->used_blocks);
 
-    print_sect_time(f,'i',witem->fatt.itime);
-    print_sect_time(f,'m',witem->fatt.mtime);
-    print_sect_time(f,'c',witem->fatt.ctime);
-    print_sect_time(f,'a',witem->fatt.atime);
+    print_sect_time(f,'i',witem->fatt.itime.tv_sec);
+    print_sect_time(f,'m',witem->fatt.mtime.tv_sec);
+    print_sect_time(f,'c',witem->fatt.ctime.tv_sec);
+    print_sect_time(f,'a',witem->fatt.atime.tv_sec);
     //fprintf(f,"part_index=%u\n",witem->part_index);
     //fprintf(f,"n_part=%u\n",witem->n_part);
 
@@ -4222,8 +4230,8 @@ enumError AddWDisc ( WBFS_t * w, SuperFile_t * sf, const wd_select_t * psel )
     CloseWDisc(w);
 
     // this is needed for detailed error messages
-    const enumError saved_max_error = max_error;
-    max_error = 0;
+    const enumError saved_max_error = ProgInfo.max_error;
+    ProgInfo.max_error = 0;
 
     wbfs_param_t par;
     memset(&par,0,sizeof(par));
@@ -4231,7 +4239,7 @@ enumError AddWDisc ( WBFS_t * w, SuperFile_t * sf, const wd_select_t * psel )
     par.callback_data		= sf;
     par.spinner			= sf->show_progress ? PrintProgressSF : 0;
     par.psel			= psel;
-    par.iinfo.mtime		= hton64(sf->f.fatt.mtime);
+    par.iinfo.mtime		= hton64(sf->f.fatt.mtime.tv_sec);
     par.iso_size		= sf->file_size;
     par.wd_disc			= OpenDiscSF(sf,false,true);
 
@@ -4269,13 +4277,13 @@ enumError AddWDisc ( WBFS_t * w, SuperFile_t * sf, const wd_select_t * psel )
 	ASSERT(w->sf);
 	TRACE("AddWDisc/stat: w=%p, slot=%d, w->sf=%p, oft=%d\n",
 		w, w->disc_slot, w->sf, w->sf->iod.oft );
-        err = RewriteModifiedSF(sf,0,w,0);
+	err = RewriteModifiedSF(sf,0,w,0);
     }
 
     // catch read/write errors
-    err = max_error = max_error > err ? max_error : err;
-    if ( max_error < saved_max_error )
-	max_error = saved_max_error;
+    err = ProgInfo.max_error = ProgInfo.max_error > err ? ProgInfo.max_error : err;
+    if ( ProgInfo.max_error < saved_max_error )
+	ProgInfo.max_error = saved_max_error;
 
     PrintSummarySF(sf);
 
@@ -4304,8 +4312,8 @@ enumError RemoveWDisc
 	return ERROR0(ERR_INTERNAL,0);
 
     // this is needed for detailed error messages
-    const enumError saved_max_error = max_error;
-    max_error = 0;
+    const enumError saved_max_error = ProgInfo.max_error;
+    ProgInfo.max_error = 0;
 
     // remove the disc
     enumError err = ERR_OK;
@@ -4336,9 +4344,9 @@ enumError RemoveWDisc
     }
 
     // catch read/write errors
-    err = max_error = max_error > err ? max_error : err;
-    if ( max_error < saved_max_error )
-	max_error = saved_max_error;
+    err = ProgInfo.max_error = ProgInfo.max_error > err ? ProgInfo.max_error : err;
+    if ( ProgInfo.max_error < saved_max_error )
+	ProgInfo.max_error = saved_max_error;
 
     // calculate the wbfs usage again
     CalcWBFSUsage(w);

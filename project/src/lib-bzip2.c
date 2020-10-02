@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -436,6 +436,28 @@ enumError DecBZIP2
 	*dest_written = 0;
     }
     return err;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////		    DecodeBZIP2Manager()		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+enumError DecodeBZIP2Manager
+(
+    BZ2Manager_t	*mgr		// manager data
+)
+{
+    DASSERT(mgr);
+
+    if (!mgr->data)
+    {
+	mgr->size = 0;
+	if (mgr->src_data)
+	    return DecBZIP2(&mgr->data,&mgr->size,mgr->src_data,mgr->src_size);
+    }
+
+    return ERR_OK;
 }
 
 //

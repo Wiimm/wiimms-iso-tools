@@ -92,7 +92,8 @@ static inline void dclibPrintSystem ( FILE * f )
 	"SYSTEM_LINUX\t:= 1\n"
   #endif
 	,SYSTEM
-	,SYSTEMID );
+	,SYSTEMID
+	);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

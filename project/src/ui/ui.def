@@ -1061,6 +1061,10 @@
 	" CTIME, ATIME, TIME = DATE, DEFAULT, ASCENDING, DESCENDING =" \
 	" REVERSE@." )
 
+#:def_opt( "NO_SORT", "no-sort|nosort", "C", \
+	"", \
+	"Don't sort. Same as {--sort=none}." )
+
 #:def_opt( "LIMIT", "limit", "CP", \
 	"num", \
 	"Limit the output to NUM messages." )
@@ -1206,6 +1210,15 @@
 	"", \
 	"If printing, print the complete key as hex dump, not only the first" \
 	" bytes. If set twice, print BASE64 encoded." )
+
+#:def_cmd_opt( "CERT", "SORT", \
+	"", \
+	"Define the sort mode for the certificate listing. The parameter is" \
+	" either @NONE, ASCENDING@ or @DESCENDING = REVERSE@." )
+
+#:def_cmd_opt( "CERT", "NO_SORT", \
+	"", \
+	" Disable sorting of keys." )
 
 #:def_cmd_opt( "CREATE", "TEST", \
 	"", \
@@ -2081,6 +2094,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST", "SECTIONS", \
 	"", \
 	"" )
@@ -2216,6 +2233,10 @@
 	"" )
 
 #:def_cmd_opt( "LIST_L", "SORT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "LIST_L", "NO_SORT", \
 	"", \
 	"" )
 
@@ -2357,6 +2378,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST_LL", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST_LL", "SECTIONS", \
 	"", \
 	"" )
@@ -2492,6 +2517,10 @@
 	"" )
 
 #:def_cmd_opt( "LIST_LLL", "SORT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "LIST_LLL", "NO_SORT", \
 	"", \
 	"" )
 
@@ -2675,6 +2704,10 @@
 	" separated list of the following keywords: NONE, NAME, SIZE, OFFSET," \
 	" ASCENDING, DESCENDING = REVERSE." )
 
+#:def_cmd_opt( "FILES", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "FILES_L", "AUTO", \
 	"", \
 	"" )
@@ -2805,6 +2838,10 @@
 	" separated list of the following keywords: NONE, NAME, SIZE, OFFSET," \
 	" ASCENDING, DESCENDING = REVERSE." )
 
+#:def_cmd_opt( "FILES_L", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "FILES_LL", "AUTO", \
 	"", \
 	"" )
@@ -2934,6 +2971,10 @@
 	"Define the sort mode for the file listing. The parameter is a comma" \
 	" separated list of the following keywords: NONE, NAME, SIZE, OFFSET," \
 	" ASCENDING, DESCENDING = REVERSE." )
+
+#:def_cmd_opt( "FILES_LL", "NO_SORT", \
+	"", \
+	"" )
 
 #:def_cmd_opt( "DIFF", "TEST", \
 	"", \
@@ -3525,6 +3566,10 @@
 	" of the following keywords: NONE, NAME, SIZE, OFFSET, ASCENDING," \
 	" DESCENDING = REVERSE." )
 
+#:def_cmd_opt( "EXTRACT", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "EXTRACT", "QUIET", \
 	"", \
 	"" )
@@ -3783,6 +3828,10 @@
 	"Define the extracting order. The parameter is a comma separated list" \
 	" of the following keywords: NONE, NAME, SIZE, OFFSET, ASCENDING," \
 	" DESCENDING = REVERSE." )
+
+#:def_cmd_opt( "COPY", "NO_SORT", \
+	"", \
+	"" )
 
 #:def_cmd_opt( "COPY", "QUIET", \
 	"", \
@@ -6398,6 +6447,10 @@
 	" CTIME, ATIME, TIME = DATE, DEFAULT, ASCENDING, DESCENDING =" \
 	" REVERSE@." )
 
+#:def_opt( "NO_SORT", "no-sort|nosort", "CP", \
+	"", \
+	"Don't sort. Same as {--sort=none}." )
+
 #:def_opt( "LIMIT", "limit", "CP", \
 	"num", \
 	"Limit the output to NUM messages." )
@@ -6717,6 +6770,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST", "ITIME", \
 	"", \
 	"" )
@@ -6820,6 +6877,10 @@
 	"" )
 
 #:def_cmd_opt( "LIST_L", "SORT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "LIST_L", "NO_SORT", \
 	"", \
 	"" )
 
@@ -6929,6 +6990,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST_LL", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST_LL", "ITIME", \
 	"", \
 	"" )
@@ -7032,6 +7097,10 @@
 	"" )
 
 #:def_cmd_opt( "LIST_LLL", "SORT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "LIST_LLL", "NO_SORT", \
 	"", \
 	"" )
 
@@ -7141,6 +7210,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST_A", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST_A", "ITIME", \
 	"", \
 	"" )
@@ -7244,6 +7317,10 @@
 	"" )
 
 #:def_cmd_opt( "LIST_M", "SORT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "LIST_M", "NO_SORT", \
 	"", \
 	"" )
 
@@ -7353,6 +7430,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST_U", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST_U", "ITIME", \
 	"", \
 	"" )
@@ -7456,6 +7537,10 @@
 	"" )
 
 #:def_cmd_opt( "LIST_F", "SORT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "LIST_F", "NO_SORT", \
 	"", \
 	"" )
 

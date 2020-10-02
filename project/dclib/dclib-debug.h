@@ -41,23 +41,37 @@
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			program info			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[ProgInfo_t]]
+
+typedef struct ProgInfo_t
+{
+    ccp  progpath;		// full path of program, use ProgramPath() to access
+    ccp  progdir;		// directory part of progpath, use ProgramDirectory() to access
+    ccp  progname;		// program name, based on path or directly set
+
+    ccp  logdir;		// log directory, set by DefineLogDirectory()
+				// and GetLogDirectory()
+
+    ccp  toolname;		// name of the tool, set by SetupProgname()
+    ccp  toolversion;		// version of the tool, set by SetupProgname()
+    ccp  tooltitle;		// title of the tool, set by SetupProgname()
+
+    bool multi_processing;	// TRUE: program uses multiple thread
+
+    enumError	last_error;	// last error, set by PrintErrorArg()
+    enumError	max_error;	// max error, set by PrintErrorArg()
+    u32		error_count;	// number of errors, set by PrintErrorArg()
+}
+ProgInfo_t;
+
+extern ProgInfo_t ProgInfo;
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			error handling			///////////////
 ///////////////////////////////////////////////////////////////////////////////
-
-extern ccp progpath;	// full path of program, use ProgramPath() to access
-extern ccp progdir;	// directory part of progpath, use ProgramDirectory() to access
-extern ccp progname;	// program name, based on path or directly set
-
-extern ccp toolname;	// name of the tool, set by SetupProgname()
-extern ccp toolversion;	// version of the tool, set by SetupProgname()
-extern ccp tooltitle;	// title of the tool, set by SetupProgname()
-
-extern bool multi_processing;
-extern enumError last_error;
-extern enumError max_error;
-extern u32 error_count;
-
-//-----------------------------------------------------------------------------
 
 extern ccp (*GetErrorNameHook)( int stat, ccp ret_not_found );
 extern ccp (*GetErrorTextHook)( int stat, ccp ret_not_found );
@@ -126,28 +140,11 @@ bool mark_used ( ccp name, ... );
 ///////////////			    hexdump			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-// 0: don't use XDump
-// 1: use 'enable_xdump_wrapper' to decide and init it with FALSE
-// 2: use 'enable_xdump_wrapper' to decide and init it with TRUE
-// 3: force usage of XDump
-
-#ifndef ENABLE_HEXDUMP_WRAPPER
-  #ifdef TEST
-    #define ENABLE_HEXDUMP_WRAPPER 3
-  #else
-    #define ENABLE_HEXDUMP_WRAPPER 3
-  #endif
-#endif
-
-///////////////////////////////////////////////////////////////////////////////
-
-#if ENABLE_HEXDUMP_WRAPPER
- extern int enable_xdump_wrapper;
-#endif
-
 extern ccp  hexdump_prefix;
 extern ccp  hexdump_eol;
 extern bool hexdump_align;
+
+//-----------------------------------------------------------------------------
 
 // HexDump*() return the number of printed lines
 
@@ -186,7 +183,7 @@ void HexDiff16 ( FILE * f, int indent, u64 addr,
 //  If symbol 'DEBUG' or symbol _DEBUG' is defined, then and only then
 //  DEBUG, DASSERT and TRACING are enabled.
 //
-//  There are to function like macros defined:
+//  Defined functions/macros:
 //
 //     TRACE ( ccp format, ... );
 //        Print to console only if TRACING is enabled.
@@ -197,10 +194,10 @@ void HexDiff16 ( FILE * f, int indent, u64 addr,
 //        Like TRACE(), but print only if 'condition' is true.
 //
 //     TRACELINE
-//        Print out current line and source.
+//        Print out current line and source if TRACING is defined.
 //
 //     TRACE_SIZEOF ( object_or_type );
-//        Print out `sizeof(object_or_type)´
+//        Print out `sizeof(object_or_type)´ if TRACING is defined.
 //
 //     ASSERT(cond);
 //	  If condition is false: print info and exit program.

@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -93,30 +93,9 @@ static void help_exit( bool xmode )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static void print_version_section ( bool print_header )
+static void print_version_section ( bool print_sect_header )
 {
-    if (print_header)
-	fputs("[version]\n",stdout);
-
-    const u32 base = 0x04030201;
-    const u8 * e = (u8*)&base;
-    const u32 endian = be32(e);
-
-    printf( "prog=" WWT_SHORT "\n"
-	    "name=" WWT_LONG "\n"
-	    "version=" VERSION "\n"
-	    "beta=%d\n"
-	    "revision=" REVISION  "\n"
-	    "system=" SYSTEM "\n"
-	    "endian=%u%u%u%u %s\n"
-	    "author=" AUTHOR "\n"
-	    "date=" DATE "\n"
-	    "url=" URI_HOME WWT_SHORT "\n"
-	    "\n"
-	    , BETA_VERSION
-	    , e[0], e[1], e[2], e[3]
-	    , endian == 0x01020304 ? "little"
-	    : endian == 0x04030201 ? "big" : "mixed" );
+    cmd_version_section(print_sect_header,WWT_SHORT,WWT_LONG);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -163,11 +142,11 @@ static void hint_exit ( enumError stat )
     if ( current_command )
 	fprintf(stderr,
 	    "-> Type '%s help %s' (pipe it to a pager like 'less') for more help.\n\n",
-	    progname, CommandInfo[current_command->id].name1 );
+	    ProgInfo.progname, CommandInfo[current_command->id].name1 );
     else
 	fprintf(stderr,
 	    "-> Type '%s -h' or '%s help' (pipe it to a pager like 'less') for more help.\n\n",
-	    progname, progname );
+	    ProgInfo.progname, ProgInfo.progname );
     exit(stat);
 }
 
@@ -1055,7 +1034,7 @@ enumError cmd_format()
 	fprintf(stderr,
 		"!! %s: Option --force must be set to formatting a WBFS!\n"
 		"!! %s:   => test mode (like --test) enabled!\n\n",
-		    progname, progname );
+		    ProgInfo.progname, ProgInfo.progname );
 
     }
     else if (verbose>=0)
@@ -1134,7 +1113,7 @@ enumError cmd_format()
 	    {
 		ERROR0(ERR_WRONG_FILE_TYPE,
 		    "%s: Neither regular file nor block device: %s\n",
-				progname, param->arg);
+				ProgInfo.progname, param->arg);
 		continue;
 	    }
 	}
@@ -1295,7 +1274,7 @@ enumError cmd_recover()
     if ( verbose > 0 )
 	putchar('\n');
 
-    return err_count ? ERR_WBFS_INVALID : max_error;
+    return err_count ? ERR_WBFS_INVALID : ProgInfo.max_error;
 }
 
 //
@@ -1367,7 +1346,7 @@ enumError cmd_check()
     if ( verbose > 0 && !print_sections )
 	putchar('\n');
 
-    return err_count ? ERR_WBFS_INVALID : max_error;
+    return err_count ? ERR_WBFS_INVALID : ProgInfo.max_error;
 }
 
 //
@@ -1812,7 +1791,7 @@ enumError cmd_phantom()
 	    printf("\n");
     }
 
-    return max_error;
+    return ProgInfo.max_error;
 }
 
 //
@@ -1887,7 +1866,7 @@ enumError cmd_truncate()
     if ( verbose >= 0 && wbfs_count > 1 )
 	printf("** %d of %d WBFS truncated.\n",wbfs_mod_count,wbfs_count);
 
-    return max_error;
+    return ProgInfo.max_error;
 }
 
 //
@@ -2063,7 +2042,7 @@ enumError exec_add ( SuperFile_t * sf, Iterator_t * it )
     int  exists    = -1; // -1=unknown, 0=nonexist, 1=exist
 
     if (   it->newer
-	&& sf->f.fatt.mtime
+	&& sf->f.fatt.mtime.tv_sec
 	&& OpenWDiscID6(it->wbfs,sf->f.id6_dest) == ERR_OK )
     {
 	exists = 1;
@@ -2073,7 +2052,7 @@ enumError exec_add ( SuperFile_t * sf, Iterator_t * it )
 	const time_t mtime = ntoh64(iinfo->mtime);
 	if (mtime)
 	{
-	    overwrite = sf->f.fatt.mtime > mtime;
+	    overwrite = sf->f.fatt.mtime.tv_sec > mtime;
 	    update = !overwrite;
 	}
 	CloseWDisc(it->wbfs);
@@ -2116,8 +2095,8 @@ enumError exec_add ( SuperFile_t * sf, Iterator_t * it )
 	{
 	    printf("! DISC %s [%s] already exists -> ignore\n",
 		    sf->f.fname, sf->f.id6_dest );
-	    if ( max_error < ERR_JOB_IGNORED )
-		max_error = ERR_JOB_IGNORED;
+	    if ( ProgInfo.max_error < ERR_JOB_IGNORED )
+		ProgInfo.max_error = ERR_JOB_IGNORED;
 	    return ERR_OK;
 	}
     }
@@ -2391,19 +2370,19 @@ enumError cmd_add()
 	}
 	// [[2do]] missing: totals if n_wbfs > 1
     }
-    max_error = SourceIteratorWarning(&it,max_error,false);
+    ProgInfo.max_error = SourceIteratorWarning(&it,ProgInfo.max_error,false);
 
-    if ( !max_error && OptionUsed[OPT_REMOVE] && !SIGINT_level )
+    if ( !ProgInfo.max_error && OptionUsed[OPT_REMOVE] && !SIGINT_level )
     {
 	if (( testmode || verbose >= 0 ) && !print_sections )
 	    printf("%semove source files\n", testmode ? "WOULD r" : "R" );
 	it.func = exec_rm_source;
-	SourceIteratorCollected(&it,0,0,false); // max_error is adjusted automatically!
+	SourceIteratorCollected(&it,0,0,false); // ProgInfo.max_error is adjusted automatically!
     }
 
     ResetIterator(&it);
     ResetWBFS(&wbfs);
-    return max_error;
+    return ProgInfo.max_error;
 }
 
 //
@@ -2923,7 +2902,7 @@ enumError cmd_extract()
 	    printf("\n");
     }
 
-    return max_error;
+    return ProgInfo.max_error;
 }
 
 //
@@ -3122,7 +3101,7 @@ enumError cmd_scrub()
 	    printf("\n");
     }
 
-    return max_error;
+    return ProgInfo.max_error;
 }
 
 //
@@ -3272,7 +3251,7 @@ enumError cmd_remove()
 	    printf("\n");
     }
 
-    return max_error;
+    return ProgInfo.max_error;
 }
 
 //
@@ -3429,7 +3408,7 @@ enumError cmd_rename ( bool rename_id )
 	    printf("\n");
     }
 
-    return max_error;
+    return ProgInfo.max_error;
 }
 
 //
@@ -3555,7 +3534,7 @@ enumError cmd_touch()
 	    printf("\n");
     }
 
-    return max_error;
+    return ProgInfo.max_error;
 }
 
 //
@@ -3743,7 +3722,7 @@ enumError cmd_verify()
 	    printf("\n");
     }
 
-    return max_error;
+    return ProgInfo.max_error;
 }
 
 //
@@ -3841,7 +3820,7 @@ enumError cmd_skeletonize()
     if ( !OptionUsed[OPT_IGNORE] && !SIGINT_level )
 	DumpParamDB(SEL_UNUSED,true);
 
-    return max_error;
+    return ProgInfo.max_error;
 }
 
 //
@@ -4098,6 +4077,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_SECTIONS:	print_sections++; break;
 	case GO_SHOW:		err += ScanOptShow(optarg); break;
 	case GO_SORT:		err += ScanOptSort(optarg); break;
+	case GO_NO_SORT:	err += ScanOptSort("none"); break;
 
 	case GO_AUTO:
 	    if (!opt_auto)
@@ -4193,7 +4173,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
     if ( verbose > 3 && !is_env )
     {
 	print_title(stdout);
-	printf("PROGRAM_NAME   = %s\n",progname);
+	printf("PROGRAM_NAME   = %s\n",ProgInfo.progname);
 	if (lang_info)
 	    printf("LANG_INFO      = %s\n",lang_info);
 	ccp * sp;
@@ -4202,7 +4182,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	printf("\n");
     }
 
-    return !err ? ERR_OK : max_error ? max_error : ERR_SYNTAX;
+    return !err ? ERR_OK : ProgInfo.max_error ? ProgInfo.max_error : ERR_SYNTAX;
 }
 
 //

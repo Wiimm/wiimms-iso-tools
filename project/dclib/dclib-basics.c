@@ -148,12 +148,13 @@ void PrintSettingsDCLIB ( FILE *f, int indent )
  #endif
 }
 
+//
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 void SetupMultiProcessing()
 {
-    multi_processing = true;
+    ProgInfo.multi_processing = true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -161,27 +162,28 @@ void SetupMultiProcessing()
 void SetupProgname ( int argc, char ** argv, ccp tname, ccp tvers, ccp ttitle )
 {
     if (tname)
-	toolname = tname;
+	ProgInfo.toolname = tname;
     if (tvers)
-	toolversion = tvers;
+	ProgInfo.toolversion = tvers;
     if (ttitle)
-	tooltitle = ttitle;
+	ProgInfo.tooltitle = ttitle;
 
-    if (!progpath)
+    if (!ProgInfo.progpath)
     {
 	char path[PATH_MAX];
 	int res = GetProgramPath( path, sizeof(path), true, argc > 0 ? argv[0] : 0 );
 	if ( res > 0 )
-	    progpath = STRDUP(path);
+	    ProgInfo.progpath = STRDUP(path);
     }
 
     if ( argc > 0 && *argv && **argv )
     {
 	ccp slash = strrchr(*argv,'/');
-	progname = slash ? slash + 1 : *argv;
+	ProgInfo.progname = slash ? slash + 1 : *argv;
     }
     else
-	progname = toolname && *toolname ? toolname : "?";
+	ProgInfo.progname = ProgInfo.toolname && *ProgInfo.toolname
+				? ProgInfo.toolname : "?";
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -189,33 +191,78 @@ void SetupProgname ( int argc, char ** argv, ccp tname, ccp tvers, ccp ttitle )
 ccp ProgramPath()
 {
     static bool done = false;
-    if ( !progpath && !done )
+    if ( !ProgInfo.progpath && !done )
     {
 	done = true;
 
 	char path[PATH_MAX];
 	int res = GetProgramPath( path, sizeof(path), true, 0 );
 	if ( res > 0 )
-	    progpath = STRDUP(path);
+	    ProgInfo.progpath = STRDUP(path);
     }
-    return progpath;
+    return ProgInfo.progpath;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 ccp ProgramDirectory()
 {
-    if (!progdir)
+    if (!ProgInfo.progdir)
     {
 	ccp path = ProgramPath();
 	if (path)
 	{
 	    ccp end = strrchr(path,'/');
 	    const uint len = end ? end - path : strlen(path);
-	    progdir = MEMDUP(path,len);
+	    ProgInfo.progdir = MEMDUP(path,len);
 	}
     }
-    return progdir;
+    return ProgInfo.progdir;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void DefineLogDirectory ( ccp path0, bool force )
+{
+    PRINT("DefineLogDirectory(%s,%d)\n",path0,force);
+    if ( path0 && *path0 && ( force || !ProgInfo.logdir ))
+    {
+	char path[PATH_MAX];
+	StringCopyS(path,sizeof(path),path0);
+	if (!ExistDirectory(path,0))
+	{
+	    char *slash = strrchr(path,'/');
+	    if (slash)
+		*slash = 0;
+	    else
+	    {
+		path[0] = '.';
+		path[1] = 0;
+	    }
+
+	    if (!ExistDirectory(path,0))
+		return;
+	}
+
+	int len = strlen(path);
+	while ( len > 0 && path[len-1] == '/' )
+	     path[--len] = 0;
+
+	if ( len > 0 )
+	{
+	    FreeString(ProgInfo.logdir);
+	    ProgInfo.logdir = MEMDUP(path,len);
+	    PRINT("#LOG-DIR: %s\n",ProgInfo.logdir);
+	}
+    }
+}
+
+//-----------------------------------------------------------------------------
+
+ccp GetLogDirectory()
+{
+    return ProgInfo.logdir ? ProgInfo.logdir : ".";
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -401,8 +448,8 @@ char * StringCat2E ( char * buf, ccp buf_end, ccp src1, ccp src2 )
     // RESULT: end of copied string pointing to NULL
     // 'src*' may be a NULL pointer.
 
-    ASSERT(buf);
-    ASSERT(buf<buf_end);
+    DASSERT(buf);
+    DASSERT(buf<buf_end);
     buf_end--;
 
     if (src1)
@@ -431,8 +478,8 @@ char * StringCat3E ( char * buf, ccp buf_end, ccp src1, ccp src2, ccp src3 )
     // RESULT: end of copied string pointing to NULL
     // 'src*' may be a NULL pointer.
 
-    ASSERT(buf);
-    ASSERT(buf<buf_end);
+    DASSERT(buf);
+    DASSERT(buf<buf_end);
     buf_end--;
 
     if (src1)
@@ -2049,7 +2096,7 @@ int ScanSplitArg
 	**argv_buf  = argv_predef,
 	**argv_dest = argv_predef,
 	**argv_end  = argv_predef + N_PREDEF;
-    *argv_dest++ = progname ? (char*)progname : "";
+    *argv_dest++ = ProgInfo.progname ? (char*)ProgInfo.progname : "";
     uint argv_size = 0;
 
     if (!work_buf)
@@ -2338,11 +2385,13 @@ void MoveMemList ( mem_list_t *dest, mem_list_t *src )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void GrowBufMemList ( mem_list_t *ml, uint need_size )
+void NeedBufMemList ( mem_list_t *ml, uint need_size, uint extra_size )
 {
+    need_size += ml->buf_used;
     if ( ml->buf_size < need_size )
     {
-	PRINT("MEM-LIST: MALLOC/BUF(%u)\n",need_size);
+	need_size = GetGoodAllocSize(need_size+extra_size);
+	PRINT("MEM-LIST: MALLOC/BUF(%u/%u>%u)\n",ml->buf_used,ml->buf_size,need_size);
 	char *new_buf = MALLOC(need_size);
 
 	//--- copy existing strings
@@ -2351,14 +2400,13 @@ void GrowBufMemList ( mem_list_t *ml, uint need_size )
 	mem_t *dest = ml->list;
 	uint i;
 	for ( i = 0; i < ml->used; i++, dest++ )
-	    if ( dest->len )
+	    if (dest->len)
 	    {
 		memcpy(bufptr,dest->ptr,dest->len);
 		dest->ptr = bufptr;
 		bufptr += dest->len;
 		*bufptr++ = 0;
 		DASSERT( bufptr <= new_buf + need_size );
-		noPRINT("OLD: %p,%u\n",dest->ptr,dest->len);
 	    }
 	FREE(ml->buf);
 	ml->buf      = new_buf;
@@ -2369,17 +2417,18 @@ void GrowBufMemList ( mem_list_t *ml, uint need_size )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void PrepareMemList ( mem_list_t *ml, uint n_elem, uint buf_size )
+void NeedElemMemList ( mem_list_t *ml, uint need_elem, uint need_size )
 {
     DASSERT(ml);
-    if ( ml->size < n_elem )
+    need_elem += ml->used;
+    if ( ml->size < need_elem )
     {
-	ml->size = n_elem;
+	ml->size = GetGoodAllocSize2(need_elem,sizeof(*ml->list));
 	PRINT("MEM-LIST: REALLOC/LIST(%u)\n",ml->size);
 	ml->list = REALLOC(ml->list,sizeof(*ml->list)*ml->size);
     }
 
-    GrowBufMemList(ml,buf_size);
+    NeedBufMemList(ml,need_size,0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2439,8 +2488,8 @@ void InsertMemListN
 	need_size += ml->buf_used + 20;
 	need_size += need_size/10;
 
-	// don't use GrowBufMemList() here, because the old buffer is needed
-	// BUT: char old_buf = ml->buf; ml->buf = 0; GrowBufMemList(ml,need_size)
+	// don't use NeedBufMemList() here, because the old buffer is needed
+	// BUT POSSIBLE: char old_buf = ml->buf; ml->buf = 0; GrowBufMemList(ml,need_size)
 
 	PRINT("MEM-LIST: MALLOC/BUF(%u)\n",need_size);
 	bufptr = new_buf = MALLOC(need_size);
@@ -3614,10 +3663,11 @@ uint SplitByCharMemList
     if (init_ml)
 	InitializeMemList(ml);
     ml->used = 0;
+    ml->buf_used = 0;
+    NeedBufMemList(ml,source.len+1,0);
 
     if ( max_fields <= 0 )
 	max_fields = INT_MAX;
-    GrowBufMemList(ml,source.len+1);
 
     ccp src = source.ptr;
     ccp end = src + source.len;
@@ -3659,10 +3709,11 @@ uint SplitByTextMemList
     if (init_ml)
 	InitializeMemList(ml);
     ml->used = 0;
+    ml->buf_used = 0;
+    NeedBufMemList(ml,source.len+1,0);
 
     if ( max_fields <= 0 )
 	max_fields = INT_MAX;
-    GrowBufMemList(ml,source.len+1);
 
     ccp src = source.ptr;
     ccp end = src + source.len;
@@ -5077,309 +5128,6 @@ enumError Command_COLORS
     if ( mode || format )
 	PrintColorSetEx(stdout,4,colout,mode,format);
     return ERR_OK;
-}
-
-//
-///////////////////////////////////////////////////////////////////////////////
-///////////////		global commands: TESTCOLORS		///////////////
-///////////////////////////////////////////////////////////////////////////////
-// [[color_info_t]]
-
-typedef struct color_info_t
-{
-    bool	valid;		// >0: data below is valid
-
-    u8		m_index;	// index of 0..255 for "\e[*m"
-
-    s8		m_red;		// -1:invalid, 0..5:  red value of 'm_index'
-    s8		m_green;	// -1:invalid, 0..5:  green value of 'm_index'
-    s8		m_blue;		// -1:invalid, 0..5:  blue value of 'm_index'
-    s8		m_gray;		// -1:invalid, 0..23: gray value of 'm_index'
-
-    u32		ref_color;	// reference colors, based on 'm_index';
-    u32		src_color;	// scanned color
-}
-color_info_t;
-
-///////////////////////////////////////////////////////////////////////////////
-
-static bool AssignColorInfo ( color_info_t *ci, u32 rgb )
-{
-    DASSERT(ci);
-    memset(ci,0,sizeof(*ci));
-
-    ci->src_color = rgb & 0xffffff;
-    ci->m_index   = ConvertColorRGBToM256(ci->src_color);
-    ci->ref_color = ConvertColorM256ToRGB(ci->m_index);
-
-    const uint r = ci->ref_color >> 16 & 0xff;
-    const uint g = ci->ref_color >>  8 & 0xff;
-    const uint b = ci->ref_color       & 0xff;
-
-    ci->m_red   = SingleColorToM6(r);
-    ci->m_green = SingleColorToM6(g);
-    ci->m_blue  = SingleColorToM6(b);
-
-    ci->m_gray  = ( r + g + b + 21 ) / 30;
-    if ( ci->m_gray > 23 )
-	ci->m_gray = 23;
-    else if ( ci->m_gray > 0 )
-	ci->m_gray--;
-
-    return ci->valid = 1;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-static bool ScanColorInfo ( color_info_t *ci, ccp arg )
-{
-    DASSERT(ci);
-    memset(ci,0,sizeof(*ci));
-    if ( arg && *arg )
-    {
-	arg = SkipControls(arg);
-
-	ulong num, r, g, b;
-	if ( *arg >= 'g' && *arg <= 'z' )
-	{
-	    const char mode = *arg;
-	    arg = SkipControls(arg+1);
-
-	    num = str2ul(arg,0,10);
-	    switch (mode)
-	    {
-		case 'm':
-		    return AssignColorInfo(ci,ConvertColorM256ToRGB(num));
-
-		case 'g':
-		    return AssignColorInfo(ci,ConvertColorM256ToRGB(232 + num % 24));
-
-		case 'c':
-		    r = num / 100 % 10;
-		    g = num / 10  % 10;
-		    b = num       % 10;
-		    goto rgb5;
-	    }
-	}
-	else
-	{
-	    char *end;
-	    num = str2ul(arg,&end,16);
-
-	    ci->valid = true;
-	    if ( end - arg <= 3 )
-	    {
-		r = num >> 8 & 15;
-		g = num >> 4 & 15;
-		b = num      & 15;
-
-		rgb5:
-		if ( r > 5 ) r = 5;
-		if ( g > 5 ) g = 5;
-		if ( b > 5 ) b = 5;
-		return AssignColorInfo(ci,ConvertColorM256ToRGB(16 + 36*r + 6*g + b));
-	    }
-	    return AssignColorInfo(ci,num);
-	}
-    }
-
-    return ci->valid;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-static void PrintColorInfo ( FILE *f, color_info_t *ci )
-{
-    DASSERT(f);
-    DASSERT(ci);
-
-    if (ci->valid)
-	fprintf(f," %06x -> %06x : %3u : %u,%u,%u : %2u"
-		" \e[48;5;16;38;5;%um test \e[0m"
-		" \e[48;5;244;38;5;%um test \e[0m"
-		" \e[48;5;231;38;5;%um test \e[0m "
-		" \e[38;5;16;48;5;%um test \e[0m"
-		" \e[38;5;244;48;5;%um test \e[0m"
-		" \e[38;5;231;48;5;%um test \e[0m\n",
-		ci->src_color, ci->ref_color,
-		ci->m_index, ci->m_red, ci->m_green, ci->m_blue, ci->m_gray,
-		ci->m_index, ci->m_index, ci->m_index,
-		ci->m_index, ci->m_index, ci->m_index );
-    else
-	fputs(" --\n",f);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-enumError Command_TESTCOLORS ( int argc, char ** argv )
-{
- #if HAVE_PRINT
-    GetColorByName(colout,"blue");
- #endif
-
-    printf("TEST COLORS: %u arguments:\n",argc);
-
-    bool sep = true;
-    int idx;
-    for ( idx = 0; idx < argc; idx++ )
-    {
-	ccp minus = strchr(argv[idx],'-');
-	if ( minus || sep )
-	{
-	    putchar('\n');
-	    sep = false;
-	    if ( strlen(argv[idx]) == 1 )
-		continue;
-	}
-
-	color_info_t ci1;
-	ScanColorInfo(&ci1,argv[idx]);
-	PrintColorInfo(stdout,&ci1);
-
-	if (!minus)
-	    continue;
-
-	color_info_t ci2;
-	ScanColorInfo(&ci2,minus+1);
-	if ( ci2.ref_color == ci1.ref_color )
-	    continue;
-
-	int r1 = ci1.ref_color >> 16 & 0xff;
-	int g1 = ci1.ref_color >>  8 & 0xff;
-	int b1 = ci1.ref_color       & 0xff;
-	int r2 = ci2.ref_color >> 16 & 0xff;
-	int g2 = ci2.ref_color >>  8 & 0xff;
-	int b2 = ci2.ref_color       & 0xff;
-
-	int n_steps = abs( r2 - r1 );
-	int diff = abs( g2 - g1 );
-	if ( n_steps < diff )
-	    n_steps = diff;
-	diff = abs( b2 - b1 );
-	if ( n_steps < diff )
-	    n_steps = diff;
-
-	u8 prev_m = ci1.m_index;
-	u32 prev_rgb = ci1.ref_color;
-	int i;
-	for ( i = 1; i <= n_steps; i++ )
-	{
-	    uint r = ( r2 - r1 ) * i / n_steps + r1;
-	    uint g = ( g2 - g1 ) * i / n_steps + g1;
-	    uint b = ( b2 - b1 ) * i / n_steps + b1;
-	    u8 new_m = ConvertColorRGB3ToM256(r,g,b);
-	    if ( prev_m != new_m )
-	    {
-		prev_m = new_m;
-		color_info_t ci3;
-		AssignColorInfo(&ci3,r<<16|g<<8|b);
-		if ( prev_rgb != ci3.ref_color )
-		{
-		    prev_rgb = ci3.src_color = ci3.ref_color;
-		    PrintColorInfo(stdout,&ci3);
-		}
-	    }
-	}
-	sep = true;
-    }
-    putchar('\n');
-    return ERR_OK;
-}
-
-//
-///////////////////////////////////////////////////////////////////////////////
-///////////////			color helpers			///////////////
-///////////////////////////////////////////////////////////////////////////////
-//
-// https://en.wikipedia.org/wiki/ANSI_escape_code
-// https://jonasjacek.github.io/colors/
-//
-// 0..15:  000000 800000 008000 808000  000080 800080 008080 c0c0c0
-//	   808080 ff0000 00ff00 ffff00  0000ff ff00ff 00ffff ffffff
-//		=> real colors varies on implementation
-//
-// 6x6x6: 0 95 135 175 215 255 == 00 5f 87 af d7 ff
-//
-// gray:  8 18 28 ... 238 == 08 12 1c 26 30 3a ... e4 ee f8
-//
-///////////////////////////////////////////////////////////////////////////////
-//
-//  mkw-ana testcol 000000-ffffff
-//  mkw-ana testcol 500-550 550-050 050-055 055-005 005-505 505-500
-//
-///////////////////////////////////////////////////////////////////////////////
-
-u32 ColorTab_M0_M15[16] =
-{
-	0x000000, 0x800000, 0x008000, 0x808000,
-	0x000080, 0x800080, 0x008080, 0xc0c0c0,
-	0x808080, 0xff0000, 0x00ff00, 0xffff00,
-	0x0000ff, 0xff00ff, 0x00ffff, 0xffffff,
-};
-
-///////////////////////////////////////////////////////////////////////////////
-
-u8 ConvertColorRGB3ToM256 ( u8 r, u8 g, u8 b )
-{
-    // 0..5
-    const int r6 = SingleColorToM6(r);
-    const int g6 = SingleColorToM6(g);
-    const int b6 = SingleColorToM6(b);
-
-    u8	 m256	= 36*r6 + 6*g6 + b6 + 16;
-    uint delta	= abs ( ( r6 ? 55 + 40 * r6 : 0 ) - r  )
-		+ abs ( ( g6 ? 55 + 40 * g6 : 0 ) - g  )
-		+ abs ( ( b6 ? 55 + 40 * b6 : 0 ) - b  );
-
-    //printf("%02x>%u %02x>%u %02x>%u : m=%u delta=%d\n",r,r6,g,g6,b,b6,m256,delta);
-
-    int m, gray, prev = 0x1000000;
-    for ( m = 232, gray = 8; m < 256; m++, gray += 10 )
-    {
-	const uint d = abs( gray - r ) + abs( gray - g ) + abs( gray - b );
-	if ( d > prev )
-	    break;
-	if ( d <= delta )
-	{
-	    delta = d;
-	    m256  = m;
-	}
-	prev = d;
-    }
-
-    return m256;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-u8 ConvertColorRGBToM256 ( u32 rgb )
-{
-    return ConvertColorRGB3ToM256( rgb >> 16, rgb >> 8, rgb );
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-u32 ConvertColorM256ToRGB ( u8 m256 )
-{
-    if ( m256 < 16 )
-	return ColorTab_M0_M15[m256];
-
-    if ( m256 < 232 )
-    {
-	m256 -= 16;
-	const uint r =  m256 / 36;
-	const uint g =  m256 / 6 % 6;
-	const uint b =  m256 % 6;
-
-	u32 col = 0;
-	if (r) col |= 0x370000 + 0x280000 * r;
-	if (g) col |= 0x003700 + 0x002800 * g;
-	if (b) col |= 0x000037 + 0x000028 * b;
-	return col;
-    }
-
-    m256 -= 232;
-    return 0x080808 + m256 * 0x0a0a0a;
 }
 
 //
@@ -8038,12 +7786,20 @@ int opt_new = 0;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-uint CreateUniqueId ( int range )
+uint CreateUniqueIdN ( int range )
 {
     static uint unique_id = 1;
-    const uint ret = unique_id;
-    if ( range > 0 )
-	unique_id += range;
+
+    if ( range <= 0 )
+	return unique_id;
+
+    uint ret = unique_id;
+    unique_id += range;
+    if ( unique_id < ret ) // overflow
+    {
+	ret = 1;
+	unique_id = ret + range;
+    }
     return ret;
 }
 

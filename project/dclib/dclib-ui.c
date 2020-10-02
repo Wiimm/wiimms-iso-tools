@@ -260,7 +260,7 @@ enumError CheckEnvOptions ( ccp varname, check_opt_func func )
     char * buf = MALLOC(envlen+1);
     char * dest = buf;
 
-    int argc = 1; // argv[0] = progname
+    int argc = 1; // argv[0] = ProgInfo.progname
     ccp src = env;
     while (*src)
     {
@@ -279,7 +279,7 @@ enumError CheckEnvOptions ( ccp varname, check_opt_func func )
     TRACE("argc = %d\n",argc);
 
     char ** argv = MALLOC((argc+1)*sizeof(*argv));
-    argv[0] = (char*)progname;
+    argv[0] = (char*)ProgInfo.progname;
     argv[argc] = 0;
     dest = buf;
     int i;

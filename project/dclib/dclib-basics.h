@@ -803,8 +803,8 @@ void InitializeMemList ( mem_list_t *ml );
 void ResetMemList ( mem_list_t *ml );
 void MoveMemList ( mem_list_t *dest, mem_list_t *src );
 
-void GrowBufMemList ( mem_list_t *ml, uint need_size );
-void PrepareMemList ( mem_list_t *ml, uint n_elem, uint buf_size );
+void NeedBufMemList ( mem_list_t *ml, uint need_size, uint extra_size );
+void NeedElemMemList ( mem_list_t *ml, uint n_elem, uint need_size );
 
 //-----------------------------------------------------------------------------
 
@@ -1156,11 +1156,17 @@ void PrintSettingsDCLIB ( FILE *f, int indent );
 void SetupProgname ( int argc, char ** argv,
 			ccp tool_name, ccp tool_vers, ccp tool_title );
 
-// return NULL or 'progpath', calc GetProgramPath() once if needed
+// return NULL or 'ProgInfo.progpath', calc GetProgramPath() once if needed
 ccp ProgramPath(void);
 
-// return NULL or 'progdir', calc ProgramPath() once if needed
+// return NULL or 'ProgInfo.progdir', calc ProgramPath() once if needed
 ccp ProgramDirectory(void);
+
+// path0 can be a directory or a filename (->dir extracted)
+void DefineLogDirectory ( ccp path0, bool force );
+
+// get 'ProgInfo.logdir' without tailing '/' ("." as fall back)
+ccp GetLogDirectory();
 
 #ifdef __CYGWIN__
     ccp ProgramPathNoExt(void);
@@ -2122,7 +2128,9 @@ EncodeMode_t;
 
 // [[doxygen]]
 static inline bool NeedsQuotesByEncoding ( EncodeMode_t em )
-	{ return ( em < ENCODE_BASE64 || em > ENCODE_BASE64XML ) && em != ENCODE_OFF ; }
+	{ return em > ENCODE_OFF && em < ENCODE_BASE64 || em > ENCODE_BASE64XML; }
+
+ccp GetEncodingName ( EncodeMode_t em );
 
 ///////////////////////////////////////////////////////////////////////////////
 // [[DecodeType_t]]
@@ -2249,8 +2257,10 @@ uint EncodeBase64
     int		source_len,		// length of 'source'; if <0: use strlen(source)
     const char	encode64[64+1],		// encoding table; if NULL: use TableEncode64default
     bool	use_filler,		// use filler for aligned output
+
     ccp		next_line,		// not NULL: use this string as new line sep
-    uint	next_line_trigger	// >0: use 'next_line' every # input bytes
+    uint	bytes_per_line		// >0: use 'next_line' every # input bytes
+					// will be rounded down to multiple of 3
 );
 
 //-----------------------------------------------------------------------------
@@ -2266,15 +2276,35 @@ mem_t EncodeBase64Circ
     const char	encode64[64+1]		// encoding table; if NULL: use TableEncode64default
 );
 
+//-----------------------------------------------------------------------------
+
+uint EncodeBase64ml // ml: multi line
+(
+    // returns the number of scanned bytes of 'source'
+
+    char	*buf,			// valid destination buffer
+    uint	buf_size,		// size of 'buf', >= 4
+    const void	*source,		// NULL or data to encode
+    int		source_len,		// length of 'source'; if <0: use strlen(source)
+    const char	encode64[64+1],		// encoding table; if NULL: use TableEncode64default
+    bool	use_filler,		// use filler for aligned output
+
+    int		indent,			// indention of output
+    ccp		prefix,			// NULL or prefix before encoded data
+    ccp		eol,			// line terminator, if NULL then use NL
+    int		bytes_per_line		// create a new line every # input bytes
+					// will be rounded down to multiple of 3
+);
+
 ///////////////////////////////////////////////////////////////////////////////
 
-static inline uint EncodeBase64Len ( uint src_len )
+static inline uint GetEncodeBase64Len ( uint src_len )
 	{ return 4 * (src_len+2) / 3; }
 
-static inline uint EncodeBase64FillLen ( uint src_len )
+static inline uint GetEncodeBase64FillLen ( uint src_len )
 	{ return (src_len+2) / 3 * 4; }
 
-static inline uint DecodeBase64Len ( uint src_len )
+static inline uint GetDecodeBase64Len ( uint src_len )
 	{ return 3 * src_len / 4; }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3334,6 +3364,14 @@ char * ScanSIFactor
 #define USEC_PER_DAY	(SEC_PER_DAY*USEC_PER_SEC)
 #define USEC_PER_WEEK	(SEC_PER_WEEK*USEC_PER_SEC)
 
+#define NSEC_PER_USEC	1000ull
+#define NSEC_PER_MSEC	1000000ull
+#define NSEC_PER_SEC	1000000000ull
+#define NSEC_PER_MIN	(60*NSEC_PER_SEC)
+#define NSEC_PER_HOUR	(3600*NSEC_PER_SEC)
+#define NSEC_PER_DAY	(SEC_PER_DAY*NSEC_PER_SEC)
+#define NSEC_PER_WEEK	(SEC_PER_WEEK*NSEC_PER_SEC)
+
 //--- time types
 
 typedef uint u_sec_t;	// unsigned type to store time as seconds
@@ -3342,6 +3380,8 @@ typedef u64  u_msec_t;	// unsigned type to store time as milliseconds
 typedef s64  s_msec_t;	//   signed type to store time as milliseconds
 typedef u64  u_usec_t;	// unsigned type to store time as microseconds
 typedef s64  s_usec_t;	//   signed type to store time as microseconds
+typedef u64  u_nsec_t;	// unsigned type to store time as nanoseconds
+typedef s64  s_nsec_t;	//   signed type to store time as nanoseconds
 
 // [[DayTime_t]]
 typedef struct DayTime_t
@@ -3352,6 +3392,7 @@ typedef struct DayTime_t
     int		min;	// minute of hour
     int		sec;	// second of minute
     int		usec;	// microsecond of second
+    int		nsec;	// nanosecond of second
 }
 DayTime_t;
 
@@ -3359,6 +3400,7 @@ DayTime_t;
 
 extern s64 timezone_adjust_sec;
 extern s64 timezone_adjust_usec;
+extern s64 timezone_adjust_nsec;
 extern int timezone_adjust_isdst;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3367,25 +3409,31 @@ void SetupTimezone ( bool force );
 int GetTimezoneAdjust ( time_t tim );
 
 struct timeval	GetTimeOfDay ( bool localtime );
+struct timespec	GetClockTime ( bool localtime );
 DayTime_t	GetDayTime   ( bool localtime );
 u_sec_t		GetTimeSec   ( bool localtime );
 u_msec_t	GetTimeMSec  ( bool localtime );
 u_usec_t	GetTimeUSec  ( bool localtime );
+u_nsec_t	GetTimeNSec  ( bool localtime );
 
 u_msec_t GetTimerMSec(void);
 u_usec_t GetTimerUSec(void);
+u_nsec_t GetTimerNSec(void);
 
 static inline u64 double2msec ( double d ) { return d>0.0 ? (u64)trunc( 1e3*d+0.5 ) : 0; }
 static inline u64 double2usec ( double d ) { return d>0.0 ? (u64)trunc( 1e6*d+0.5 ) : 0; }
+static inline u64 double2nsec ( double d ) { return d>0.0 ? (u64)trunc( 1e9*d+0.5 ) : 0; }
 
 static inline double msec2double ( u64 num ) { return num * 1e-3; }
 static inline double usec2double ( u64 num ) { return num * 1e-6; }
+static inline double nsec2double ( u64 num ) { return num * 1e-9; }
 
 //--- another epoch: Monday, 2001-01-01
 
 #define EPOCH_2001_SEC  0x3a4fc880
 #define EPOCH_2001_MSEC (EPOCH_2001_SEC*MSEC_PER_SEC)
 #define EPOCH_2001_USEC (EPOCH_2001_SEC*USEC_PER_SEC)
+#define EPOCH_2001_NSEC (EPOCH_2001_SEC*NSEC_PER_SEC)
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -3394,7 +3442,7 @@ ccp PrintTimeByFormat
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time		// seconds since epoch -> time()
+    time_t		tim		// seconds since epoch; 0 is replaced by time()
 );
 
 ccp PrintTimeByFormatUTC
@@ -3402,31 +3450,60 @@ ccp PrintTimeByFormatUTC
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time		// seconds since epoch -> time()
+    time_t		tim		// seconds since epoch; 0 is replaced by time()
 );
 
 //-----------------------------------------------------------------------------
 
-ccp PrintUsecByFormat
+ccp PrintNSecByFormat
 (
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time,		// seconds since epoch -> time()
-    uint		usec		// micro second of second
+					// 1-9 '@' in row replaced by digits of 'nsec'
+    time_t		tim,		// seconds since epoch
+    uint		nsec		// nanosecond of second
 );
 
-ccp PrintUsecByFormatUTC
+ccp PrintNSecByFormatUTC
 (
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		time,		// seconds since epoch -> time()
-    uint		usec		// micro second of second
+					// 1-9 '@' in row replaced by digits of 'nsec'
+    time_t		tim,		// seconds since epoch
+    uint		nsec		// nanosecond of second
 );
 
 //-----------------------------------------------------------------------------
 
+static inline ccp PrintUSecByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+					// 1-9 '@' in row replaced by digits of 'usec'
+    time_t		tim,		// seconds since epoch
+    uint		usec		// microsecond of second
+)
+{
+    return PrintNSecByFormat(format,tim,usec*NSEC_PER_USEC);
+}
+
+static inline ccp PrintUSecByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+					// 1-9 '@' in row replaced by digits of 'usec'
+    time_t		tim,		// seconds since epoch
+    uint		usec		// microsecond of second
+)
+{
+    return PrintNSecByFormatUTC(format,tim,usec*NSEC_PER_USEC);
+}
+
+//-----------------------------------------------------------------------------
 
 ccp PrintTimevalByFormat
 (
@@ -3436,13 +3513,30 @@ ccp PrintTimevalByFormat
     const struct timeval *tv		// time to print, if NULL use gettimeofday()
 );
 
-
 ccp PrintTimevalByFormatUTC
 (
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
     const struct timeval *tv		// time to print, if NULL use gettimeofday()
+);
+
+//-----------------------------------------------------------------------------
+
+ccp PrintTimespecByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    const struct timespec *ts		// time to print, if NULL use GetClockTime(false)
+);
+
+ccp PrintTimespecByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    const struct timespec *ts		// time to print, if NULL use GetClockTime(false)
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3455,8 +3549,6 @@ ccp PrintTimeSec
     u_sec_t		sec		// seconds (=time) to print
 );
 
-//-----------------------------------------------------------------------------
-
 ccp PrintTimeMSec
 (
     char		* buf,		// result buffer (>23 bytes are good)
@@ -3466,8 +3558,6 @@ ccp PrintTimeMSec
     uint		fraction	// number of digits (0-3) to print as fraction
 );
 
-//-----------------------------------------------------------------------------
-
 ccp PrintTimeUSec
 (
     char		* buf,		// result buffer (>26 bytes are good)
@@ -3475,6 +3565,15 @@ ccp PrintTimeUSec
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     u_usec_t		usec,		// microseconds to print
     uint		fraction	// number of digits (0-6) to print as fraction
+);
+
+ccp PrintTimeNSec
+(
+    char		* buf,		// result buffer (>26 bytes are good)
+					// If NULL, a local circulary static buffer is used
+    size_t		buf_size,	// size of 'buf', ignored if buf==NULL
+    u_nsec_t		nsec,		// nanoseconds to print
+    uint		fraction	// number of digits (0-9) to print as fraction
 );
 
 //-----------------------------------------------------------------------------
@@ -3494,7 +3593,16 @@ ccp PrintTimerUSec
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     s_usec_t		usec,		// microseconds to print
-    uint		fraction	// number of digits (0-3) to print as fraction
+    uint		fraction	// number of digits (0-6) to print as fraction
+);
+
+ccp PrintTimerNSec
+(
+    char		* buf,		// result buffer (>16 bytes are good)
+					// If NULL, a local circulary static buffer is used
+    size_t		buf_size,	// size of 'buf', ignored if buf==NULL
+    s_nsec_t		nsec,		// nanoseconds to print
+    uint		fraction	// number of digits (0-9) to print as fraction
 );
 
 //-----------------------------------------------------------------------------
@@ -3505,7 +3613,8 @@ ccp PrintTimer3 // helper function
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     u64			sec,		// seconds to print
-    int			usec,		// 0...999999: usec fraction, otherwise suppress ms/us output
+    int			usec,		// 0...999999: usec fraction,
+					// otherwise suppress ms/us output
     bool		aligned		// true: print aligned 3 character output
 );
 
@@ -3553,7 +3662,8 @@ ccp PrintTimer4 // helper function
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     u64			sec,		// seconds to print
-    int			usec,		// 0...999999: usec fraction, otherwise suppress ms/us output
+    int			usec,		// 0...999999: usec fraction,
+					// otherwise suppress ms/us output
     bool		aligned		// true: print aligned 4 character output
 );
 
@@ -3602,7 +3712,7 @@ ccp PrintTimer6 // helper function
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     u64			sec,		// seconds to print
     int			usec,		// 0...999999: usec fraction,
-					//    otherwise suppress ms/us output
+					// otherwise suppress ms/us output
     bool		aligned		// true: print aligned 6 character output
 );
 
@@ -3712,19 +3822,6 @@ static inline ccp PrintTimerSec7s
     return PrintTimerUSec7s(buf,buf_size,1000000ll*sec,mode);
 }
 
-//-----------------------------------------------------------------------------
-
-typedef struct xtime_t
-{
-    time_t	time;
-    suseconds_t	usec;
-    u64		total_usec;
-    u64	rel_usec;
-
-} xtime_t;
-
-u64 GetXTime ( xtime_t * xtime );
-
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			scan date & time		///////////////
@@ -3732,18 +3829,41 @@ u64 GetXTime ( xtime_t * xtime );
 
 // ScanInterval*() is old ==> try ScanDuration()
 
-char * ScanInterval
+//-----------------------------------------------------------------------------
+// new interface : all functions return first not scanned char
+
+char * ScanIntervalTS
 (
-    time_t	*res_time,	// not NULL: store seconds
-    u32		*res_usec,	// not NULL: store micro seconds of second
+    struct timespec *res_ts,	// not NULL: store result here
     ccp		source		// source text
 );
 
-///////////////////////////////////////////////////////////////////////////////
+char * ScanIntervalUSec
+(
+    u_usec_t	*res_usec,	// not NULL: store total microseconds
+    ccp		source		// source text
+);
+
+
+char * ScanIntervalNSec
+(
+    u_nsec_t	*res_nsec,	// not NULL: store total nanoseconds
+    ccp		source		// source text
+);
+
+//-----------------------------------------------------------------------------
+// legacy interface : all functions return first not scanned char
+
+char * ScanInterval
+(
+    time_t	*res_time,	// not NULL: store seconds
+    u32		*res_usec,	// not NULL: store microseconds of second
+    ccp		source		// source text
+);
 
 char * ScanInterval64
 (
-    u64		*res_usec,	// not NULL: store total micro seconds
+    u64		*res_usec,	// not NULL: store total microseconds
     ccp		source		// source text
 );
 
@@ -3752,7 +3872,7 @@ char * ScanInterval64
 char * ScanDateTime
 (
     time_t	*res_time,	// not NULL: store seconds
-    u32		*res_usec,	// not NULL: store micro seconds of second
+    u32		*res_usec,	// not NULL: store microseconds of second
     ccp		source,		// source text
     bool	allow_delta	// true: allow +|- interval
 );
@@ -3761,7 +3881,7 @@ char * ScanDateTime
 
 char * ScanDateTime64
 (
-    u64		*res_usec,	// not NULL: store total micro seconds
+    u64		*res_usec,	// not NULL: store total microseconds
     ccp		source,		// source text
     bool	allow_delta	// true: allow +|- interval
 );
@@ -4854,6 +4974,7 @@ typedef enum SaveRestoreType_t
     SRT_BOOL,		// type bool
     SRT_UINT,		// unsigned int of any size (%llu)
     SRT_HEX,		// unsigned int of any size as hex (%#llx)
+    SRT_COUNT,		// unsigned int of any size (%llu), used as array counter
     SRT_INT,		// signed int of any size (%lld)
     SRT_FLOAT,		// float (%.8g) or double (%.16g) or long double (%.20g)
     SRT_XFLOAT,		// float or double or long double as hex-float (%a/%La)
@@ -4862,10 +4983,15 @@ typedef enum SaveRestoreType_t
     SRT_STRING_ALLOC,	// alloced string, var is ccp or char*
     SRT_MEM,		// alloced string, var is mem_t
 
+    SRT_DEF_ARRAY,	// define/end an array of structs
+
     SRT__IS_LIST,	//----- from here: print lists; also used as separator
 
     SRT_STRING_FIELD,	// var is StringField_t
     SRT_PARAM_FIELD,	// var is ParamField_t
+
+
+    SRT_F_SIZE = 0x100,	// factor for implicit size-modes for numerical types
 }
 SaveRestoreType_t;
 
@@ -4877,7 +5003,8 @@ typedef struct SaveRestoreTab_t
     uint	offset;	// offset of variable
     uint	size;	// sizeof( var or string )
     ccp		name;	// name in configuration file
-    u16		n_elem;	// >0: is array with N elements
+    s16		n_elem;	// >0: is array with N elements
+			// <0: is array with -N elements, use last SRT_COUNT
     u8		type;	// SaveRestoreType_t
     u8		emode;	// EncodeMode_t
 }
@@ -4894,6 +5021,7 @@ __attribute__ ((packed)) SaveRestoreTab_t;
 #define DEF_SRT_BOOL(v,n)		DEF_SRT_VAR(v,1,n,SRT_BOOL,0)
 #define DEF_SRT_UINT(v,n)		DEF_SRT_VAR(v,1,n,SRT_UINT,0)
 #define DEF_SRT_HEX(v,n)		DEF_SRT_VAR(v,1,n,SRT_HEX,0)
+#define DEF_SRT_COUNT(v,n)		DEF_SRT_VAR(v,1,n,SRT_COUNT,0)
 #define DEF_SRT_INT(v,n)		DEF_SRT_VAR(v,1,n,SRT_INT,0)
 #define DEF_SRT_FLOAT(v,n)		DEF_SRT_VAR(v,1,n,SRT_FLOAT,0)
 #define DEF_SRT_XFLOAT(v,n)		DEF_SRT_VAR(v,1,n,SRT_XFLOAT,0)
@@ -4905,7 +5033,7 @@ __attribute__ ((packed)) SaveRestoreTab_t;
 #define DEF_SRT_STRING_FIELD(v,n,e)	DEF_SRT_VAR(v,1,n,SRT_STRING_FIELD,e)
 #define DEF_SRT_PARAM_FIELD(v,n,e)	DEF_SRT_VAR(v,1,n,SRT_PARAM_FIELD,e)
 
-//--- n elements
+//--- n elements : if n<0, then n_elem=-n && use last SRT_COUNT
 
 #define DEF_SRT_BOOL_N(v,ne,n)		DEF_SRT_VAR(v,ne,n,SRT_BOOL,0)
 #define DEF_SRT_UINT_N(v,ne,n)		DEF_SRT_VAR(v,ne,n,SRT_UINT,0)
@@ -4935,6 +5063,40 @@ __attribute__ ((packed)) SaveRestoreTab_t;
 #define DEF_SRT_STR_ALLOC_A(v,n,e)	DEF_SRT_ARRAY(v,n,SRT_STRING_ALLOC,e)
 #define DEF_SRT_MEM_A(v,n,e)		DEF_SRT_ARRAY(v,n,SRT_MEM,e)
 
+//--- auto array, use last SRT_COUNT for element-count
+
+#define DEF_SRT_ARRAY_C(v,n,t,e)		\
+	{offsetof(SRT_NAME,v), sizeof(((SRT_NAME*)0)->v[0]), n, \
+	 -(s16)(sizeof(((SRT_NAME*)0)->v)/sizeof(*((SRT_NAME*)0)->v)), t, e }
+
+#define DEF_SRT_BOOL_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_BOOL,0)
+#define DEF_SRT_UINT_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_UINT,0)
+#define DEF_SRT_HEX_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_HEX,0)
+#define DEF_SRT_INT_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_INT,0)
+#define DEF_SRT_FLOAT_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_FLOAT,0)
+#define DEF_SRT_XFLOAT_AC(v,n)		DEF_SRT_ARRAY_C(v,n,SRT_XFLOAT,0)
+
+#define DEF_SRT_STR_SIZE_AC(v,n,e)	DEF_SRT_ARRAY_C(v,n,SRT_STRING_SIZE,e)
+#define DEF_SRT_STR_ALLOC_AC(v,n,e)	DEF_SRT_ARRAY_C(v,n,SRT_STRING_ALLOC,e)
+#define DEF_SRT_MEM_AC(v,n,e)		DEF_SRT_ARRAY_C(v,n,SRT_MEM,e)
+
+//--- array of structs
+
+#define DEF_SRT_ARRAY_FL(f,l) \
+	{offsetof(SRT_NAME,f), sizeof(((SRT_NAME*)0)->f), 0, \
+	 (offsetof(SRT_NAME,l)-offsetof(SRT_NAME,f))/sizeof(((SRT_NAME*)0)->f)+1, \
+	 SRT_DEF_ARRAY, 0 }
+
+#define DEF_SRT_ARRAY_FLC(f,l) \
+	{offsetof(SRT_NAME,f), sizeof(((SRT_NAME*)0)->f), 0, \
+	 -(s16)((offsetof(SRT_NAME,l)-offsetof(SRT_NAME,f)) \
+		/sizeof(((SRT_NAME*)0)->f)+1), SRT_DEF_ARRAY, 0 }
+
+#define DEF_SRT_ARRAY_N(v,ne)		DEF_SRT_VAR(v[0],ne,0,SRT_DEF_ARRAY,0)
+#define DEF_SRT_ARRAY_A(v)		DEF_SRT_ARRAY(v,0,SRT_DEF_ARRAY,0)
+#define DEF_SRT_ARRAY_AC(v)		DEF_SRT_ARRAY_C(v,0,SRT_DEF_ARRAY,0)
+#define DEF_SRT_ARRAY_END()		{0,0,0,0,SRT_DEF_ARRAY,0}
+
 //--- special
 
 #define DEF_SRT_SEPARATOR()		{0,0,0,0,SRT__IS_LIST,0}
@@ -4942,6 +5104,9 @@ __attribute__ ((packed)) SaveRestoreTab_t;
 #define DEF_SRT_TERM()			{0,0,0,0,SRT__TERM,0}
 
 ///////////////////////////////////////////////////////////////////////////////
+
+extern int srt_auto_dump;
+extern FILE *srt_auto_dump_file;
 
 void DumpStateTable
 (
@@ -5232,7 +5397,9 @@ extern int opt_new; // default 0
 
 float double2float ( double d ); // reduce precision
 
-uint CreateUniqueId ( int range );
+uint CreateUniqueIdN ( int range );
+static inline uint CreateUniqueId()	{ return CreateUniqueIdN(1); }
+static inline uint CreateUniqueIdNBO() 	{ return htonl(CreateUniqueIdN(1)); }
 
 void Sha1Hex2Bin ( sha1_hash_t bin, ccp src, ccp end );
 void Sha1Bin2Hex ( sha1_hex_t hex, cvp bin );

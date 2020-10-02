@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -179,7 +179,7 @@ static const struct option OptionLong[] =
 
 static u8 OptionUsed[OPT__N_TOTAL+1] = {0};
 
-static const OptionIndex_t OptionIndex[UIOPT_INDEX_SIZE] = 
+static const OptionIndex_t OptionIndex[UIOPT_INDEX_SIZE] =
 {
 	/* 0x00   */	 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
 	/* 0x10   */	 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,

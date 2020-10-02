@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -499,16 +499,16 @@ void SetupLib ( int argc, char ** argv, ccp p_progname, enumProgID prid )
     #endif
 
 
-    //----- setup progname
+    //----- setup ProgInfo.progname
 
     if ( argc > 0 && *argv && **argv )
 	p_progname = *argv;
-    progname = strrchr(p_progname,'/');
-    progname = progname ? progname+1 : p_progname;
-    argv[0] = (char*)progname;
+    ProgInfo.progname = strrchr(p_progname,'/');
+    ProgInfo.progname = ProgInfo.progname ? ProgInfo.progname+1 : p_progname;
+    argv[0] = (char*)ProgInfo.progname;
 
     TRACE("##PROG## REV-ID=%08x, PROG-ID=%d, PROG-NAME=%s\n",
-		revision_id, prog_id, progname );
+		revision_id, prog_id, ProgInfo.progname );
 
 
     //----- setup signals
@@ -1310,7 +1310,8 @@ char * PrintTime ( PrintTime_t * pt, const FileAttrib_t * fa )
 	*pt->tbuf = 0;
     else
     {
-	const time_t * timbuf[] = { &fa->itime, &fa->mtime, &fa->ctime, &fa->atime, 0 };
+	const time_t * timbuf[] = { &fa->itime.tv_sec, &fa->mtime.tv_sec,
+				    &fa->ctime.tv_sec, &fa->atime.tv_sec, 0 };
 	const time_t ** timptr = timbuf;
 
 	char *dest = pt->tbuf, *end = dest + sizeof(pt->tbuf);
@@ -1338,10 +1339,10 @@ time_t SelectTime ( const FileAttrib_t * fa, int opt_time )
     ASSERT(fa);
     switch ( opt_time & PT__USE_MASK )
     {
-	case PT_USE_ITIME: return fa->itime;
-	case PT_USE_CTIME: return fa->ctime;
-	case PT_USE_ATIME: return fa->atime;
-	default:	   return fa->mtime;
+	case PT_USE_ITIME: return fa->itime.tv_sec;
+	case PT_USE_CTIME: return fa->ctime.tv_sec;
+	case PT_USE_ATIME: return fa->atime.tv_sec;
+	default:	   return fa->mtime.tv_sec;
     }
 }
 

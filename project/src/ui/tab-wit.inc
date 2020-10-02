@@ -1294,6 +1294,10 @@
 		" FRAGMENTS, ITIME, MTIME, CTIME, ATIME, TIME = DATE, DEFAULT,"
 		" ASCENDING, DESCENDING = REVERSE@." },
 
+  { T_OPT_C,	"NO_SORT",	"no-sort|nosort",
+		0,
+		"Don't sort. Same as {--sort=none}." },
+
   { T_OPT_CP,	"LIMIT",	"limit",
 		"num",
 		"Limit the output to NUM messages." },
@@ -1613,6 +1617,11 @@
   { T_COPT,	"LONG",		0,0,
 	"If printing, print the complete key as hex dump, not only the first bytes."
 	" If set twice, print BASE64 encoded."},
+  { T_COPT,	"SORT",		0,0,
+	"Define the sort mode for the certificate listing."
+	" The parameter is either @NONE, ASCENDING@ or @DESCENDING = REVERSE@." },
+  { T_COPT,	"NO_SORT",	0,0,
+	" Disable sorting of keys." },
 
   //---------- COMMAND wit FILELIST ----------
 
@@ -1789,6 +1798,7 @@
   { T_COPT_M,	"LOGGING",	0,0,0 },
   { T_COPT,	"UNIQUE",	0,0,0 },
   { T_COPT,	"SORT",		0,0,0 },
+  { T_COPT,	"NO_SORT",	0,0,0 },
 
   { T_COPT,	"SECTIONS",	0,0,0 },
   { T_COPT,	"NO_HEADER",	0,0,0 },
@@ -1841,6 +1851,7 @@
 	"Define the sort mode for the file listing."
 	" The parameter is a comma separated list of the following keywords:"
 	" NONE, NAME, SIZE, OFFSET, ASCENDING, DESCENDING = REVERSE." },
+  { T_COPT,	"NO_SORT",	0,0,0 },
 
   //---------- COMMAND wit FILES-L ----------
 
@@ -1917,6 +1928,7 @@
 	"Define the extracting order."
 	" The parameter is a comma separated list of the following keywords:"
 	" NONE, NAME, SIZE, OFFSET, ASCENDING, DESCENDING = REVERSE." },
+  { T_COPT,	"NO_SORT",	0,0,0 },
 
   { T_SEP_OPT,	0,0,0,0 },
 

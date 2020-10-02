@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -2571,7 +2571,9 @@ enumFileType AnalyzeFT ( WFile_t * f )
 
     TRACELINE;
     memset(buf1,0,sizeof(buf1));
-    enumError err = ReadAtF(f,0,&buf1,sizeof(buf1));
+    const uint max_read = f->st.st_size < sizeof(buf1)
+			? f->st.st_size : sizeof(buf1);
+    enumError err = ReadAtF(f,0,&buf1,max_read);
     if (err)
     {
 	TRACELINE;
@@ -2866,6 +2868,8 @@ enumFileType AnalyzeMemFT ( const void * preload_buf, off_t file_size )
 
     //----- test cert + ticket + tmd
 
+// [[FT_ID_SIG_BIN]]
+
     const u32 sig_type	= be32(preload_buf);
     const int sig_size	= cert_get_signature_size(sig_type);
     const u32 head_size	= ALIGN32( sig_size + sizeof(cert_head_t), WII_CERT_ALIGN );
@@ -2921,6 +2925,14 @@ enumFileType AnalyzeMemFT ( const void * preload_buf, off_t file_size )
 	}
     }
 
+    if	(  sig_size
+	&& file_size >= 0x108
+	&& !memcmp(preload_buf+0x80,"Root-",5)
+	&& strlen(preload_buf+0xc4) > 6
+	)
+    {
+	return FT_ID_SIG_BIN;
+    }
 
     if (sig_size) // ISO usual data
     {
@@ -3080,6 +3092,9 @@ ccp GetNameFT ( enumFileType ftype, int ignore )
 
 	case FT_ID_DOL:
 	    return ignore > 1 ? 0 : ftype & FT_M_WDF ? "WDF/DOL"  : "DOL";
+
+	case FT_ID_SIG_BIN:
+	    return ignore > 1 ? 0 : ftype & FT_M_WDF ? "WDF/SIG"  : "SIG.BIN";
 
 	case FT_ID_CERT_BIN:
 	    return ignore > 1 ? 0 : ftype & FT_M_WDF ? "WDF/CERT" : "CERT.BIN";
@@ -6051,9 +6066,9 @@ static enumError SourceIteratorHelper
 	IteratorProgress(it,false,&sf);
 	if (collect_fnames)
 	{
-	    if ( !sf.f.fatt.mtime && it->newer && sf.f.ftype & FT_ID_FST )
+	    if ( !IsTimeSpecNull(&sf.f.fatt.mtime) && it->newer && sf.f.ftype & FT_ID_FST )
 		SetupReadFST(&sf);
-	    InsertIdField(&it->source_list,sf.f.id6_src,0,sf.f.fatt.mtime,sf.f.fname);
+	    InsertIdField(&it->source_list,sf.f.id6_src,0,sf.f.fatt.mtime.tv_sec,sf.f.fname);
 	    err = ERR_OK;
 	}
 	else

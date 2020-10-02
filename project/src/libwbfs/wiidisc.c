@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -862,7 +862,6 @@ enumError wd_read_part
     if (part->is_gc)
     {
 	noPRINT("%llx+%x + %8x\n", (u64)part->part_off4<<2, data_offset4, read_size );
-//DEL	ASSERT(!(data_offset4&3));
 
 	const u64 off = part->part_off4 + ( data_offset4 >> 2 );
 	const u64 mark_end = ( off << 2 ) + read_size;

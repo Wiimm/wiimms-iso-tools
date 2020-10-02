@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -495,14 +495,9 @@ enumError XSetWFileTime ( XPARM WFile_t * f, FileAttrib_t * set_time )
     ASSERT(f);
 
     enumError err = ERR_OK;
-    if ( set_time && set_time->mtime )
+    if ( set_time && !IsTimeSpecNull(&set_time->mtime) )
     {
 	err = XCloseWFile( XCALL f, false );
-
-	struct timeval tval[2];
-	tval[0].tv_sec = set_time->atime ? set_time->atime : set_time->mtime;
-	tval[1].tv_sec = set_time->mtime;
-	tval[0].tv_usec = tval[1].tv_usec = 0;
 
 	if (f->split_f)
 	{
@@ -510,13 +505,13 @@ enumError XSetWFileTime ( XPARM WFile_t * f, FileAttrib_t * set_time )
 	    for ( end = ptr + f->split_used; ptr < end; ptr++ )
 	    {
 		TRACE("XSetWFileTime(%p,%p) fname=%s\n",f,set_time,(*ptr)->fname);
-		utimes((*ptr)->fname,tval);
+		utimensat(AT_FDCWD,(*ptr)->fname,set_time->times,0);
 	    }
 	}
 	else
 	{
 	    TRACE("XSetWFileTime(%p,%p) fname=%s\n",f,set_time,f->fname);
-	    utimes(f->fname,tval);
+	    utimensat(AT_FDCWD,f->fname,set_time->times,0);
 	}
     }
     return err;
@@ -3053,16 +3048,18 @@ bool SetPatchFileID
 FileAttrib_t * CopyFileAttribInode
 	( FileAttrib_t * dest, const struct wbfs_inode_info_t * src, off_t size )
 {
-    ASSERT(src);
-    ASSERT(dest);
+    DASSERT(src);
+    DASSERT(dest);
 
-    dest->size  = size;
+    ZeroFileAttrib(dest);
+    dest->size = size;
+
     if (wbfs_is_inode_info_valid(0,src))
     {
-	dest->itime = ntoh64(src->itime);
-	dest->mtime = ntoh64(src->mtime);
-	dest->ctime = ntoh64(src->ctime);
-	dest->atime = ntoh64(src->atime);
+	dest->atime.tv_sec = ntoh64(src->atime);
+	dest->mtime.tv_sec = ntoh64(src->mtime);
+	dest->ctime.tv_sec = ntoh64(src->ctime);
+	dest->itime.tv_sec = ntoh64(src->itime);
     }
 
     return NormalizeFileAttrib(dest);
@@ -3073,8 +3070,8 @@ FileAttrib_t * CopyFileAttribInode
 FileAttrib_t * CopyFileAttribDiscInfo
 	( FileAttrib_t * dest, const struct WDiscInfo_t * src )
 {
-    ASSERT(src);
-    ASSERT(dest);
+    DASSERT(src);
+    DASSERT(dest);
 
     return CopyFileAttribInode(dest,&src->dhead.iinfo,src->size);
 }
@@ -3165,8 +3162,6 @@ void AnalyseSplitFilename ( split_file_t *split, ccp path, enumOFT oft )
 	if ( digit > '9' )
 	    digit = '9';
 
-//xBINGO;
-fprintf(stderr,"PART%u: %s : %s\n",split->index,part,path);
 	dest = copy_escape(dest,dest+buf_size-6,path,part+4);
 	*dest++ = '%';
 	*dest++ = '0';
@@ -3174,8 +3169,6 @@ fprintf(stderr,"PART%u: %s : %s\n",split->index,part,path);
 	*dest++ = digit;
 	*dest++ = 'u';
 	dest = copy_escape(dest,dest+buf_size-2,part+skip,path+strlen(path));
-//xBINGO;
-fprintf(stderr,">P> %s\n",buf);
     }
     else
     {
@@ -3548,7 +3541,7 @@ int AddCertFile ( ccp fname, int unused )
 	    }
 	}
 // [[2do]] [[ft-id]]
-	else if ( sf.f.ftype & (FT_ID_CERT_BIN|FT_ID_TIK_BIN|FT_ID_TMD_BIN) )
+	else if ( sf.f.ftype & (FT_ID_SIG_BIN|FT_ID_CERT_BIN|FT_ID_TIK_BIN|FT_ID_TMD_BIN) )
 	{
 	    const size_t load_size = sf.file_size < sizeof(iobuf)
 				   ? sf.file_size : sizeof(iobuf);
@@ -3573,6 +3566,36 @@ int AddCertFile ( ccp fname, int unused )
 
     ResetSF(&sf,0);
     return err;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static int sort_cert ( const void * va, const void * vb )
+{
+    const cert_item_t *a = (const cert_item_t *)va;
+    const cert_item_t *b = (const cert_item_t *)vb;
+    return strcasecmp(a->name,b->name);
+}
+
+//-----------------------------------------------------------------------------
+
+static int sort_cert_reverse ( const void * va, const void * vb )
+{
+    const cert_item_t *a = (const cert_item_t *)va;
+    const cert_item_t *b = (const cert_item_t *)vb;
+    return strcasecmp(b->name,a->name);
+}
+
+//-----------------------------------------------------------------------------
+
+void SortGlobalCert ( uint smode )
+{
+    if ( smode == SORT_NONE || global_cert.used < 2 )
+	return;
+
+    int (*func) ( const void *, const void * )
+		= smode & SORT_REVERSE ? sort_cert_reverse : sort_cert;
+    qsort(global_cert.cert,global_cert.used,sizeof(*global_cert.cert),func);
 }
 
 //

@@ -9,14 +9,14 @@
 ##                      \/  \/     |_|    |_|                      ##
 ##                                                                 ##
 ##                        Wiimms ISO Tools                         ##
-##                      https://wit.wiimm.de/                       ##
+##                      https://wit.wiimm.de/                      ##
 ##                                                                 ##
 #####################################################################
 ##                                                                 ##
 ##   This file is part of the WIT project.                         ##
-##   Visit https://wit.wiimm.de/ for project details and sources.   ##
+##   Visit https://wit.wiimm.de/ for project details and sources.  ##
 ##                                                                 ##
-##   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>      ##
+##   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>      ##
 ##                                                                 ##
 #####################################################################
 
@@ -45,7 +45,7 @@ WDF_LONG		= Wiimms WDF Tool
 WFUSE_SHORT		= wfuse
 WFUSE_LONG		= Wiimms FUSE Tool
 
-VERSION_NUM		= 3.02a
+VERSION_NUM		= 3.03b
 BETA_VERSION		= 0
 			# 0:off  -1:"beta"  >0:"beta#"
 
@@ -705,7 +705,8 @@ ifeq ($(SYSTEM_LINUX),1)
 
 	@printf "\n---------- BUILDING LINUX/I386 ----------\n\n"
 	@for t in $(ALL_TOOLS_X); do rm -f bin/$$t; done
-	@M32=1 $(MAKE) --no-print-directory clean+ install
+	@$(MAKE) --no-print-directory clean+
+	@M32=1 $(MAKE) -j --no-print-directory install
 
 ifeq ($(HAVE_INSTBIN_32),1)
 	@printf "$(LOGFORMAT_INST)" copy "$(INSTBIN)/* to $(INSTBIN_32)"
@@ -716,7 +717,8 @@ endif
 
 	@printf "\n---------- BUILDING LINUX/X86_64 ----------\n\n"
 	@for t in $(ALL_TOOLS_X); do rm -f bin/$$t; done
-	@$(MAKE) --no-print-directory clean+ install doc
+	@$(MAKE) --no-print-directory clean+
+	@$(MAKE) -j --no-print-directory install
 
 ifeq ($(HAVE_INSTBIN_64),1)
 	@printf "$(LOGFORMAT_INST)" copy "$(INSTBIN)/* to $(INSTBIN_64)"

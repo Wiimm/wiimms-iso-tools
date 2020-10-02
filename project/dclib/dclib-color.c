@@ -688,6 +688,309 @@ uint PrintColoredLines
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////		global commands: TESTCOLORS		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[color_info_t]]
+
+typedef struct color_info_t
+{
+    bool	valid;		// >0: data below is valid
+
+    u8		m_index;	// index of 0..255 for "\e[*m"
+
+    s8		m_red;		// -1:invalid, 0..5:  red value of 'm_index'
+    s8		m_green;	// -1:invalid, 0..5:  green value of 'm_index'
+    s8		m_blue;		// -1:invalid, 0..5:  blue value of 'm_index'
+    s8		m_gray;		// -1:invalid, 0..23: gray value of 'm_index'
+
+    u32		ref_color;	// reference colors, based on 'm_index';
+    u32		src_color;	// scanned color
+}
+color_info_t;
+
+///////////////////////////////////////////////////////////////////////////////
+
+static bool AssignColorInfo ( color_info_t *ci, u32 rgb )
+{
+    DASSERT(ci);
+    memset(ci,0,sizeof(*ci));
+
+    ci->src_color = rgb & 0xffffff;
+    ci->m_index   = ConvertColorRGBToM256(ci->src_color);
+    ci->ref_color = ConvertColorM256ToRGB(ci->m_index);
+
+    const uint r = ci->ref_color >> 16 & 0xff;
+    const uint g = ci->ref_color >>  8 & 0xff;
+    const uint b = ci->ref_color       & 0xff;
+
+    ci->m_red   = SingleColorToM6(r);
+    ci->m_green = SingleColorToM6(g);
+    ci->m_blue  = SingleColorToM6(b);
+
+    ci->m_gray  = ( r + g + b + 21 ) / 30;
+    if ( ci->m_gray > 23 )
+	ci->m_gray = 23;
+    else if ( ci->m_gray > 0 )
+	ci->m_gray--;
+
+    return ci->valid = 1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static bool ScanColorInfo ( color_info_t *ci, ccp arg )
+{
+    DASSERT(ci);
+    memset(ci,0,sizeof(*ci));
+    if ( arg && *arg )
+    {
+	arg = SkipControls(arg);
+
+	ulong num, r, g, b;
+	if ( *arg >= 'g' && *arg <= 'z' )
+	{
+	    const char mode = *arg;
+	    arg = SkipControls(arg+1);
+
+	    num = str2ul(arg,0,10);
+	    switch (mode)
+	    {
+		case 'm':
+		    return AssignColorInfo(ci,ConvertColorM256ToRGB(num));
+
+		case 'g':
+		    return AssignColorInfo(ci,ConvertColorM256ToRGB(232 + num % 24));
+
+		case 'c':
+		    r = num / 100 % 10;
+		    g = num / 10  % 10;
+		    b = num       % 10;
+		    goto rgb5;
+	    }
+	}
+	else
+	{
+	    char *end;
+	    num = str2ul(arg,&end,16);
+
+	    ci->valid = true;
+	    if ( end - arg <= 3 )
+	    {
+		r = num >> 8 & 15;
+		g = num >> 4 & 15;
+		b = num      & 15;
+
+		rgb5:
+		if ( r > 5 ) r = 5;
+		if ( g > 5 ) g = 5;
+		if ( b > 5 ) b = 5;
+		return AssignColorInfo(ci,ConvertColorM256ToRGB(16 + 36*r + 6*g + b));
+	    }
+	    return AssignColorInfo(ci,num);
+	}
+    }
+
+    return ci->valid;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void PrintColorInfo ( FILE *f, color_info_t *ci )
+{
+    DASSERT(f);
+    DASSERT(ci);
+
+    if (ci->valid)
+	fprintf(f," %06x -> %06x : %3u : %u,%u,%u : %2u"
+		" \e[48;5;16;38;5;%um test \e[0m"
+		" \e[48;5;244;38;5;%um test \e[0m"
+		" \e[48;5;231;38;5;%um test \e[0m "
+		" \e[38;5;16;48;5;%um test \e[0m"
+		" \e[38;5;244;48;5;%um test \e[0m"
+		" \e[38;5;231;48;5;%um test \e[0m\n",
+		ci->src_color, ci->ref_color,
+		ci->m_index, ci->m_red, ci->m_green, ci->m_blue, ci->m_gray,
+		ci->m_index, ci->m_index, ci->m_index,
+		ci->m_index, ci->m_index, ci->m_index );
+    else
+	fputs(" --\n",f);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enumError Command_TESTCOLORS ( int argc, char ** argv )
+{
+ #if HAVE_PRINT
+    GetColorByName(colout,"blue");
+ #endif
+
+    printf("TEST COLORS: %u arguments:\n",argc);
+
+    bool sep = true;
+    int idx;
+    for ( idx = 0; idx < argc; idx++ )
+    {
+	ccp minus = strchr(argv[idx],'-');
+	if ( minus || sep )
+	{
+	    putchar('\n');
+	    sep = false;
+	    if ( strlen(argv[idx]) == 1 )
+		continue;
+	}
+
+	color_info_t ci1;
+	ScanColorInfo(&ci1,argv[idx]);
+	PrintColorInfo(stdout,&ci1);
+
+	if (!minus)
+	    continue;
+
+	color_info_t ci2;
+	ScanColorInfo(&ci2,minus+1);
+	if ( ci2.ref_color == ci1.ref_color )
+	    continue;
+
+	int r1 = ci1.ref_color >> 16 & 0xff;
+	int g1 = ci1.ref_color >>  8 & 0xff;
+	int b1 = ci1.ref_color       & 0xff;
+	int r2 = ci2.ref_color >> 16 & 0xff;
+	int g2 = ci2.ref_color >>  8 & 0xff;
+	int b2 = ci2.ref_color       & 0xff;
+
+	int n_steps = abs( r2 - r1 );
+	int diff = abs( g2 - g1 );
+	if ( n_steps < diff )
+	    n_steps = diff;
+	diff = abs( b2 - b1 );
+	if ( n_steps < diff )
+	    n_steps = diff;
+
+	u8 prev_m = ci1.m_index;
+	u32 prev_rgb = ci1.ref_color;
+	int i;
+	for ( i = 1; i <= n_steps; i++ )
+	{
+	    uint r = ( r2 - r1 ) * i / n_steps + r1;
+	    uint g = ( g2 - g1 ) * i / n_steps + g1;
+	    uint b = ( b2 - b1 ) * i / n_steps + b1;
+	    u8 new_m = ConvertColorRGB3ToM256(r,g,b);
+	    if ( prev_m != new_m )
+	    {
+		prev_m = new_m;
+		color_info_t ci3;
+		AssignColorInfo(&ci3,r<<16|g<<8|b);
+		if ( prev_rgb != ci3.ref_color )
+		{
+		    prev_rgb = ci3.src_color = ci3.ref_color;
+		    PrintColorInfo(stdout,&ci3);
+		}
+	    }
+	}
+	sep = true;
+    }
+    putchar('\n');
+    return ERR_OK;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			color helpers			///////////////
+///////////////////////////////////////////////////////////////////////////////
+//
+// https://en.wikipedia.org/wiki/ANSI_escape_code
+// https://jonasjacek.github.io/colors/
+//
+// 0..15:  000000 800000 008000 808000  000080 800080 008080 c0c0c0
+//	   808080 ff0000 00ff00 ffff00  0000ff ff00ff 00ffff ffffff
+//		=> real colors varies on implementation
+//
+// 6x6x6: 0 95 135 175 215 255 == 00 5f 87 af d7 ff
+//
+// gray:  8 18 28 ... 238 == 08 12 1c 26 30 3a ... e4 ee f8
+//
+///////////////////////////////////////////////////////////////////////////////
+//
+//  mkw-ana testcol 000000-ffffff
+//  mkw-ana testcol 500-550 550-050 050-055 055-005 005-505 505-500
+//
+///////////////////////////////////////////////////////////////////////////////
+
+u32 ColorTab_M0_M15[16] =
+{
+	0x000000, 0x800000, 0x008000, 0x808000,
+	0x000080, 0x800080, 0x008080, 0xc0c0c0,
+	0x808080, 0xff0000, 0x00ff00, 0xffff00,
+	0x0000ff, 0xff00ff, 0x00ffff, 0xffffff,
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+u8 ConvertColorRGB3ToM256 ( u8 r, u8 g, u8 b )
+{
+    // 0..5
+    const int r6 = SingleColorToM6(r);
+    const int g6 = SingleColorToM6(g);
+    const int b6 = SingleColorToM6(b);
+
+    u8	 m256	= 36*r6 + 6*g6 + b6 + 16;
+    uint delta	= abs ( ( r6 ? 55 + 40 * r6 : 0 ) - r  )
+		+ abs ( ( g6 ? 55 + 40 * g6 : 0 ) - g  )
+		+ abs ( ( b6 ? 55 + 40 * b6 : 0 ) - b  );
+
+    //printf("%02x>%u %02x>%u %02x>%u : m=%u delta=%d\n",r,r6,g,g6,b,b6,m256,delta);
+
+    int m, gray, prev = 0x1000000;
+    for ( m = 232, gray = 8; m < 256; m++, gray += 10 )
+    {
+	const uint d = abs( gray - r ) + abs( gray - g ) + abs( gray - b );
+	if ( d > prev )
+	    break;
+	if ( d <= delta )
+	{
+	    delta = d;
+	    m256  = m;
+	}
+	prev = d;
+    }
+
+    return m256;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+u8 ConvertColorRGBToM256 ( u32 rgb )
+{
+    return ConvertColorRGB3ToM256( rgb >> 16, rgb >> 8, rgb );
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+u32 ConvertColorM256ToRGB ( u8 m256 )
+{
+    if ( m256 < 16 )
+	return ColorTab_M0_M15[m256];
+
+    if ( m256 < 232 )
+    {
+	m256 -= 16;
+	const uint r =  m256 / 36;
+	const uint g =  m256 / 6 % 6;
+	const uint b =  m256 % 6;
+
+	u32 col = 0;
+	if (r) col |= 0x370000 + 0x280000 * r;
+	if (g) col |= 0x003700 + 0x002800 * g;
+	if (b) col |= 0x000037 + 0x000028 * b;
+	return col;
+    }
+
+    m256 -= 232;
+    return 0x080808 + m256 * 0x0a0a0a;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			  terminal			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 

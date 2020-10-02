@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -86,7 +86,7 @@ typedef enum enumOptions
 	OPT_COMPRESSION,
 	OPT_MEM,
 
-	OPT__N_SPECIFIC, // == 30 
+	OPT__N_SPECIFIC, // == 30
 
 	//----- global options -----
 

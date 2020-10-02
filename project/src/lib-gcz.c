@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -636,7 +636,7 @@ static enumError flush_block
     GCZ_t *gcz = sf->gcz;
     DASSERT(gcz);
 
-    if ( gcz->block == next_block )
+    if ( gcz->block == next_block || !sf->f.is_writing )
 	return ERR_OK; // block is still active
 
     if (!IS_M1(gcz->block))

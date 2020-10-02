@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -165,9 +165,10 @@ typedef enum enumOptions
 	OPT_OLD_STYLE,
 	OPT_SECTIONS,
 	OPT_SORT,
+	OPT_NO_SORT,
 	OPT_LIMIT,
 
-	OPT__N_SPECIFIC, // == 111 
+	OPT__N_SPECIFIC, // == 112
 
 	//----- global options -----
 
@@ -198,7 +199,7 @@ typedef enum enumOptions
 	OPT_ALIGN_WDF,
 	OPT_GCZ_BLOCK,
 
-	OPT__N_TOTAL // == 137
+	OPT__N_TOTAL // == 138
 
 } enumOptions;
 
@@ -322,6 +323,7 @@ typedef enum enumOptions
 //	OB_OLD_STYLE		= 1llu << OPT_OLD_STYLE,
 //	OB_SECTIONS		= 1llu << OPT_SECTIONS,
 //	OB_SORT			= 1llu << OPT_SORT,
+//	OB_NO_SORT		= 1llu << OPT_NO_SORT,
 //	OB_LIMIT		= 1llu << OPT_LIMIT,
 //
 //	//----- group & command options -----
@@ -490,6 +492,7 @@ typedef enum enumOptions
 //				| OB_MIXED
 //				| OB_UNIQUE
 //				| OB_SORT
+//				| OB_NO_SORT
 //				| OB_GRP_TIME
 //				| OB_LONG
 //				| OB_FRAGMENTS
@@ -876,6 +879,7 @@ typedef enum enumGetOpt
 	GO_INODE,
 	GO_OLD_STYLE,
 	GO_SECTIONS,
+	GO_NO_SORT,
 	GO_LIMIT,
 
 } enumGetOpt;

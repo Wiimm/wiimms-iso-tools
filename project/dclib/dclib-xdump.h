@@ -205,9 +205,25 @@ XDump_t;
 
 //-----------------------------------------------------------------------------
 
-void InitializeXDump ( XDump_t *xd );
-void SetupXDump ( XDump_t *xd, XDumpCommand_t cmd );
+extern ccp  hexdump_prefix;
+extern ccp  hexdump_eol;
+extern bool hexdump_align;
 
+//-----------------------------------------------------------------------------
+
+void InitializeXDump ( XDump_t *xd );
+
+void InitializeXDumpEx
+(
+    XDump_t	*xd,
+    FILE	*f,
+    int		indent,
+    u64		addr,
+    int		addr_fw,
+    int		row_len
+);
+
+void SetupXDump ( XDump_t *xd, XDumpCommand_t cmd );
 static inline void ResetXDump ( XDump_t *xd ) {}
 
 void PrintXDumpParam

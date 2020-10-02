@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -411,17 +411,18 @@ typedef enum enumFileType
 	//--- special files
 
 	FT_ID_DOL	= 0x0020,  // file is a DOL file
-	FT_ID_CERT_BIN	= 0x0040,  // 'cert.bin' like file
-	FT_ID_TIK_BIN	= 0x0080,  // 'ticket.bin' like file
-	FT_ID_TMD_BIN	= 0x0100,  // 'tmd.bin' like file
-	FT_ID_HEAD_BIN	= 0x0200,  // 'header.bin' like file
-	FT_ID_BOOT_BIN	= 0x0400,  // 'boot.bin' like file
-	FT_ID_FST_BIN	= 0x0800,  // 'fst.bin' like file
-	FT_ID_PATCH	= 0x1000,  // wit patch file
-	FT_ID_OTHER	= 0x2000,  // unknown file
+	FT_ID_SIG_BIN	= 0x0040,  // 'signature.bin' like file
+	FT_ID_CERT_BIN	= 0x0080,  // 'cert.bin' like file
+	FT_ID_TIK_BIN	= 0x0100,  // 'ticket.bin' like file
+	FT_ID_TMD_BIN	= 0x0200,  // 'tmd.bin' like file
+	FT_ID_HEAD_BIN	= 0x0400,  // 'header.bin' like file
+	FT_ID_BOOT_BIN	= 0x0800,  // 'boot.bin' like file
+	FT_ID_FST_BIN	= 0x1000,  // 'fst.bin' like file
+	FT_ID_PATCH	= 0x2000,  // wit patch file
+	FT_ID_OTHER	= 0x4000,  // unknown file
 
-	 FT__SPC_MASK	= 0x3fe0,  // mask of all special files
-	 FT__ID_MASK	= 0x3fff,  // mask of all 'FT_ID_' values
+	 FT__SPC_MASK	= 0x7fe0,  // mask of all special files
+	 FT__ID_MASK	= 0x7fff,  // mask of all 'FT_ID_' values
 
 	//--- attributes
 
@@ -1418,7 +1419,10 @@ RepairMode ScanRepairMode ( ccp arg );
 
 size_t AllocTempBuffer ( size_t needed_size );
 int AddCertFile ( ccp fname, int unused );
+void SortGlobalCert ( uint smode );
 char * AllocRealPath ( ccp source );
+
+void cmd_version_section ( bool sect_header, ccp name_short, ccp name_long );
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -1427,7 +1431,6 @@ char * AllocRealPath ( ccp source );
 
 extern enumProgID	prog_id;
 extern u32		revision_id;
-extern ccp		progname;
 extern ccp		search_path[];
 extern ccp		lang_info;
 extern volatile int	SIGINT_level;

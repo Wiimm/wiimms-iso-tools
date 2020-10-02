@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -156,11 +156,12 @@ typedef enum enumOptions
 	OPT_OLD_STYLE,
 	OPT_SECTIONS,
 	OPT_SORT,
+	OPT_NO_SORT,
 	OPT_LIMIT,
 	OPT_FILE_LIMIT,
 	OPT_PATCH_FILE,
 
-	OPT__N_SPECIFIC, // == 104 
+	OPT__N_SPECIFIC, // == 105
 
 	//----- global options -----
 
@@ -193,7 +194,7 @@ typedef enum enumOptions
 	OPT_GCZ_ZIP,
 	OPT_GCZ_BLOCK,
 
-	OPT__N_TOTAL // == 132
+	OPT__N_TOTAL // == 133
 
 } enumOptions;
 
@@ -308,6 +309,7 @@ typedef enum enumOptions
 //	OB_OLD_STYLE		= 1llu << OPT_OLD_STYLE,
 //	OB_SECTIONS		= 1llu << OPT_SECTIONS,
 //	OB_SORT			= 1llu << OPT_SORT,
+//	OB_NO_SORT		= 1llu << OPT_NO_SORT,
 //	OB_LIMIT		= 1llu << OPT_LIMIT,
 //	OB_FILE_LIMIT		= 1llu << OPT_FILE_LIMIT,
 //	OB_PATCH_FILE		= 1llu << OPT_PATCH_FILE,
@@ -460,7 +462,9 @@ typedef enum enumOptions
 //				| OB_FAKE_SIGN
 //				| OB_DEST
 //				| OB_DEST2
-//				| OB_LONG,
+//				| OB_LONG
+//				| OB_SORT
+//				| OB_NO_SORT,
 //
 //	OB_CMD_FILELIST		= OB_AUTO
 //				| OB_GRP_XXSOURCE
@@ -528,6 +532,7 @@ typedef enum enumOptions
 //				| OB_GRP_FST_OPTIONS
 //				| OB_UNIQUE
 //				| OB_SORT
+//				| OB_NO_SORT
 //				| OB_SECTIONS
 //				| OB_NO_HEADER
 //				| OB_LONG
@@ -549,7 +554,8 @@ typedef enum enumOptions
 //				| OB_LONG
 //				| OB_NO_HEADER
 //				| OB_SHOW
-//				| OB_SORT,
+//				| OB_SORT
+//				| OB_NO_SORT,
 //
 //	OB_CMD_FILES_L		= OB_CMD_FILES,
 //
@@ -580,6 +586,7 @@ typedef enum enumOptions
 //				| OB_GRP_FST_SELECT
 //				| OB_PREALLOC
 //				| OB_SORT
+//				| OB_NO_SORT
 //				| OB_LONG
 //				| OB_SECTIONS
 //				| OB_GRP_PATCH
@@ -878,6 +885,7 @@ typedef enum enumGetOpt
 	GO_UNIT,
 	GO_OLD_STYLE,
 	GO_SECTIONS,
+	GO_NO_SORT,
 	GO_LIMIT,
 	GO_FILE_LIMIT,
 	GO_PATCH_FILE,

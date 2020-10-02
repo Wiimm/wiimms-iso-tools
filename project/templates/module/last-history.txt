@@ -1,10 +1,6 @@
 wit v@@VERSION@@ r@@REV-NEXT@@ - @@@@-@@-@@
 
- - wit COPY accpets patch options now.
- - Option --domain=DOMAIN: Bug fixed if DOMAIN contains exactly 16 characters.
- - Bug fix: Gamecube games are accessible again.
- - Bug fix for command wit CERT: Correct algorithm to verify signatures of
-   type 'Elliptic Curve'.
+ - wit CERT: Management of certificates improved.
 
 ~
 ~Known bugs:

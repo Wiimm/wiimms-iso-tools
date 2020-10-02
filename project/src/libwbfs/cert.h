@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -88,36 +88,42 @@ typedef enum cert_stat_t
 
 //
 ///////////////////////////////////////////////////////////////////////////////
-///////////////			struct cert_head_t		///////////////
+///////////////			struct cert_*_t			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 // [[cert_head_t]]
 
 typedef struct cert_head_t
 {
     u32			sig_type;	// signature type
-    u8			sig_data[0];
+    u8			cert_data[0];	// -> cert_data_t
+}
+__attribute__ ((packed)) cert_head_t;
 
-} __attribute__ ((packed)) cert_head_t;
-
-//
 ///////////////////////////////////////////////////////////////////////////////
-///////////////			struct cert_data_t		///////////////
+// [[cert_bin_t]]
+
+typedef struct cert_bin_t
+{
+    u32			sig_type;	// signature type
+    u8			sig_key[2][30];	// 2 signature keys
+    u8			padding[0x40];
+    u8			cert_data[0];	// -> cert_data_t
+}
+__attribute__ ((packed)) cert_bin_t;
+
 ///////////////////////////////////////////////////////////////////////////////
 // [[cert_data_t]]
 
 typedef struct cert_data_t
 {
-    char		issuer[0x40]; 	// signature issuer
+    char		issuer[0x40]; 	// signature issuer (chain name)
     u32			key_type;	// key type
     char		key_id[0x40];	// id of key
-    u32			unknown1;
+    u32			key_num;	// key number
     u8			public_key[];
+}
+__attribute__ ((packed)) cert_data_t;
 
-} __attribute__ ((packed)) cert_data_t;
-
-//
-///////////////////////////////////////////////////////////////////////////////
-///////////////			struct cert_item_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 // [[cert_item_t]]
 
@@ -126,17 +132,14 @@ typedef struct cert_item_t
     char		name[0x82];	// concatenated name
     const cert_head_t	* head;		// pointer to cert head
     const cert_data_t	* data;		// pointer to cert data
-    u32			sig_space;	// space for head->sig_data'
-    u32			sig_size;	// used size of 'head->sig_data'
+    u32			sig_space;	// space for head->cert_data'
+    u32			sig_size;	// used size of 'head->cert_data'
     u32			key_size;	// size of 'data->public_key'
     u32			data_size;	// size of 'data'
-    u32			cert_size;	// total size of cert
+    u32			cert_size;	// total size of cert, 'head' is beginning
+}
+cert_item_t;
 
-} cert_item_t;
-
-//
-///////////////////////////////////////////////////////////////////////////////
-///////////////			struct cert_chain_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 // [[cert_chain_t]]
 
@@ -145,10 +148,20 @@ typedef struct cert_chain_t
     cert_item_t		* cert;		// pointer to certificate list
     int			used;		// used elements of 'cert'
     int			size;		// alloced elements of 'cert' 
-        
-} cert_chain_t;
+}
+cert_chain_t;
 
 extern cert_chain_t global_cert;
+extern cert_chain_t auto_cert;
+
+const cert_item_t * FindCertItem
+(
+    ccp		issuer,		// name to search
+    const cert_chain_t
+		*cc,		// not NULL: search here first
+    bool	search_global,	// if not found: search 'global_cert'
+    bool	auto_auto	// if not found: search 'auto_cert' and add cert's
+);
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -270,7 +283,8 @@ int cert_append_file
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void cert_add_root();
+// issuer can be NULL
+void cert_add_root ( ccp issuer );
 
 //
 ///////////////////////////////////////////////////////////////////////////////

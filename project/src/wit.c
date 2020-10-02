@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2017 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -100,30 +100,9 @@ static void help_exit ( bool xmode )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static void print_version_section ( bool print_header )
+static void print_version_section ( bool print_sect_header )
 {
-    if (print_header)
-	fputs("[version]\n",stdout);
-
-    const u32 base = 0x04030201;
-    const u8 * e = (u8*)&base;
-    const u32 endian = be32(e);
-
-    printf( "prog=" WIT_SHORT "\n"
-	    "name=" WIT_LONG "\n"
-	    "version=" VERSION "\n"
-	    "beta=%d\n"
-	    "revision=" REVISION  "\n"
-	    "system=" SYSTEM "\n"
-	    "endian=%u%u%u%u %s\n"
-	    "author=" AUTHOR "\n"
-	    "date=" DATE "\n"
-	    "url=" URI_HOME WIT_SHORT "\n"
-	    "\n"
-	    , BETA_VERSION
-	    , e[0], e[1], e[2], e[3]
-	    , endian == 0x01020304 ? "little"
-		: endian == 0x04030201 ? "big" : "mixed" );
+    cmd_version_section(print_sect_header,WIT_SHORT,WIT_LONG);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -170,11 +149,11 @@ static void hint_exit ( enumError stat )
     if ( current_command )
 	fprintf(stderr,
 	    "-> Type '%s help %s' (pipe it to a pager like 'less') for more help.\n\n",
-	    progname, CommandInfo[current_command->id].name1 );
+	    ProgInfo.progname, CommandInfo[current_command->id].name1 );
     else
 	fprintf(stderr,
 	    "-> Type '%s -h' or '%s help' (pipe it to a pager like 'less') for more help.\n\n",
-	    progname, progname );
+	    ProgInfo.progname, ProgInfo.progname );
     exit(stat);
 }
 
@@ -382,8 +361,7 @@ static enumError cmd_cert()
     ParamList_t * param;
     for ( param = first_param; param; param = param->next )
 	AtFileHelper(param->arg,0,0,AddCertFile);
-
-    cert_add_root(); // if not already inserted
+    SortGlobalCert(sort_mode);
 
     FILE * f = 0;
     if ( opt_dest && *opt_dest )
@@ -402,6 +380,16 @@ static enumError cmd_cert()
     for ( i = 0; i < global_cert.used; i++ )
     {
 	cert_item_t * item = global_cert.cert + i;
+     #if 0
+	const u8 *cert_data = item->head ? (u8*)item->head : (u8*)item->data;
+	if ( cert_data && item->name && item->cert_size )
+	{
+	    char fname[200];
+	    snprintf(fname,sizeof(fname),"cert-%s.tmp",item->name);
+	    fprintf(stderr,"SAVE: %s\n",fname);
+	    SaveFile(fname,0,FM_OVERWRITE|FM_TOUCH,cert_data,item->cert_size,0);
+	}
+     #endif
 	if (MatchFilePattern(pat_select,item->name,'-'))
 	{
 	    if ( pat_fakesign->is_active
@@ -1752,6 +1740,8 @@ enumError exec_dump ( SuperFile_t * sf, Iterator_t * it )
     if ( sf->f.ftype & FT_ID_FST_BIN )
 	return Dump_FST_BIN(stdout,0,sf,it->real_path,opt_show_mode);
 
+// [[FT_ID_SIG_BIN]]
+
     if ( sf->f.ftype & FT_ID_CERT_BIN )
 	return Dump_CERT_BIN(stdout,0,sf,it->real_path,1);
 
@@ -2300,7 +2290,7 @@ static enumError cmd_fragments()
 	ERROR0(ERR_WARNING,
 	    "This version of %s can determine the file system mapping"
 	    " only for WBFS partitions.",
-	    progname);
+	    ProgInfo.progname);
 
     ParamList_t * param;
     for ( param = first_param; param; param = param->next )
@@ -2783,7 +2773,7 @@ enumError exec_extract ( SuperFile_t * fi, Iterator_t * it )
 		*split_buf = 0;
 
 	    printf( "%s: %sEXTRACT %*u/%u %s%s:%s -> %s\n",
-		progname, testmode ? "WOULD " : "",
+		ProgInfo.progname, testmode ? "WOULD " : "",
 		count_fw, it->source_index+1, it->source_list.used,
 		oft_info[fi->iod.oft].name,
 		split_buf, fi->f.fname, dest_dir );
@@ -3268,12 +3258,12 @@ enumError exec_edit ( SuperFile_t * fi, Iterator_t * it )
 #else
     if (testmode)
     {
-	printf( "%s: WOULD EDIT %s:%s\n", progname, oinfo->name, fi->f.fname );
+	printf( "%s: WOULD EDIT %s:%s\n", ProgInfo.progname, oinfo->name, fi->f.fname );
 	return ERR_OK;
     }
 
     if ( verbose >= 0 )
-	printf( "%s: EDIT %s:%s\n", progname, oinfo->name, fi->f.fname );
+	printf( "%s: EDIT %s:%s\n", ProgInfo.progname, oinfo->name, fi->f.fname );
 #endif
 
     enumError err = PatchSF(fi,ERR_OK);
@@ -3748,7 +3738,7 @@ enumError exec_verify ( SuperFile_t * fi, Iterator_t * it )
     if ( testmode || verbose >= 999 )
     {
 	printf( "%s: %sVERIFY %s:%s\n",
-		progname, testmode ? "WOULD " : "",
+		ProgInfo.progname, testmode ? "WOULD " : "",
 		oft_info[fi->iod.oft].name, fi->f.fname );
 	if (testmode)
 	    return ERR_OK;
@@ -4037,6 +4027,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_SHOW:		err += ScanOptShow(optarg); break;
 	case GO_UNIT:		err += ScanOptUnit(optarg); break;
 	case GO_SORT:		err += ScanOptSort(optarg); break;
+	case GO_NO_SORT:	err += ScanOptSort("none"); break;
 
 	case GO_PMODE:
 	    {
@@ -4110,7 +4101,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
     if ( verbose > 3 && !is_env )
     {
 	print_title(stdout);
-	printf("PROGRAM_NAME   = %s\n",progname);
+	printf("PROGRAM_NAME   = %s\n",ProgInfo.progname);
 	if (lang_info)
 	    printf("LANG_INFO      = %s\n",lang_info);
 	ccp * sp;
@@ -4119,7 +4110,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	printf("\n");
     }
 
-    return !err ? ERR_OK : max_error ? max_error : ERR_SYNTAX;
+    return !err ? ERR_OK : ProgInfo.max_error ? ProgInfo.max_error : ERR_SYNTAX;
 }
 
 //
