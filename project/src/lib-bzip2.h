@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -195,6 +195,34 @@ enumError DecBZIP2
     uint		*dest_written,	// store num bytes written to 'dest', never NULL
     const void		*src,		// source buffer
     uint		src_size	// size of source buffer
+);
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////		    DecodeBZIP2Manager()		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[BZ2Manager_t]]
+
+typedef struct BZ2Manager_t
+{
+    //--- source
+
+    cvp		src_data;	// BZ2 is automatically detected and
+				// decoded by DecodeBZIP2. Nver NULL
+    uint	src_size;	// size of 'src_data'
+
+    //--- decoded
+
+    u8		*data;		// NULL or data, alloced if not part of 'src_data'
+    uint	size;		// size of 'data'
+}
+BZ2Manager_t;
+
+///////////////////////////////////////////////////////////////////////////////
+
+enumError DecodeBZIP2Manager
+(
+    BZ2Manager_t	*mgr		// manager data
 );
 
 //

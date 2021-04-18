@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -98,7 +98,7 @@ typedef struct IOData_t
 
 typedef struct SuperFile_t
 {
-	// parameters, set by user
+	//-- parameters, set by user
 
 	WFile_t f;			// file handling struct
 	int  indent;			// indent of progress and summary
@@ -107,12 +107,12 @@ typedef struct SuperFile_t
 	bool show_msec;			// true: show milli seconds in statistics
 	bool allow_fst;			// true: allow reading of fst
 
-	// additional info
+	//-- additional info
 
 	struct SuperFile_t *src;	// NULL or pointer to source to get info
 	bool  raw_mode;			// true: force raw mode
 
-	// internal values: progress
+	//-- internal values: progress
 
 	int  progress_trigger;		// progress is only printed if value>0
 	int  progress_trigger_init;	// if printed: init 'progress_trigger' with this value
@@ -128,7 +128,7 @@ typedef struct SuperFile_t
 	u64  progress_data_size;	// value of DefineProgressChunkSF() call
 	u64  progress_chunk_size;	// value of DefineProgressChunkSF() call
 
-	// internal values: file handling
+	//-- internal values: file handling
 
 	u64 file_size;			// the size of the (virtual) ISO image
 	u64 min_file_size;		// if set: Call SetMinSizeSF() before closing
@@ -136,49 +136,49 @@ typedef struct SuperFile_t
 	u64 source_size;		// if >0: size of source
 					//  => display compression ratio in summary stat
 
-	// read and write support
+	//-- read and write support
 
 	IOData_t iod;			// open file mode & read+write functions
 	enumOFT oft_orig;		// OFT of original source if source is FST
 	ReadFunc std_read_func;		// standard read function
 
-	// Wii disc support
+	//-- Wii disc support
 	
 	bool discs_loaded;		// true: discs already loaded -> don't try again
 	wd_disc_t * disc1;		// NULL or pointer to unpatched wii disc
 	wd_disc_t * disc2;		// NULL or pointer to patched wii disc
 
-	// WDF support
+	//-- WDF support
 
 	wdf_controller_t * wdf;		// WDF controller
 
-	// WIA support
+	//-- WIA support
 
 	wia_controller_t * wia;		// WIA controller
 
-	// CISO support
+	//-- CISO support
 
 	CISO_Info_t ciso;		// CISO info data
 
-	// WBFS support (read only)
+	//-- WBFS support (read only)
 
 	struct WBFS_t * wbfs;		// a WBFS
 	u32 wbfs_fragments;		// 0=unknown, >0:number of fragments
 	id6_t wbfs_id6;			// ID6 of wbfs inode
 
-	// GCZ support
+	//-- GCZ support
 
 	GCZ_t * gcz;			// GCT header
 
-	// FST support
+	//-- FST support
 	
 	struct WiiFst_t * fst;		// a FST
 	MemMap_t modified_list;		// sections that are modified while
 					// reading data. This data should
 					// be rewritten to the destination
 					// before closing the files.
-
-} SuperFile_t;
+}
+SuperFile_t;
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -198,7 +198,7 @@ enumError Close2SF
 (
     SuperFile_t		* sf,		// file to close
     SuperFile_t		* remove_sf,	// not NULL & 'sf' finished without error:
-					// close & remove it before renaming 'sf'
+					//	close & remove it before renaming 'sf'
     bool		preserve	// true: force preserve time
 );
 

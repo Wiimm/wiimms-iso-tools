@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -91,6 +91,9 @@ char		escape_char		= '%';
 int		opt_force		= 0;
 bool		use_utf8		= true;
 enumOFT		output_file_type	= OFT_UNKNOWN;
+PrintScriptFF	script_fform		= PSFF_UNKNOWN;
+ccp		script_varname		= 0;
+int		script_array		= 0;
 int		opt_truncate		= 0;
 #if defined(TEST) || defined(WIIMM)					// [[split]]
  int		opt_auto_split		= 1;
@@ -235,6 +238,13 @@ void SetupColors()
 
 void SetupLib ( int argc, char ** argv, ccp p_progname, enumProgID prid )
 {
+    // setup binary mode for cygwin stdout+stderr
+    #if defined(__CYGWIN__)
+	setmode(fileno(stdout),O_BINARY);
+	setmode(fileno(stderr),O_BINARY);
+	//setlocale(LC_ALL,"en_US.utf-8");
+    #endif
+
     SetupTimezone(true);
     GetTimerMSec();
     SetupColors();
@@ -476,14 +486,6 @@ void SetupLib ( int argc, char ** argv, ccp p_progname, enumProgID prid )
     TRACE("- file formats:\n");
     validate_file_format_sizes(1);
     TRACE("-\n");
-
-    //----- setup textmode for cygwin stdout+stderr
-
-    #if defined(__CYGWIN__)
-	setmode(fileno(stdout),O_TEXT);
-	setmode(fileno(stderr),O_TEXT);
-	//setlocale(LC_ALL,"en_US.utf-8");
-    #endif
 
 
     //----- setup prog id
@@ -1310,7 +1312,8 @@ char * PrintTime ( PrintTime_t * pt, const FileAttrib_t * fa )
 	*pt->tbuf = 0;
     else
     {
-	const time_t * timbuf[] = { &fa->itime, &fa->mtime, &fa->ctime, &fa->atime, 0 };
+	const time_t * timbuf[] = { &fa->itime.tv_sec, &fa->mtime.tv_sec,
+				    &fa->ctime.tv_sec, &fa->atime.tv_sec, 0 };
 	const time_t ** timptr = timbuf;
 
 	char *dest = pt->tbuf, *end = dest + sizeof(pt->tbuf);
@@ -1338,10 +1341,10 @@ time_t SelectTime ( const FileAttrib_t * fa, int opt_time )
     ASSERT(fa);
     switch ( opt_time & PT__USE_MASK )
     {
-	case PT_USE_ITIME: return fa->itime;
-	case PT_USE_CTIME: return fa->ctime;
-	case PT_USE_ATIME: return fa->atime;
-	default:	   return fa->mtime;
+	case PT_USE_ITIME: return fa->itime.tv_sec;
+	case PT_USE_CTIME: return fa->ctime.tv_sec;
+	case PT_USE_ATIME: return fa->atime.tv_sec;
+	default:	   return fa->mtime.tv_sec;
     }
 }
 
@@ -3180,7 +3183,7 @@ char * SubstString
 		memcpy(tempbuf,start,count);
 		tempbuf[count] = 0;
 	    }
-	    dest = NormalizeFileName(dest,end-dest,tempbuf,ptr->allow_slash,use_utf8);
+	    dest = NormalizeFileName(dest,end-dest,tempbuf,ptr->allow_slash,use_utf8,TRSL_NONE);
 	}
 
     if (count)
@@ -3550,7 +3553,18 @@ size_t ReadDataList // returns number of writen bytes
 
 //
 ///////////////////////////////////////////////////////////////////////////////
-///////////////			    etc				///////////////
+///////////////			apple only			///////////////
+///////////////////////////////////////////////////////////////////////////////
+#ifdef __APPLE__
+///////////////////////////////////////////////////////////////////////////////
+
+int ____chkstk_darwin() { return 0; }
+
+///////////////////////////////////////////////////////////////////////////////
+#endif // __APPLE__
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			    misc			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 size_t AllocTempBuffer ( size_t needed_size )

@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -70,6 +70,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			GCZ_Head_t			///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[GCZ_Head_t]]]
 
 typedef struct GCZ_Head_t // little endian
 {
@@ -127,6 +128,16 @@ int ScanOptGCZBlock ( ccp arg );
 
 ///////////////////////////////////////////////////////////////////////////////
 
+enumFileType AnalyzeGCZ
+(
+    const void		*data,		// valid pointer to data
+    uint		data_size,	// size of data to analyze
+    u64			file_size,	// NULL or known file size
+    GCZ_Head_t		*head		// not NULL: store header (local endian) here
+);
+
+//-----------------------------------------------------------------------------
+
 bool IsValidGCZ
 (
     const void		*data,		// valid pointer to data
@@ -147,15 +158,16 @@ void ResetGCZ ( GCZ_t *gcz );
 
 enumError LoadHeadGCZ
 (
-    GCZ_t		*gcz,		// pointer to data, will be initalized
-    WFile_t		*f		// file to read
+    GCZ_t		*gcz,		// pointer to data, will be initialized
+    WFile_t		*f,		// file to read
+    bool		allow_nkit	// true: allow NKIT/GCZ
 );
 
 //-----------------------------------------------------------------------------
 
 enumError LoadDataGCZ
 (
-    GCZ_t		*gcz,		// pointer to data, will be initalized
+    GCZ_t		*gcz,		// pointer to initialized data
     WFile_t		*f,		// source file
     off_t		off,		// file offset
     void		*buf,		// destination buffer

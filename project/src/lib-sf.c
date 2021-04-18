@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -249,7 +249,7 @@ enumError ResetSF ( SuperFile_t * sf, FileAttrib_t * set_time_ref )
     SetupIOD(sf,OFT_UNKNOWN,OFT_UNKNOWN);
     ResetCISO(&sf->ciso);
     sf->max_virt_off = 0;
-    sf->allow_fst = allow_fst;
+    sf->allow_fst = opt_allow_fst >= OFFON_AUTO;
 
     // reset progress info
     sf->indent			= 5;
@@ -436,7 +436,7 @@ enumError SetupReadSF ( SuperFile_t * sf )
     SetupIOD(sf,OFT_PLAIN,OFT_PLAIN);
     if ( sf->f.ftype == FT_UNKNOWN )
 	AnalyzeFT(&sf->f);
-    ASSERT( Count1Bits32(sf->f.ftype&FT__ID_MASK) <= 1  ); // [[2do]] [[ft-id]]
+    DASSERT( Count1Bits64(sf->f.ftype&FT__ID_MASK) <= 1  ); // [[2do]] [[ft-id]]
 
     if ( sf->allow_fst && sf->f.ftype & FT_ID_FST )
 	return SetupReadFST(sf);
@@ -448,6 +448,15 @@ enumError SetupReadSF ( SuperFile_t * sf )
 	return ERR_CANT_OPEN;
     }
 
+    if ( sf->f.ftype & FT_M_NKIT )
+    {
+	if ( !sf->f.disable_errors && !sf->f.disable_nkit_errors )
+	    ERROR0( ERR_WRONG_FILE_TYPE, "NKIT not supported: %s\n", sf->f.fname );
+	if (!sf->f.id6_dest[0])
+	    memcpy(sf->f.id6_dest,sf->f.id6_src,sizeof(sf->f.id6_dest));
+	return ERR_WRONG_FILE_TYPE;
+    }
+
     if ( sf->f.ftype & FT_M_WDF )
 	return SetupReadWDF(sf);
 
@@ -457,7 +466,7 @@ enumError SetupReadSF ( SuperFile_t * sf )
     if ( sf->f.ftype & FT_A_CISO )
 	return SetupReadCISO(sf);
 
-    if ( sf->f.ftype & FT_A_GCZ )
+    if ( sf->f.ftype & (FT_A_GCZ|FT_A_NKIT_GCZ) )
 	return SetupReadGCZ(sf);
 
     if ( sf->f.ftype & FT_ID_WBFS && ( sf->f.slot >= 0 || sf->f.id6_src[0] ) )
@@ -806,7 +815,7 @@ wd_disc_t * OpenDiscSF
     bool		print_err	// true: print error message if open fails
 )
 {
-    ASSERT(sf);
+    DASSERT(sf);
     if (sf->discs_loaded)
 	return sf->disc2;
 
@@ -877,9 +886,9 @@ wd_disc_t * OpenDiscSF
 	DASSERT(sf->fst);
 	enc = sf->fst->encoding;
     }
-    else
+    else if ( disable_patch_on_load <= 0 )
     {
-	reloc |= patch_main(disc);
+	reloc |= patch_main_and_rel(disc,0);
 
 	if (main_part)
 	{
@@ -1049,11 +1058,11 @@ int SubstFileNameBuf
     enumOFT	oft		// output file type
 )
 {
-    ASSERT(fi);
+    DASSERT(fi);
 
     ccp disc_name = 0;
     char buf[HD_SECTOR_SIZE];
-    if (fi->f.id6_dest[0])
+    if ( fi->f.id6_dest[0] && !(fi->f.ftype & FT_M_NKIT) )
     {
 	OpenDiscSF(fi,false,false);
 	if (fi->disc2)
@@ -2368,7 +2377,7 @@ void PrintProgressChunkSF
 
 enumFileType AnalyzeFT ( WFile_t * f )
 {
-    ASSERT(f);
+    DASSERT(f);
 
     PRINT("AnalyzeFT(%p) fd=%d, split=%d, rd=%d, wr=%d\n",
 	f, GetFD(f), IsSplittedF(f), f->is_reading, f->is_writing );
@@ -2447,7 +2456,7 @@ enumFileType AnalyzeFT ( WFile_t * f )
 	WDiscInfo_t wdisk;
 	InitializeWDiscInfo(&wdisk);
 
-	ASSERT( Count1Bits32(sf.f.ftype&FT__ID_MASK) <= 1  ); // [[2do]] [[ft-id]]
+	ASSERT( Count1Bits64(sf.f.ftype&FT__ID_MASK) <= 1  ); // [[2do]] [[ft-id]]
 
 	if ( sf.f.ftype & FT_ID_WBFS )
 	{
@@ -2571,7 +2580,9 @@ enumFileType AnalyzeFT ( WFile_t * f )
 
     TRACELINE;
     memset(buf1,0,sizeof(buf1));
-    enumError err = ReadAtF(f,0,&buf1,sizeof(buf1));
+    const uint max_read = f->st.st_size < sizeof(buf1)
+			? f->st.st_size : sizeof(buf1);
+    enumError err = ReadAtF(f,0,&buf1,max_read);
     if (err)
     {
 	TRACELINE;
@@ -2663,13 +2674,16 @@ enumFileType AnalyzeFT ( WFile_t * f )
 	    ResetCISO(&ci);
 	}
 
-	if (IsValidGCZ(data_ptr,sizeof(buf1),f->st.st_size,0))
+	enumFileType gcz_type = AnalyzeGCZ(data_ptr,sizeof(buf1),f->st.st_size,0);
+	if (gcz_type)
 	{
-	    ft |= FT_A_GCZ;
-
 	    GCZ_t gcz;
-	    if ( !LoadHeadGCZ(&gcz,f) && !LoadDataGCZ(&gcz,f,0,buf2,sizeof(buf2)) )
+	    if ( !LoadHeadGCZ(&gcz,f,true) && !LoadDataGCZ(&gcz,f,0,buf2,sizeof(buf2)) )
+	    {
 		data_ptr = buf2;
+		if ( gcz_type & FT_A_GCZ || be32(buf2+0x200) == 0x4E4B4954 ) // NKIT
+		    ft |= gcz_type;
+	    }
 	    ResetGCZ(&gcz);
 	}
 
@@ -2731,13 +2745,21 @@ enumFileType AnalyzeFT ( WFile_t * f )
 		break;
 
 	    case FT_ID_WII_ISO:
-		ft |= FT_ID_WII_ISO | FT_A_ISO | FT_A_WII_ISO;
-		if ( !(ft&FT_M_WDF) && !f->seek_allowed )
-		    DefineCachedAreaISO(f,false);
+		if ( be32(buf1+0x200) == 0x4e4b4954 ) // NKIT
+		{
+		    ft |= FT_ID_WII_ISO | FT_A_ISO | FT_A_WII_ISO | FT_A_NKIT_ISO;
+		    memcpy(f->id6_src,buf1,6);
+		}
+		else
+		{
+		    ft |= FT_ID_WII_ISO | FT_A_ISO | FT_A_WII_ISO;
+		    if ( !(ft&FT_M_WDF) && !f->seek_allowed )
+			DefineCachedAreaISO(f,false);
 
-		SetPatchFileID(f,data_ptr,6);
-		if ( f->st.st_size < ISO_SPLIT_DETECT_SIZE )
-		    SetupSplitWFile(f,OFT_PLAIN,0);
+		    SetPatchFileID(f,data_ptr,6);
+		    if ( f->st.st_size < ISO_SPLIT_DETECT_SIZE )
+			SetupSplitWFile(f,OFT_PLAIN,0);
+		}
 		break;
 
 	    case FT_ID_HEAD_BIN:
@@ -2751,14 +2773,14 @@ enumFileType AnalyzeFT ( WFile_t * f )
 	}
     }
 
-    TRACE("ANALYZE FILETYPE: %04x [%s,%s]\n",ft,f->id6_src,f->id6_dest);
+    TRACE("ANALYZE FILETYPE: %llx [%s,%s]\n",(u64)ft,f->id6_src,f->id6_dest);
 
     // restore warnings
     f->disable_errors = disable_errors;
 
     // [[2do]] [[ft-id]]
-    ASSERT_MSG( Count1Bits32(ft&FT__ID_MASK) <= 1,
-		"ft =%x, nbits = %u\n", ft, Count1Bits32(ft&FT__ID_MASK) );
+    ASSERT_MSG( Count1Bits64(ft&FT__ID_MASK) <= 1,
+		"ft = %llx, nbits = %u\n", (u64)ft, Count1Bits64(ft&FT__ID_MASK) );
     return f->ftype = ft;
 }
 
@@ -2866,6 +2888,8 @@ enumFileType AnalyzeMemFT ( const void * preload_buf, off_t file_size )
 
     //----- test cert + ticket + tmd
 
+// [[FT_ID_SIG_BIN]]
+
     const u32 sig_type	= be32(preload_buf);
     const int sig_size	= cert_get_signature_size(sig_type);
     const u32 head_size	= ALIGN32( sig_size + sizeof(cert_head_t), WII_CERT_ALIGN );
@@ -2921,6 +2945,14 @@ enumFileType AnalyzeMemFT ( const void * preload_buf, off_t file_size )
 	}
     }
 
+    if	(  sig_size
+	&& file_size >= 0x108
+	&& !memcmp(preload_buf+0x80,"Root-",5)
+	&& strlen(preload_buf+0xc4) > 6
+	)
+    {
+	return FT_ID_SIG_BIN;
+    }
 
     if (sig_size) // ISO usual data
     {
@@ -2970,8 +3002,8 @@ enumError XPrintErrorFT ( XPARM WFile_t * f, enumFileType err_mask )
     enumError stat = ERR_OK;
     enumFileType  and_mask = err_mask &  f->ftype;
     enumFileType nand_mask = err_mask & ~f->ftype;
-    TRACE("PRINT FILETYPE ERROR: ft=%04x mask=%04x -> %04x,%04x\n",
-		f->ftype, err_mask, and_mask, nand_mask );
+    TRACE("PRINT FILETYPE ERROR: ft=%llx mask=%lx -> %lx,%lx\n",
+		(u64)f->ftype, err_mask, and_mask, nand_mask );
 
     if ( ( f->split_f ? f->split_f[0]->fd : f->fd ) == -1 )
 	stat = PrintError( XERROR0, ERR_READ_FAILED,
@@ -3024,6 +3056,7 @@ enumError XPrintErrorFT ( XPARM WFile_t * f, enumFileType err_mask )
     else if ( nand_mask & FT_A_GCZ )
 	stat = PrintError( XERROR0, ERR_WRONG_FILE_TYPE,
 		"GCZ expected: %s\n", f->fname );
+// [[nkit]]
 
     f->last_error = stat;
     if ( f->max_error < stat )
@@ -3063,23 +3096,30 @@ ccp GetNameFT ( enumFileType ftype, int ignore )
 					: "WBFS";
 
 	case FT_ID_GC_ISO:
-	    return ftype & FT_A_WDF1 ? "WDF1/GC"
-		 : ftype & FT_A_WDF2 ? "WDF2/GC"
-		 : ftype & FT_A_WIA  ? "WIA/GC"
-		 : ftype & FT_A_CISO ? "CISO/GC"
-		 : ftype & FT_A_GCZ  ? "GCZ/GC"
+	    return ftype & FT_A_WDF1     ? "WDF1/GC"
+		 : ftype & FT_A_WDF2     ? "WDF2/GC"
+		 : ftype & FT_A_WIA      ? "WIA/GC"
+		 : ftype & FT_A_CISO     ? "CISO/GC"
+		 : ftype & FT_A_GCZ      ? "GCZ/GC"
+		 : ftype & FT_A_NKIT_ISO ? "NK-I/GC"
+		 : ftype & FT_A_NKIT_GCZ ? "NK-G/GC"
 		 : "ISO/GC";
 
 	case FT_ID_WII_ISO:
-	    return ftype & FT_A_WDF1 ? "WDF1/WII"
-		 : ftype & FT_A_WDF2 ? "WDF2/WII"
-		 : ftype & FT_A_WIA  ? "WIA/WII"
-		 : ftype & FT_A_CISO ? "CISO/WII"
-		 : ftype & FT_A_GCZ  ? "GCZ/WII"
+	    return ftype & FT_A_WDF1     ? "WDF1/WII"
+		 : ftype & FT_A_WDF2     ? "WDF2/WII"
+		 : ftype & FT_A_WIA      ? "WIA/WII"
+		 : ftype & FT_A_CISO     ? "CISO/WII"
+		 : ftype & FT_A_GCZ      ? "GCZ/WII"
+		 : ftype & FT_A_NKIT_ISO ? "NK-I/WII"
+		 : ftype & FT_A_NKIT_GCZ ? "NK-G/WII"
 		 : "ISO/WII";
 
 	case FT_ID_DOL:
 	    return ignore > 1 ? 0 : ftype & FT_M_WDF ? "WDF/DOL"  : "DOL";
+
+	case FT_ID_SIG_BIN:
+	    return ignore > 1 ? 0 : ftype & FT_M_WDF ? "WDF/SIG"  : "SIG.BIN";
 
 	case FT_ID_CERT_BIN:
 	    return ignore > 1 ? 0 : ftype & FT_M_WDF ? "WDF/CERT" : "CERT.BIN";
@@ -3105,11 +3145,13 @@ ccp GetNameFT ( enumFileType ftype, int ignore )
 
 	default:
 	    return ignore > 1 ? 0
-		: ftype & FT_A_WDF1 ? "WDF1/*"
-		: ftype & FT_A_WDF2 ? "WDF2/*"
-		: ftype & FT_A_WIA  ? "WIA/*"
-		: ftype & FT_A_CISO ? "CISO/*"
-		: ftype & FT_A_GCZ  ? "GCZ/*"
+		: ftype & FT_A_WDF1     ? "WDF1/*"
+		: ftype & FT_A_WDF2     ? "WDF2/*"
+		: ftype & FT_A_WIA      ? "WIA/*"
+		: ftype & FT_A_CISO     ? "CISO/*"
+		: ftype & FT_A_GCZ      ? "GCZ/*"
+		: ftype & FT_A_NKIT_ISO ? "NK-I/*"
+		: ftype & FT_A_NKIT_GCZ ? "NK-G/*"
 		: "OTHER";
     }
 }
@@ -3135,11 +3177,14 @@ enumOFT FileType2OFT ( enumFileType ftype )
     if ( ftype & FT_A_WIA )
 	return OFT_WIA;
 
-    if ( ftype & FT_A_GCZ )
+    if ( ftype & (FT_A_GCZ|FT_A_NKIT_GCZ) )
 	return OFT_GCZ;
 
     if ( ftype & FT_A_CISO )
 	return OFT_CISO;
+
+    if ( ftype & FT_A_NKIT_ISO )
+	return OFT_WBFS;
 
     switch ( ftype & FT__ID_MASK )
     {
@@ -5641,24 +5686,34 @@ int opt_source_auto = 0;
 
 //-----------------------------------------------------------------------------
 
-void InitializeIterator ( Iterator_t * it )
+void InitializeIterator ( Iterator_t * it, bool allow )
 {
-    ASSERT(it);
+    DASSERT(it);
     memset(it,0,sizeof(*it));
     InitializeIdField(&it->source_list);
-    it->act_wbfs_disc = ACT_ALLOW;
-    it->show_mode = opt_show_mode;
-    it->progress_enabled = verbose > 1 || progress;
-    it->scan_progress = scan_progress > 0;
+    it->act_wbfs_disc		= ACT_ALLOW;
+    it->show_mode		= opt_show_mode;
+    it->progress_enabled	= verbose > 1 || progress;
+    it->scan_progress		= scan_progress > 0;
+
+    it->opt_allow = allow;
+    if (allow)
+    {
+	it->act_fst	= opt_allow_fst >= OFFON_AUTO
+			? ACT_EXPAND : ACT_IGNORE;
+
+	it->act_nkit	= opt_allow_nkit > OFFON_AUTO
+			? ACT_ALLOW : ACT_WARN;
+    }
 }
 
 //-----------------------------------------------------------------------------
 
 void ResetIterator ( Iterator_t * it )
 {
-    ASSERT(it);
+    DASSERT(it);
     ResetIdField(&it->source_list);
-    InitializeIterator(it);
+    InitializeIterator(it,it->opt_allow);
 }
 
 //-----------------------------------------------------------------------------
@@ -5876,20 +5931,32 @@ static enumError SourceIteratorHelper
 
  check_file:
     sf.f.disable_errors = it->act_non_exist != ACT_WARN;
+    sf.f.disable_nkit_errors = it->act_nkit != ACT_WARN;
     err = OpenSF(&sf,path,it->act_non_iso||it->act_wbfs>=ACT_ALLOW,it->open_modify);
+
     if ( err != ERR_OK && err != ERR_CANT_OPEN )
     {
-	ResetSF(&sf,0);
-	return ERR_OK;
+	if ( it->act_nkit != ACT_WARN && err == ERR_WRONG_FILE_TYPE && sf.f.ftype & FT_M_NKIT )
+	{
+	    err = ERR_OK;
+	    if ( it->act_nkit == ACT_IGNORE )
+		goto close;
+	}
+	else
+	{
+	 close:
+	    ResetSF(&sf,0);
+	    return ERR_OK;
+	}
     }
-    sf.f.disable_errors = false;
+    sf.f.disable_errors = sf.f.disable_nkit_errors = false;
 
     ccp real_path = realpath( sf.f.path ? sf.f.path : sf.f.fname, buf );
     if (!real_path)
 	real_path = path;
     it->real_path = real_path;
 
-    if ( !IsOpenSF(&sf) )
+    if ( !IsOpenSF(&sf)  )
     {
 	if ( it->act_non_exist >= ACT_ALLOW )
 	{
@@ -5902,6 +5969,7 @@ static enumError SourceIteratorHelper
 	    }
 	    else
 		err = it->func(&sf,it);
+
 	    ResetSF(&sf,0);
 	    return err;
 	}
@@ -5964,8 +6032,7 @@ static enumError SourceIteratorHelper
 		InitializeWDiscInfo(&wdisk);
 		for ( slot = 0; slot < max_disc && it->num_of_files < job_limit; slot++ )
 		{
-		    if ( !GetWDiscInfoBySlot(&wbfs,&wdisk,slot)
-			&& !IsExcluded(wdisk.id6) )
+		    if ( !GetWDiscInfoBySlot(&wbfs,&wdisk,slot) && !IsExcluded(wdisk.id6) )
 		    {
 			snprintf(dest,fbuf+sizeof(fbuf)-dest,"#%0*u",fw,slot);
 			const time_t mtime
@@ -6032,7 +6099,7 @@ static enumError SourceIteratorHelper
 	    goto abort;
 	}
     }
-    else  if (!sf.f.id6_dest[0])
+    else if (!sf.f.id6_dest[0])
     {
 	const enumAction action = sf.f.ftype & FT_ID_WBFS
 				? it->act_wbfs : it->act_non_iso;
@@ -6051,9 +6118,9 @@ static enumError SourceIteratorHelper
 	IteratorProgress(it,false,&sf);
 	if (collect_fnames)
 	{
-	    if ( !sf.f.fatt.mtime && it->newer && sf.f.ftype & FT_ID_FST )
+	    if ( !IsTimeSpecNull(&sf.f.fatt.mtime) && it->newer && sf.f.ftype & FT_ID_FST )
 		SetupReadFST(&sf);
-	    InsertIdField(&it->source_list,sf.f.id6_src,0,sf.f.fatt.mtime,sf.f.fname);
+	    InsertIdField(&it->source_list,sf.f.id6_src,0,sf.f.fatt.mtime.tv_sec,sf.f.fname);
 	    err = ERR_OK;
 	}
 	else

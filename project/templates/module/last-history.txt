@@ -1,6 +1,14 @@
 wit v@@VERSION@@ r@@REV-NEXT@@ - @@@@-@@-@@
 
- - Bug fixed: 2 missed "extern" added.
+ - Windows only: 32 bit and 64 bit versions of Cygwin are supported now.
+   The 64 bit version is recommended.
+    - 32 bit version: Cygwin DLL 3.0.7 / 2019-04-30
+    - 64 bit version: Cygwin DLL 3.1.7 / 2020-08-22
+ - wit CERT: Management of certificates improved.
+ - Patching domains: Added special string replacements for different game
+   variants of "Call of Duty" and "Band Hero".
+ - Mac support improved. Universal binaries for x86_64 and arm64.
+ - Patch option --wiimmfi supports the new patches required since March.
 
 ~
 ~Known bugs:

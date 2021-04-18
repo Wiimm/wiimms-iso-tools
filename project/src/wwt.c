@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -65,7 +65,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #define TITLE WWT_SHORT ": " WWT_LONG " v" VERSION " r" REVISION \
-		" " SYSTEM " - " AUTHOR " - " DATE
+		" " SYSTEM2 " - " AUTHOR " - " DATE
 
 time_t opt_set_time	= 0;
 u64  opt_size		= 0;
@@ -93,30 +93,9 @@ static void help_exit( bool xmode )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static void print_version_section ( bool print_header )
+static void print_version_section ( bool print_sect_header )
 {
-    if (print_header)
-	fputs("[version]\n",stdout);
-
-    const u32 base = 0x04030201;
-    const u8 * e = (u8*)&base;
-    const u32 endian = be32(e);
-
-    printf( "prog=" WWT_SHORT "\n"
-	    "name=" WWT_LONG "\n"
-	    "version=" VERSION "\n"
-	    "beta=%d\n"
-	    "revision=" REVISION  "\n"
-	    "system=" SYSTEM "\n"
-	    "endian=%u%u%u%u %s\n"
-	    "author=" AUTHOR "\n"
-	    "date=" DATE "\n"
-	    "url=" URI_HOME WWT_SHORT "\n"
-	    "\n"
-	    , BETA_VERSION
-	    , e[0], e[1], e[2], e[3]
-	    , endian == 0x01020304 ? "little"
-	    : endian == 0x04030201 ? "big" : "mixed" );
+    cmd_version_section(print_sect_header,WWT_SHORT,WWT_LONG);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -126,7 +105,7 @@ static void version_exit()
     if ( brief_count > 1 )
 	fputs( VERSION "\n", stdout );
     else if (brief_count)
-	fputs( VERSION " r" REVISION " " SYSTEM "\n", stdout );
+	fputs( VERSION " r" REVISION " " SYSTEM2 "\n", stdout );
     else if (print_sections)
 	print_version_section(true);
     else if (long_count)
@@ -212,7 +191,7 @@ enumError cmd_test()
     ParamList_t * param;
     for ( param = first_param; param; param = param->next )
     {
-	char * arg = AllocNormalizedFilenameCygwin(param->arg);
+	char * arg = AllocNormalizedFilenameCygwin(param->arg,false);
 	printf("> %s\n",arg);
 	FreeString(arg);
     }
@@ -1053,7 +1032,7 @@ enumError cmd_format()
 	testmode++;
 	print_title(stderr);
 	fprintf(stderr,
-		"!! %s: Option --force must be set to formatting a WBFS!\n"
+		"!! %s: Option --force must be set to format a WBFS partition!\n"
 		"!! %s:   => test mode (like --test) enabled!\n\n",
 		    ProgInfo.progname, ProgInfo.progname );
 
@@ -2063,7 +2042,7 @@ enumError exec_add ( SuperFile_t * sf, Iterator_t * it )
     int  exists    = -1; // -1=unknown, 0=nonexist, 1=exist
 
     if (   it->newer
-	&& sf->f.fatt.mtime
+	&& sf->f.fatt.mtime.tv_sec
 	&& OpenWDiscID6(it->wbfs,sf->f.id6_dest) == ERR_OK )
     {
 	exists = 1;
@@ -2073,7 +2052,7 @@ enumError exec_add ( SuperFile_t * sf, Iterator_t * it )
 	const time_t mtime = ntoh64(iinfo->mtime);
 	if (mtime)
 	{
-	    overwrite = sf->f.fatt.mtime > mtime;
+	    overwrite = sf->f.fatt.mtime.tv_sec > mtime;
 	    update = !overwrite;
 	}
 	CloseWDisc(it->wbfs);
@@ -2194,13 +2173,13 @@ enumError cmd_add()
     encoding |= ENCODE_F_ENCRYPT; // hint: encrypten and any signing wanted
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_non_exist	= it.act_non_iso;
     it.act_open		= it.act_non_iso;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
+    it.act_nkit		= ACT_IGNORE;
     it.update		= OptionUsed[OPT_UPDATE]	? 1 : 0;
     it.newer		= OptionUsed[OPT_NEWER]		? 1 : 0;
     it.overwrite	= OptionUsed[OPT_OVERWRITE]	? 1 : 0;
@@ -4006,7 +3985,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 
 	case GO_ONE_JOB:	job_limit = 1; break;
 	case GO_IGNORE:		break;
-	case GO_IGNORE_FST:	allow_fst = false; break;
+	case GO_IGNORE_FST:	opt_allow_fst = OFFON_OFF; break;
 	case GO_IGNORE_SETUP:	ignore_setup = true; break;
 	case GO_LINKS:		opt_links = true; break;
 	case GO_USER_BIN:	opt_user_bin = true; break;
@@ -4020,10 +3999,11 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_COMMON_KEY:	err += ScanOptCommonKey(optarg); break;
 	case GO_IOS:		err += ScanOptIOS(optarg); break;
 	case GO_MODIFY:		err += ScanOptModify(optarg); break;
-	case GO_HTTP:		err += ScanOptDomain(1,0); break;
-	case GO_DOMAIN:		err += ScanOptDomain(0,optarg); break;
-	case GO_WIIMMFI:	err += ScanOptDomain(1,"wiimmfi.de"); break;
-	case GO_TWIIMMFI:	err += ScanOptDomain(1,"test.wiimmfi.de"); break;
+	case GO_HTTP:		err += ScanOptDomain(1,0,0); break;
+	case GO_DOMAIN:		err += ScanOptDomain(0,0,optarg); break;
+	case GO_SECURITY_FIX:	err += ScanOptDomain(0,1,0); break;
+	case GO_WIIMMFI:	err += ScanOptDomain(1,1,"wiimmfi.de"); break;
+	case GO_TWIIMMFI:	err += ScanOptDomain(1,1,"test.wiimmfi.de"); break;
 	case GO_NAME:		err += ScanOptName(optarg); break;
 	case GO_ID:		err += ScanOptId(optarg); break;
 	case GO_DISC_ID:	err += ScanOptDiscId(optarg); break;
@@ -4081,6 +4061,8 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_GCZ_ZIP:	opt_gcz_zip = true; break;
 	case GO_GCZ_BLOCK:	err += ScanOptGCZBlock(optarg); break;
 	case GO_FST:		output_file_type = OFT_FST; break;
+	case GO_ALLOW_FST:	err += ScanOptAllowFST(optarg); break;
+	case GO_ALLOW_NKIT:	err += ScanOptAllowNKIT(optarg); break;
 
 	case GO_ITIME:		SetTimeOpt(PT_USE_ITIME|PT_F_ITIME); break;
 	case GO_MTIME:		SetTimeOpt(PT_USE_MTIME|PT_F_MTIME); break;
@@ -4098,6 +4080,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_SECTIONS:	print_sections++; break;
 	case GO_SHOW:		err += ScanOptShow(optarg); break;
 	case GO_SORT:		err += ScanOptSort(optarg); break;
+	case GO_NO_SORT:	err += ScanOptSort("none"); break;
 
 	case GO_AUTO:
 	    if (!opt_auto)
@@ -4335,7 +4318,6 @@ enumError CheckCommand ( int argc, char ** argv )
 int main ( int argc, char ** argv )
 {
     SetupLib(argc,argv,WWT_SHORT,PROG_WWT);
-    allow_fst = true;
 
     //----- process arguments
 

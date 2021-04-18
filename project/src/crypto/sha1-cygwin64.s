@@ -1,9 +1,11 @@
-.file	"sha1-x86_64.s"
+.file	"sha1-cygwin64.s"
 .text
 .globl	wit_sha1_block_data_order
-.type	wit_sha1_block_data_order,@function
+.def	wit_sha1_block_data_order;	.scl	2;	.type	32;	.endef
+
 .align	16
 wit_sha1_block_data_order:
+.Lwit_sha1_block_data_order_begin:
 	pushq	%rbx
 	pushq	%rbp
 	pushq	%r12
@@ -1278,6 +1280,5 @@ wit_sha1_block_data_order:
 	leaq	24(%rsi),%rsp
 .Lepilogue:
 	.byte	0xf3,0xc3
-.size	wit_sha1_block_data_order,.-wit_sha1_block_data_order
 .byte	83,72,65,49,32,98,108,111,99,107,32,116,114,97,110,115,102,111,114,109,32,102,111,114,32,120,56,54,95,54,52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
 .align	16

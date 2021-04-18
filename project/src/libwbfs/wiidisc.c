@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -6196,9 +6196,7 @@ static int wd_patch_main_iterator
 
     enumError err = wd_read_part(it->part,it->off4,item->data,it->size,false);
     if (err)
-    {
 	return ERROR0(ERR_ERROR,"abort\n");
-    }
 
     *item_ptr = item;
     pm->part = it->part;

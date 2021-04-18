@@ -95,6 +95,10 @@
 		" The exit status is 0 for 'all features supported',"
 		" 1 for 'some features supported' and 2 for 'no feature supported'." },
 
+  { H_DEF_CMD,	"ANALYZE",	"ANALYZE|ANA|ANALYSE",
+		    "wit ANALYZE file_or_image...",
+		"Analyse files and print results in machine readable format." },
+
   { T_DEF_CMD,	"ANAID",	"ANAID",
 		    "wit ANAID [id]...",
 		"Analyze the entered IDs and print one line for each ID"
@@ -598,7 +602,8 @@
 
   { T_OPT_C,	"IGNORE_FST",	"ignore-fst|ignorefst",
 		0, 
-		"Disable composing and ignore FST directories as input." },
+		"Disable composing and ignore FST directories as input."
+		" This legacy option is a shortcut for {--allow-fst=off}." },
 
   { T_OPT_C,	"IGNORE_SETUP",	"ignore-setup|ignoresetup",
 		0, 
@@ -820,10 +825,14 @@
 		" then 'gamespy.com' of 'sake.gamespy.com' is replaced too. "
 		" This is a special support for 'Super Smash Bros. Brawl'." },
 
+  { T_OPT_C,	"SECURITY_FIX",	"security-fix|securityfix",
+		0,
+		"Try to fix a security bug in the game. This is game dependent." },
+
   { T_OPT_C,	"WIIMMFI",	"wiimmfi",
 		0,
 		"Patch the images for $Wiimmfi$, the new custom server."
-		" It is a short cut for {--http --domain wiimmfi.de}." },
+		" It is a short cut for {--http --domain wiimmfi.de --security-fix}." },
 
   { H_OPT_C,	"TWIIMMFI",	"twiimmfi",
 		0,
@@ -1085,11 +1094,10 @@
 
   { T_SEP_OPT,	0,0,0,0 }, //----- separator -----
 
-		// [[wdf2]] use WDFv2 as default.
   { T_OPT_CO,	"WDF",		"W|wdf",
 		"[=param]",
 		"Set the image output file type to WDF (Wii Disc Format)."
-		" The output format is either WDFv1 or WDFv2."
+		" The output format is either WDFv1 or WDFv2 (default)."
 		" It depends of the input file format and of the aligning."
 		" {--wdf=param} is a short cut for {--wdf --align-wdf=param}." },
 
@@ -1103,8 +1111,7 @@
 		"Set image output file type to WDF and force version 2."
 		" {--wdf2=param} is a short cut for {--wdf2 --align-wdf=param}." },
 
-		// [[2do]] 2014-01: wdf-align is obsolete at 2014-07
-  { T_OPT_GP,	"ALIGN_WDF",	"align-wdf|alignwdf|wdf-align|wdfalign",
+  { T_OPT_GP,	"ALIGN_WDF",	"align-wdf|alignwdf",
 		"[align][,minhole]",
 		"Parameter @align@ defines the aligning factor for new WDF images."
 		" It must be a power of 2 and smaller or equal than "
@@ -1163,10 +1170,71 @@
 		0,
 		"Set image output mode to 'file system' (extracted ISO)." },
 
+  { T_OPT_GO,	"ALLOW_FST",	"allow-fst|allowfst",
+		"[=mode]",
+		"Enable the usage of extracted images."
+		"@MODE@ is either @OFF@, @AUTO@ (default) or @ON@."
+		" Without value, @ON@ is used."
+		" If mode is @AUTO@, extracted images are usually enabled." },
+
+  { T_OPT_GO,	"ALLOW_NKIT",	"allow-nkit|allownkit",
+		"[=mode]",
+		"Enable the detection of NKIT images."
+		"@MODE@ is either @OFF@, @AUTO@ (default) or @ON@."
+		" Without value, @ON@ is used."
+		" If mode is @AUTO@,"
+		" the NKIT detection is enabled only for a few analytic commands."
+		"\n "
+		" Anyway, NKIT images are not supported yet,"
+		" but detected to print warnings." },
+
   { T_OPT_CMP,	"FILES",	"F|files",
 		"ruleset",
 		"Append file select rules."
 		TEXT_FILE_FILTER },
+
+  { T_SEP_OPT,	0,0,0,0 }, //----- separator -----
+
+  { T_OPT_G,	"SH",		"sh",
+		0,
+		"Dump info using SH syntax."
+		" Use {--var name} as prefix." },
+
+  { T_OPT_G,	"BASH",		"bash",
+		0,
+		"Dump info using BASH syntax."
+		" Use {--var name} as prefix." },
+
+  { T_OPT_G,	"JSON",		"json",
+		0,
+		"Dump info using JSON syntax."
+		" Options {--var} and {--array} are ignored." },
+
+  { T_OPT_G,	"PHP",		"php",
+		0,
+		"Dump infos using PHP syntax."
+		" Use {--var name} as variable name of the resulting object." },
+
+  { T_OPT_G,	"MAKEDOC",	"makedoc",
+		0,
+		"Dump infos using MakeDoc syntax."
+		" Use {--var name} as variable name of the resulting map." },
+
+  { T_OPT_GP,	"VAR",		"var",
+		"varname",
+		"Use @VARNAME@ as variable name or prefix on script output."
+		" The default variabe name is 'res'." },
+
+  { T_OPT_G,	"ARRAY",	"array",
+		0,
+		"Use an array on script output if possible."
+		" If arrays are not supported, then append a '_#' suffix with an zero"
+		" based index to the variable name defined by {--var name}."
+		" In this case, only one output file is created." },
+
+  { T_OPT_GP,	"AVAR",		"avar",
+		"varname",
+		"Shortcut for: {--array --var name}" },
 
   { T_SEP_OPT,	0,0,0,0 }, //----- separator -----
 
@@ -1294,6 +1362,10 @@
 		" FRAGMENTS, ITIME, MTIME, CTIME, ATIME, TIME = DATE, DEFAULT,"
 		" ASCENDING, DESCENDING = REVERSE@." },
 
+  { T_OPT_C,	"NO_SORT",	"no-sort|nosort",
+		0,
+		"Don't sort. Same as {--sort=none}." },
+
   { T_OPT_CP,	"LIMIT",	"limit",
 		"num",
 		"Limit the output to NUM messages." },
@@ -1361,6 +1433,13 @@
   { T_COPT_M,	"ONE_JOB",	0,0,0 },
   { T_COPT_M,	"JOB_LIMIT",	0,0,0 },
 
+  //---------- wit GROUP ALLOW_SRC ----------
+
+  { T_GRP_BEG,	"ALLOW_SRC",	0,0,0 },
+
+  { T_COPT,	"ALLOW_FST",	0,0,0 },
+  { T_COPT,	"ALLOW_NKIT",	0,0,0 },
+
   //---------- wit GROUP XSOURCE ----------
 
   { T_GRP_BEG,	"XSOURCE",	0,0,0 },
@@ -1378,6 +1457,7 @@
   { T_COPY_GRP,	"EXCLUDE",	0,0,0 },
   { T_COPT_M,	"IGNORE",	0,0,0 },
   { T_COPY_GRP,	"FST_OPTIONS",	0,0,0 },
+  { T_COPY_GRP,	"ALLOW_SRC",	0,0,0 },
 
   { T_SEP_OPT,	0,0,0,0 },
 
@@ -1467,6 +1547,7 @@
   { T_COPT,	"IOS",		0,0,0 },
   { T_COPT,	"HTTP",		0,0,0 },
   { T_COPT,	"DOMAIN",	0,0,0 },
+  { T_COPT,	"SECURITY_FIX",	0,0,0 },
   { T_COPT,	"WIIMMFI",	0,0,0 },
   { H_COPT,	"TWIIMMFI",	0,0,0 },
   { T_COPT,	"RM_FILES",	0,0,0 },
@@ -1500,6 +1581,19 @@
   { T_COPT,	"MAX_CHUNKS",	0,0,0 },
   { T_COPT,	"COMPRESSION",	0,0,0 },
   { T_COPT,	"MEM",		0,0,0 },
+
+  //---------- wszst GROUP SCRIPT ----------
+
+  { T_GRP_BEG,	"SCRIPT",	0,0,0 },
+
+  { T_COPT,	"SH",		0,0,0 },
+  { T_COPT,	"BASH",		0,0,0 },
+  { T_COPT,	"JSON",		0,0,0 },
+  { T_COPT,	"PHP",		0,0,0 },
+  { T_COPT,	"MAKEDOC",	0,0,0 },
+  { T_COPT,	"VAR",		0,0,0 },
+  { T_COPT,	"ARRAY",	0,0,0 },
+  { T_COPT,	"AVAR",		0,0,0 },
 
   //
   //---------- COMMAND wit VERSION ----------
@@ -1568,6 +1662,19 @@
 	"Normally, a status line for each supported feature is printed."
 	" If set, print an info line for each requested feature." },
 
+  //---------- COMMAND wit ANALYZE ----------
+
+  { T_CMD_BEG,	"ANALYZE",	0,0,0 },
+  { T_COPT,	"IGNORE",	0,0,0 },
+  { T_COPT,	"QUIET",	0,0,
+	"Suppress logging of input and output files." },
+  { T_SEP_OPT,	0,0,0,0 },
+  { T_COPY_GRP,	"SCRIPT",	0,0,0 },
+  { T_SEP_OPT,	0,0,0,0 },
+  { T_COPY_GRP,	"ALLOW_SRC",	0,0,0 },
+  { T_COPT,	"DEST",		0,0,0 },
+  { T_COPT,	"DEST2",	0,0,0 },
+
   //---------- COMMAND wit ANAID ----------
 
   { T_CMD_BEG,	"ANAID",	0,0,0 },
@@ -1613,6 +1720,11 @@
   { T_COPT,	"LONG",		0,0,
 	"If printing, print the complete key as hex dump, not only the first bytes."
 	" If set twice, print BASE64 encoded."},
+  { T_COPT,	"SORT",		0,0,
+	"Define the sort mode for the certificate listing."
+	" The parameter is either @NONE, ASCENDING@ or @DESCENDING = REVERSE@." },
+  { T_COPT,	"NO_SORT",	0,0,
+	" Disable sorting of keys." },
 
   //---------- COMMAND wit FILELIST ----------
 
@@ -1789,6 +1901,7 @@
   { T_COPT_M,	"LOGGING",	0,0,0 },
   { T_COPT,	"UNIQUE",	0,0,0 },
   { T_COPT,	"SORT",		0,0,0 },
+  { T_COPT,	"NO_SORT",	0,0,0 },
 
   { T_COPT,	"SECTIONS",	0,0,0 },
   { T_COPT,	"NO_HEADER",	0,0,0 },
@@ -1841,6 +1954,7 @@
 	"Define the sort mode for the file listing."
 	" The parameter is a comma separated list of the following keywords:"
 	" NONE, NAME, SIZE, OFFSET, ASCENDING, DESCENDING = REVERSE." },
+  { T_COPT,	"NO_SORT",	0,0,0 },
 
   //---------- COMMAND wit FILES-L ----------
 
@@ -1917,6 +2031,7 @@
 	"Define the extracting order."
 	" The parameter is a comma separated list of the following keywords:"
 	" NONE, NAME, SIZE, OFFSET, ASCENDING, DESCENDING = REVERSE." },
+  { T_COPT,	"NO_SORT",	0,0,0 },
 
   { T_SEP_OPT,	0,0,0,0 },
 

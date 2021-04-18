@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -77,7 +77,7 @@ enumError cmd_mix();
 ///////////////////////////////////////////////////////////////////////////////
 
 #define TITLE WIT_SHORT ": " WIT_LONG " v" VERSION " r" REVISION \
-	" " SYSTEM " - " AUTHOR " - " DATE
+	" " SYSTEM2 " - " AUTHOR " - " DATE
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -100,30 +100,9 @@ static void help_exit ( bool xmode )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static void print_version_section ( bool print_header )
+static void print_version_section ( bool print_sect_header )
 {
-    if (print_header)
-	fputs("[version]\n",stdout);
-
-    const u32 base = 0x04030201;
-    const u8 * e = (u8*)&base;
-    const u32 endian = be32(e);
-
-    printf( "prog=" WIT_SHORT "\n"
-	    "name=" WIT_LONG "\n"
-	    "version=" VERSION "\n"
-	    "beta=%d\n"
-	    "revision=" REVISION  "\n"
-	    "system=" SYSTEM "\n"
-	    "endian=%u%u%u%u %s\n"
-	    "author=" AUTHOR "\n"
-	    "date=" DATE "\n"
-	    "url=" URI_HOME WIT_SHORT "\n"
-	    "\n"
-	    , BETA_VERSION
-	    , e[0], e[1], e[2], e[3]
-	    , endian == 0x01020304 ? "little"
-		: endian == 0x04030201 ? "big" : "mixed" );
+    cmd_version_section(print_sect_header,WIT_SHORT,WIT_LONG);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -133,7 +112,7 @@ static void version_exit()
     if ( brief_count > 1 )
 	fputs( VERSION "\n", stdout );
     else if (brief_count)
-	fputs( VERSION " r" REVISION " " SYSTEM "\n", stdout );
+	fputs( VERSION " r" REVISION " " SYSTEM2 "\n", stdout );
     else if (print_sections)
 	print_version_section(true);
     else if (long_count)
@@ -326,6 +305,222 @@ static enumError cmd_test()
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			command ANALYZE			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static enumError exec_analyze ( SuperFile_t * fi, Iterator_t * it )
+{
+    DASSERT(fi);
+    DASSERT(it);
+    PrintScript_t *ps = it->ps;
+    DASSERT(ps);
+
+    PRINT("exec_analyze(%s) oft=%d  ->  %s\n",fi->f.fname,fi->iod.oft,opt_dest);
+
+    ccp fname = fi->f.path ? fi->f.path : fi->f.fname;
+    if (!ps->f)
+    {
+	SuperFile_t fo;
+	InitializeSF(&fo);
+	fo.src = fi;
+	fo.f.create_directory = opt_mkdir;
+	ccp oname = fi->f.outname ? fi->f.outname : fname;
+	GenImageWFileName(&fo.f,opt_dest,oname,OFT_UNKNOWN);
+	SubstFileNameSF(&fo,fi,0);
+	PRINT("exec_analyze() -> %s:%s\n",GetNamePSFF(ps->fform),fo.f.fname);
+
+	File_t f;
+	FileMode_t fmode = FM_STDIO|FM_OVERWRITE;
+	if (opt_mkdir)
+	    fmode |= FM_MKDIR;
+	enumError err = CreateFile(&f,true,fo.f.fname,fmode);
+	if (err)
+	    return err;
+	ps->f = f.f;
+	f.f = 0;
+	ResetFile(&f,0);
+	ResetSF(&fo,0);
+
+	if ( ps->fform == PSFF_UNKNOWN )
+	    fputc('\n',ps->f);
+	PrintScriptHeader(ps);
+    }
+
+
+    //--- analyse
+
+    AnalyzeFile_t af;
+    InitializeAnaFile(&af);
+    af.sf		= fi;
+    af.load_dol		= true;
+    af.patch_dol	= true;
+    af.allow_mkw	= true;
+    AnalyzeFile(&af);
+
+
+    //--- some calculations
+
+    const uint main_total
+		= af.pstat_main.n_host
+		+ af.pstat_main.n_string
+		+ af.pstat_main.n_http
+		+ af.pstat_main.n_domain
+		+ af.pstat_main.n_agent
+		+ af.pstat_main.n_p2p
+		+ af.pstat_main.n_master
+		;
+
+    const uint rel_total
+		= af.pstat_staticr.n_http
+		+ af.pstat_staticr.n_domain
+		;
+
+
+    //--- print stats
+
+    PrintScriptVars(ps,1,
+	"file=\"%s\"\n"
+	"file_mtime=\"%10lu.%09lu %s\"\n"
+	"file_ctime=\"%10lu.%09lu %s\"\n"
+	"file_size=%zd\n"
+	"virtual_size=%lld\n"
+	"file_split=%d\n"
+	"file_type=\"%s\"\n"
+	"type_option=\"%s\"\n"
+	"wbfs_slot=%d\n"
+	"is_gc_image=%u\n"
+	"is_wii_image=%u\n"
+	"id6=\"%s\"\n"
+	"patch=%u\n"
+	"dol_avail=%u\n"
+	,fname
+	,fi->f.fatt.mtime.tv_sec
+		,fi->f.fatt.mtime.tv_nsec
+		,PrintTimeByFormat("%F %T %z",fi->f.fatt.mtime.tv_sec)
+	,fi->f.fatt.ctime.tv_sec
+		,fi->f.fatt.ctime.tv_nsec
+		,PrintTimeByFormat("%F %T %z",fi->f.fatt.ctime.tv_sec)
+	,fi->f.fatt.size
+	,fi->file_size
+	,fi->f.split_used
+	,GetNameFT(fi->f.ftype,0)
+	,fi->f.ftype & FT_A_ISO ? oft_info[fi->iod.oft].option : ""
+	,fi->f.slot
+	,( fi->f.ftype & FT_A_GC_ISO ) != 0
+	,( fi->f.ftype & FT_A_WII_ISO ) != 0
+	,fi->f.id6_dest
+	,( main_total ? 1 : 0) | ( rel_total ? 2 : 0 )
+	,af.pstat_main.n_files
+	);
+
+    if (af.dol)
+	PrintScriptVars(ps,1,
+		"dol_size=%u\n"
+		"dol_is_mkw=%d\n"
+		"dol_region=\"%s\"\n"
+		"dol_patch=\"%u= H:%u, S:%u, h:%u, d:%u, s:%u+%u+%u\"\n"
+		,af.dol_file_size
+		,af.dol_is_mkw
+		,af.dol_region
+		,main_total
+		 ,af.pstat_main.n_host
+		 ,af.pstat_main.n_string
+		 ,af.pstat_main.n_http
+		 ,af.pstat_main.n_domain
+		 ,af.pstat_main.n_agent
+		 ,af.pstat_main.n_p2p
+		 ,af.pstat_main.n_master
+		);
+
+    PrintScriptVars(ps,1,"rel_avail=%u\n",af.pstat_staticr.n_files);
+
+    if (af.pstat_staticr.n_files)
+	PrintScriptVars(ps,1,
+		"rel_patch=\"%u= h:%u, d:%u\"\n"
+		,rel_total
+		 ,af.pstat_staticr.n_http
+		 ,af.pstat_staticr.n_domain
+		);
+
+    if ( ps->fform == PSFF_UNKNOWN )
+	fputc('\n',ps->f);
+
+
+    //--- terminate
+    
+    fflush(ps->f);
+    if (!ps->create_array)
+    {
+	PrintScriptFooter(ps);
+	if ( ps->f != stdout )
+	{
+	    fclose(ps->f);
+	    ps->f = 0;
+	}
+    }
+
+    ResetAnaFile(&af);
+    return ERR_OK;
+}
+
+//-----------------------------------------------------------------------------
+
+static enumError cmd_analyze()
+{
+    if ( verbose >= 0 && script_fform == PSFF_UNKNOWN )
+	print_title(stdout);
+
+    if ( !opt_dest || !*opt_dest )
+	SetDest("-",false);
+    stdlog = stderr;
+
+    ScanOptDomain(1,1,"wiimmfi.de");
+    disable_patch_on_load = 1;
+
+    ParamList_t * param;
+    for ( param = first_param; param; param = param->next )
+	if (param->arg)
+	    AppendStringField(&source_list,param->arg,true);
+    if ( !source_list.used && !recurse_list.used )
+	SYNTAX_ERROR; // no return
+
+    PrintScript_t ps;
+    InitializePrintScript(&ps);
+    ps.fform		= script_fform;
+    ps.create_array	= script_array > 0;
+    ps.var_name		= script_varname ? script_varname : "res";
+    ps.var_prefix	= script_varname ? script_varname : "res_";
+    ps.eq_tabstop	= 2;
+
+    Iterator_t it;
+    InitializeIterator(&it,true);
+    it.func		= exec_analyze;
+    it.act_non_iso	= ACT_ALLOW;
+    it.act_known	= ACT_ALLOW;
+    it.act_nkit		= opt_allow_nkit >= OFFON_AUTO ? ACT_ALLOW : ACT_WARN;
+    it.act_wbfs		= ACT_EXPAND;
+    it.overwrite	= OptionUsed[OPT_OVERWRITE] ? 1 : 0;
+    it.ps		= &ps;
+
+    enumError err = SourceIterator(&it,0,false,false);
+    ResetIterator(&it);
+
+    if (ps.f)
+    {
+	PrintScriptFooter(&ps);
+	if ( ps.fform == PSFF_UNKNOWN )
+	    fputc('\n',ps.f);
+	if ( ps.f != stdout )
+	    fclose(ps.f);
+	ps.f = 0;
+    }
+
+    ResetPrintScript(&ps);
+    return err;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			command ANAID			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -382,8 +577,7 @@ static enumError cmd_cert()
     ParamList_t * param;
     for ( param = first_param; param; param = param->next )
 	AtFileHelper(param->arg,0,0,AddCertFile);
-
-    cert_add_root(); // if not already inserted
+    SortGlobalCert(sort_mode);
 
     FILE * f = 0;
     if ( opt_dest && *opt_dest )
@@ -402,6 +596,16 @@ static enumError cmd_cert()
     for ( i = 0; i < global_cert.used; i++ )
     {
 	cert_item_t * item = global_cert.cert + i;
+     #if 0
+	const u8 *cert_data = item->head ? (u8*)item->head : (u8*)item->data;
+	if ( cert_data && item->name && item->cert_size )
+	{
+	    char fname[200];
+	    snprintf(fname,sizeof(fname),"cert-%s.tmp",item->name);
+	    fprintf(stderr,"SAVE: %s\n",fname);
+	    SaveFile(fname,0,FM_OVERWRITE|FM_TOUCH,cert_data,item->cert_size,0);
+	}
+     #endif
 	if (MatchFilePattern(pat_select,item->name,'-'))
 	{
 	    if ( pat_fakesign->is_active
@@ -604,6 +808,7 @@ static enumError cmd_create()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			command DOLPATCH		///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[dol_patch_t]]
 
 typedef struct dol_patch_t
 {
@@ -627,6 +832,7 @@ typedef struct dol_patch_t
 dol_patch_t;
 
 //-----------------------------------------------------------------------------
+// [[hex_patch_t]]
 
 typedef struct hex_patch_t
 {
@@ -1433,12 +1639,11 @@ static enumError cmd_filelist()
     encoding |= ENCODE_F_FAST; // hint: no encryption needed
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.func		= exec_filelist;
     it.act_non_exist	= ignore_count > 0 ? ACT_IGNORE : ACT_ALLOW;
     it.act_non_iso	= ignore_count > 1 ? ACT_IGNORE : ACT_ALLOW;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_ALLOW : ACT_IGNORE;
     it.long_count	= long_count;
     const enumError err = SourceIterator(&it,1,true,false);
     ResetIterator(&it);
@@ -1452,11 +1657,12 @@ static enumError cmd_filelist()
 
 enumError exec_filetype ( SuperFile_t * sf, Iterator_t * it )
 {
-    ASSERT(sf);
-    ASSERT(it);
+    DASSERT(sf);
+    DASSERT(it);
 
     const bool print_header = !OptionUsed[OPT_NO_HEADER];
     ccp ftype = GetNameFT(sf->f.ftype,0);
+    PRINT("ft: %010lx %s\n",sf->f.ftype,ftype);
 
     if ( it->long_count > 1 )
     {
@@ -1527,12 +1733,12 @@ static enumError cmd_filetype()
     encoding |= ENCODE_F_FAST; // hint: no encryption needed
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.func		= exec_filetype;
     it.act_non_exist	= ignore_count > 0 ? ACT_IGNORE : ACT_ALLOW;
     it.act_non_iso	= ignore_count > 1 ? ACT_IGNORE : ACT_ALLOW;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= !allow_fst ? ACT_IGNORE
+    it.act_fst		= opt_allow_fst < OFFON_AUTO ? ACT_IGNORE
 					 : long_count > 1 ? ACT_EXPAND : ACT_ALLOW;
     it.long_count	= long_count;
     const enumError err = SourceIterator(&it,1,true,false);
@@ -1671,12 +1877,12 @@ static enumError cmd_isosize()
     opt_unit = sum_unit | WD_SIZE_F_AUTO_UNIT;
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.act_non_exist	= ignore_count > 0 ? ACT_IGNORE : ACT_ALLOW;
     it.act_non_iso	= ignore_count > 1 ? ACT_IGNORE : ACT_ALLOW;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
     it.act_wbfs		= ACT_EXPAND;
+    it.act_nkit		= ACT_IGNORE;
     it.long_count	= long_count;
 
     enumError err = SourceIterator(&it,1,true,true);
@@ -1752,6 +1958,8 @@ enumError exec_dump ( SuperFile_t * sf, Iterator_t * it )
     if ( sf->f.ftype & FT_ID_FST_BIN )
 	return Dump_FST_BIN(stdout,0,sf,it->real_path,opt_show_mode);
 
+// [[FT_ID_SIG_BIN]]
+
     if ( sf->f.ftype & FT_ID_CERT_BIN )
 	return Dump_CERT_BIN(stdout,0,sf,it->real_path,1);
 
@@ -1787,12 +1995,12 @@ static enumError cmd_dump()
     encoding |= ENCODE_F_FAST; // hint: no encryption needed
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.func		= exec_dump;
     it.act_known	= ACT_ALLOW;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
+    it.act_nkit		= ACT_IGNORE;
     it.long_count	= long_count;
 
     enumError err = SourceIterator(&it,0,false,true);
@@ -1949,12 +2157,12 @@ static enumError cmd_id_long ( uint mode )
     }
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.func		= mode == 8 ? exec_print_id8 : exec_print_id6;
     it.user_mode	= mode;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
+    it.act_nkit		= ACT_IGNORE;
     it.long_count	= long_count;
 
     enumError err = SourceIterator(&it,0,true,false);
@@ -2054,12 +2262,12 @@ static enumError cmd_id ( uint mode )
     InitializeWDiscList(&wlist);
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.func		= exec_collect;
     it.user_mode	= mode;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
+    it.act_nkit		= ACT_IGNORE;
     it.long_count	= long_count;
     it.wlist		= &wlist;
 
@@ -2309,11 +2517,11 @@ static enumError cmd_fragments()
     encoding |= ENCODE_F_FAST; // hint: no encryption needed
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.func		= exec_fragments;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
+    it.act_nkit		= ACT_IGNORE;
     it.long_count	= long_count;
     it.progress_enabled	= 0;
 
@@ -2351,20 +2559,19 @@ static enumError cmd_list ( int long_level )
 	OptionUsed[OPT_REALPATH] = 1;
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.func		= exec_collect;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
+    it.act_nkit		= ACT_IGNORE;
     it.long_count	= long_count;
     it.real_filename	= print_sections > 0;
     it.wlist		= &wlist;
     it.progress_t_file	= "disc";
     it.progress_t_files	= "discs";
-    if (print_sections)
-	it.scan_progress = false;
-
     it.scan_progress	= false;
+//DEL    if (print_sections)
+//DEL	it.scan_progress = false;
 
     enumError err = SourceIterator(&it,1,true,false);
     ResetIterator(&it);
@@ -2584,12 +2791,12 @@ static enumError cmd_files ( int long_level )
     encoding |= ENCODE_F_FAST; // hint: no encryption needed
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     //it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_non_iso	= ACT_ALLOW;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
+    it.act_nkit		= ACT_IGNORE;
     it.long_count	= long_count;
 
     if ( it.show_mode & SHOW__DEFAULT )
@@ -2662,9 +2869,9 @@ static enumError cmd_diff ( bool file_level )
 
     SetupDiff(&diff,long_count);
 
-    if ( output_file_type == OFT_UNKNOWN && allow_fst && IsFST(opt_dest,0) )
+    if ( output_file_type == OFT_UNKNOWN && opt_allow_fst >= OFFON_AUTO && IsFST(opt_dest,0) )
 	output_file_type = OFT_FST;
-    if ( output_file_type == OFT_FST && !allow_fst )
+    if ( output_file_type == OFT_FST && opt_allow_fst < OFFON_AUTO )
 	output_file_type = OFT_UNKNOWN;
 
     if ( prefix_mode <= WD_IPM_AUTO )
@@ -2686,12 +2893,12 @@ static enumError cmd_diff ( bool file_level )
 	SYNTAX_ERROR; // no return
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_non_exist	= it.act_non_iso;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
+    it.act_nkit		= ACT_IGNORE;
     it.long_count	= long_count;
 
     if ( testmode > 1 )
@@ -2832,11 +3039,11 @@ static enumError cmd_extract()
     encoding |= ENCODE_F_FAST; // hint: no encryption needed
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
+    it.act_nkit		= ACT_IGNORE;
     it.overwrite	= OptionUsed[OPT_OVERWRITE] ? 1 : 0;
 
     enumError err = SourceIterator(&it,0,false,true);
@@ -3126,11 +3333,11 @@ static enumError cmd_copy()
 	SYNTAX_ERROR; // no return
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
+    it.act_nkit		= ACT_IGNORE;
     it.overwrite	= OptionUsed[OPT_OVERWRITE] ? 1 : 0;
     it.update		= OptionUsed[OPT_UPDATE]    ? 1 : 0;
     it.remove_source	= OptionUsed[OPT_REMOVE]    ? 1 : 0;
@@ -3176,7 +3383,7 @@ static enumError cmd_convert()
 	AppendStringField(&source_list,param->arg,true);
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,false);
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_wbfs		= it.act_non_iso;
     it.act_gc		= ACT_ALLOW;
@@ -3293,7 +3500,7 @@ static enumError cmd_edit()
 	AppendStringField(&source_list,param->arg,true);
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,false);
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
@@ -3328,7 +3535,7 @@ enumError exec_imgfiles ( SuperFile_t * fi, Iterator_t * it )
 {
     DASSERT(fi);
     DASSERT(it);
-    PRINT("IMGFILES [%u,%x] %s\n",fi->f.split_used,fi->f.ftype&FT_A_WDISC,fi->f.fname);
+    PRINT("IMGFILES [%u,%llx] %s\n",fi->f.split_used,(u64)fi->f.ftype&FT_A_WDISC,fi->f.fname);
     if ( fi->f.ftype & FT_A_WDISC )
 	return 0;
 
@@ -3360,7 +3567,7 @@ static enumError cmd_imgfiles()
     encoding |= ENCODE_F_FAST; // hint: no encryption needed
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,false);
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_wbfs_disc	= it.act_non_iso;
     it.act_wbfs		= ACT_ALLOW;
@@ -3424,7 +3631,7 @@ static enumError cmd_remove()
     encoding |= ENCODE_F_FAST; // hint: no encryption needed
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,false);
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_wbfs_disc	= it.act_non_iso;
     it.act_wbfs		= ACT_ALLOW;
@@ -3610,7 +3817,7 @@ static enumError cmd_move()
     encoding |= ENCODE_F_FAST; // hint: no encryption needed
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,false);
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_wbfs_disc	= it.act_non_iso;
     it.act_wbfs		= ACT_ALLOW; //HaveEscapeChar(opt_dest) ? it.act_non_iso : ACT_ALLOW;
@@ -3707,7 +3914,7 @@ static enumError cmd_rename ( bool rename_id )
 	return ERROR0(ERR_MISSING_PARAM, "Missing renaming parameters.\n" );
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,false);
     it.open_modify	= !testmode;
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_wbfs		= ACT_EXPAND;
@@ -3788,11 +3995,10 @@ static enumError cmd_verify()
 	AppendStringField(&source_list,param->arg,true);
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,false);
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_WARN;
-    it.act_fst		= ACT_IGNORE;
     it.long_count	= long_count;
 
     if ( testmode > 1 )
@@ -3845,11 +4051,11 @@ static enumError cmd_skeletonize()
 	AppendStringField(&source_list,param->arg,true);
 
     Iterator_t it;
-    InitializeIterator(&it);
+    InitializeIterator(&it,true);
     it.act_non_iso	= OptionUsed[OPT_IGNORE] ? ACT_IGNORE : ACT_WARN;
     it.act_wbfs		= ACT_EXPAND;
     it.act_gc		= ACT_ALLOW;
-    it.act_fst		= allow_fst ? ACT_EXPAND : ACT_IGNORE;
+    it.act_nkit		= ACT_IGNORE;
     it.long_count	= long_count;
 
     if ( testmode > 1 )
@@ -3940,7 +4146,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 
 	case GO_ONE_JOB:	job_limit = 1; break;
 	case GO_IGNORE:		ignore_count++; break;
-	case GO_IGNORE_FST:	allow_fst = false; break;
+	case GO_IGNORE_FST:	opt_allow_fst = OFFON_OFF; break;
 	case GO_IGNORE_SETUP:	ignore_setup = true; break;
 	case GO_LINKS:		opt_links = true; break;
 	case GO_USER_BIN:	opt_user_bin = true; break;
@@ -3958,10 +4164,11 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_COMMON_KEY:	err += ScanOptCommonKey(optarg); break;
 	case GO_IOS:		err += ScanOptIOS(optarg); break;
 	case GO_MODIFY:		err += ScanOptModify(optarg); break;
-	case GO_HTTP:		err += ScanOptDomain(1,0); break;
-	case GO_DOMAIN:		err += ScanOptDomain(0,optarg); break;
-	case GO_WIIMMFI:	err += ScanOptDomain(1,"wiimmfi.de"); break;
-	case GO_TWIIMMFI:	err += ScanOptDomain(1,"test.wiimmfi.de"); break;
+	case GO_HTTP:		err += ScanOptDomain(1,0,0); break;
+	case GO_DOMAIN:		err += ScanOptDomain(0,0,optarg); break;
+	case GO_SECURITY_FIX:	err += ScanOptDomain(0,1,0); break;
+	case GO_WIIMMFI:	err += ScanOptDomain(1,1,"wiimmfi.de"); break;
+	case GO_TWIIMMFI:	err += ScanOptDomain(1,1,"test.wiimmfi.de"); break;
 	case GO_NAME:		err += ScanOptName(optarg); break;
 	case GO_ID:		err += ScanOptId(optarg); break;
 	case GO_DISC_ID:	err += ScanOptDiscId(optarg); break;
@@ -4018,6 +4225,17 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_GCZ_ZIP:	opt_gcz_zip = true; break;
 	case GO_GCZ_BLOCK:	err += ScanOptGCZBlock(optarg); break;
 	case GO_FST:		output_file_type = OFT_FST; break;
+	case GO_ALLOW_FST:	err += ScanOptAllowFST(optarg); break;
+	case GO_ALLOW_NKIT:	err += ScanOptAllowNKIT(optarg); break;
+
+	case GO_JSON:		script_fform = PSFF_JSON; break;
+	case GO_SH:		script_fform = PSFF_SH; break;
+	case GO_BASH:		script_fform = PSFF_BASH; break;
+	case GO_PHP:		script_fform = PSFF_PHP; break;
+	case GO_MAKEDOC:	script_fform = PSFF_MAKEDOC; break;
+	case GO_VAR:		script_varname = optarg; break;
+	case GO_ARRAY:		script_array++; break;
+	case GO_AVAR:		script_array++; script_varname = optarg; break;
 
 	case GO_ITIME:		SetTimeOpt(PT_USE_ITIME|PT_F_ITIME); break;
 	case GO_MTIME:		SetTimeOpt(PT_USE_MTIME|PT_F_MTIME); break;
@@ -4037,6 +4255,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_SHOW:		err += ScanOptShow(optarg); break;
 	case GO_UNIT:		err += ScanOptUnit(optarg); break;
 	case GO_SORT:		err += ScanOptSort(optarg); break;
+	case GO_NO_SORT:	err += ScanOptSort("none"); break;
 
 	case GO_PMODE:
 	    {
@@ -4194,6 +4413,7 @@ enumError CheckCommand ( int argc, char ** argv )
 	case CMD_ERROR:		err = cmd_error(); break;
 	case CMD_COMPR:		err = cmd_compr(); break;
 	case CMD_FEATURES:	return cmd_features(); break;
+	case CMD_ANALYZE:	err = cmd_analyze(); break;
 	case CMD_ANAID:		err = cmd_anaid(); break;
 	case CMD_EXCLUDE:	err = cmd_exclude(); break;
 	case CMD_TITLES:	err = cmd_titles(); break;
@@ -4255,7 +4475,6 @@ enumError CheckCommand ( int argc, char ** argv )
 int main ( int argc, char ** argv )
 {
     SetupLib(argc,argv,WIT_SHORT,PROG_WIT);
-    allow_fst = true;
 
     InitializeStringField(&source_list);
     InitializeStringField(&recurse_list);

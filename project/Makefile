@@ -16,7 +16,7 @@
 ##   This file is part of the WIT project.                         ##
 ##   Visit https://wit.wiimm.de/ for project details and sources.  ##
 ##                                                                 ##
-##   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>      ##
+##   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>      ##
 ##                                                                 ##
 #####################################################################
 
@@ -45,7 +45,7 @@ WDF_LONG		= Wiimms WDF Tool
 WFUSE_SHORT		= wfuse
 WFUSE_LONG		= Wiimms FUSE Tool
 
-VERSION_NUM		= 3.03b
+VERSION_NUM		= 3.04a
 BETA_VERSION		= 0
 			# 0:off  -1:"beta"  >0:"beta#"
 
@@ -247,7 +247,7 @@ CFLAGS		+= -I$(DCLIB_DIR)
 
 # other objects
 WIT_O		:= lib-std.o lib-file.o lib-sf.o \
-		   lib-bzip2.o lib-lzma.o \
+		   lib-bzip2.o lib-lzma.o lib-dol.o \
 		   lib-wdf.o lib-wia.o lib-ciso.o lib-gcz.o \
 		   iso-interface.o wbfs-interface.o patch.o \
 		   titles.o match-pattern.o dclib-utf8.o \
@@ -322,6 +322,9 @@ CFLAGS		:= $(strip $(CFLAGS))
 
 DEPFLAGS	+= -MMD
 
+
+#--- system depedent flags & libs
+
 LDFLAGS		:= $(strip $(LDFLAGS))
 
 ifeq ($(HAVE_ZLIB),1)
@@ -329,13 +332,28 @@ ifeq ($(HAVE_ZLIB),1)
 endif
 LIBS		+= -lm -lncurses $(XLIBS)
 
+ifeq ($(HAVE_SHA),1)
+ ifeq ($(SYSTEM_LINUX),1)
+  ifneq ($(STATIC),1)
+    DEFINES1	+= -DUSE_SHA_LIB
+    LIBS	+= -lcrypto
+  endif
+ else ifeq ($(SYSTEM),cygwin)
+    DEFINES1	+= -DUSE_SHA_LIB
+    LIBS	+= -lcrypto
+ endif
+endif
+
+#-------------------------------------------------------------------------------
+
 DISTRIB_RM	= ./wit-v$(VERSION)-r
 DISTRIB_BASE	= wit-v$(VERSION)-r$(REVISION_NEXT)
-DISTRIB_PATH	= ./$(DISTRIB_BASE)-$(SYSTEM)
+DISTRIB_PATH	= ./$(DISTRIB_BASE)-$(SYSTEM2)
 DISTRIB_I386	= $(DISTRIB_BASE)-i386.tar.gz
 DISTRIB_X86_64	= $(DISTRIB_BASE)-x86_64.tar.gz
 DISTRIB_MAC	= $(DISTRIB_BASE)-mac.tar.gz
-DISTRIB_CYGWIN	= $(DISTRIB_BASE)-cygwin.zip
+DISTRIB_CYGWIN32 = $(DISTRIB_BASE)-cygwin32.zip
+DISTRIB_CYGWIN64 = $(DISTRIB_BASE)-cygwin64.zip
 DISTRIB_FILES	= gpl-2.0.txt $(INSTALL_SCRIPTS) $(SETUP_INFO)
 
 DOC_FILES	= doc/*.txt
@@ -385,10 +403,10 @@ $(ALL_TOOLS_X): %: %.o $(ALL_OBJECTS) $(TOBJ_ALL) Makefile | $(HELPER_TOOLS)
 		$(ALL_OBJECTS) $(TOBJ_$@) $(LIBS) $(TOPT_$@) -o $@
 	@if test -f $@.exe; then $(STRIP) $@.exe; else $(STRIP) $@; fi
 
-	@mkdir -p bin/$(SYSTEM) bin/$(SYSTEM)/debug
+	@mkdir -p bin/$(SYSTEM2) bin/$(SYSTEM2)/debug
 	@if test -s $(MODE_FILE) && grep -Fq -e -DDEBUG $(MODE_FILE); \
-		then cp -p $@ bin/$(SYSTEM)/debug/; \
-		else cp -p $@ bin/; cp -p $@ bin/$(SYSTEM)/; fi
+		then cp -p $@ bin/$(SYSTEM2)/debug/; \
+		else cp -p $@ bin/; cp -p $@ bin/$(SYSTEM2)/; fi
 
 #--------------------------
 
@@ -642,8 +660,11 @@ copy-distrib: distrib2
 	@[[ -s "$(DISTRIB_X86_64)" ]] \
 		&& cp --preserve=time "$(DISTRIB_X86_64)" "$(DOWNLOAD_DIR)" \
 		|| true
-	@[[ -s "$(DISTRIB_CYGWIN)" ]] \
-		&& cp --preserve=time "$(DISTRIB_CYGWIN)" "$(DOWNLOAD_DIR)" \
+	@[[ -s "$(DISTRIB_CYGWIN32)" ]] \
+		&& cp --preserve=time "$(DISTRIB_CYGWIN32)" "$(DOWNLOAD_DIR)" \
+		|| true
+	@[[ -s "$(DISTRIB_CYGWIN64)" ]] \
+		&& cp --preserve=time "$(DISTRIB_CYGWIN64)" "$(DOWNLOAD_DIR)" \
 		|| true
 
 #
@@ -816,7 +837,8 @@ templates.sed: Makefile
 		's|@@DISTRIB-I386@@|$(DISTRIB_I386)|g;' \
 		's|@@DISTRIB-X86_64@@|$(DISTRIB_X86_64)|g;' \
 		's|@@DISTRIB-MAC@@|$(DISTRIB_MAC)|g;' \
-		's|@@DISTRIB-CYGWIN@@|$(DISTRIB_CYGWIN)|g;' \
+		's|@@DISTRIB-CYGWIN32@@|$(DISTRIB_CYGWIN64)|g;' \
+		's|@@DISTRIB-CYGWIN64@@|$(DISTRIB_CYGWIN32)|g;' \
 		's|@@URI-FILE@@|$(URI_FILE)|g;' \
 		's|@@URI-REPOS@@|$(URI_REPOS)|g;' \
 		's|@@URI-VIEWVC@@|$(URI_VIEWVC)|g;' \

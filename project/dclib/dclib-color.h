@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -129,9 +129,11 @@ typedef struct term_size_t
 }
 term_size_t;
 
-extern uint opt_width, opt_height;
-int ScanOptWidth ( ccp arg );
-int ScanOptHeight ( ccp arg );
+extern uint opt_width, opt_max_width, opt_height, opt_max_height;
+int ScanOptWidth	( ccp arg );
+int ScanOptMaxWidth	( ccp arg );
+int ScanOptHeight	( ccp arg );
+int ScanOptMaxHeight	( ccp arg );
 
 term_size_t GetTermSize   ( int default_width, int default_height );
 term_size_t GetTermSizeFD ( int fd, int default_width, int default_height );
@@ -272,6 +274,7 @@ typedef enum TermTextMode_t
 
 	//--- and her are some recommendations for unique colors
 	//--- these Colors are also used to setup 'ColorSet_t'
+	// [[new-color]]
 
 	TTM_COL_SETUP		= TTM_BOLD	| TTM_BLUE	| TTM_BG_BLACK,
 	TTM_COL_RUN		= TTM_BOLD	| TTM_WHITE	| TTM_BG_BLACK,
@@ -290,6 +293,7 @@ typedef enum TermTextMode_t
 	TTM_COL_LOG		= TTM_BOLD	| TTM_WHITE	| TTM_BG_BLUE,
 
 	TTM_COL_NAME		= TTM_NO_BOLD	| TTM_CYAN	| TTM_BG_BLACK,
+	TTM_COL_OP		= TTM_BOLD	| TTM_WHITE	| TTM_BG_BLACK,
 	TTM_COL_VALUE		= TTM_NO_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
 	TTM_COL_SUCCESS		= TTM_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
 	TTM_COL_ERROR		= TTM_NO_BOLD	| TTM_BLACK	|  TTM_BG_YELLOW,
@@ -444,8 +448,9 @@ typedef struct ColorSet_t
     ccp lf;	    // pointer to 'EmptyString' or to 'LF20';
 
     //--- data, always begins with 'reset'
+    // [[new-color]]
 
-    ccp reset;
+    ccp reset;	    // always first color!!
 
     ccp setup;
     ccp run;
@@ -464,6 +469,7 @@ typedef struct ColorSet_t
     ccp log;
 
     ccp name;
+    ccp op;
     ccp value;
     ccp success;
     ccp error;
@@ -499,33 +505,47 @@ typedef struct ColorSet_t
     ccp	white;
     ccp	b_white;
 
+    ccp	red_magenta;
     ccp	red;
     ccp	red_orange;
+    ccp	orange_red;
     ccp	orange;
     ccp	orange_yellow;
+    ccp	yellow_orange;
     ccp	yellow;
     ccp	yellow_green;
+    ccp	green_yellow;
     ccp	green;
     ccp	green_cyan;
+    ccp	cyan_green;
     ccp	cyan;
     ccp	cyan_blue;
+    ccp	blue_cyan;
     ccp	blue;
     ccp	blue_magenta;
+    ccp	magenta_blue;
     ccp	magenta;
     ccp	magenta_red;
 
+    ccp	b_red_magenta;
     ccp	b_red;
     ccp	b_red_orange;
+    ccp	b_orange_red;
     ccp	b_orange;
     ccp	b_orange_yellow;
+    ccp	b_yellow_orange;
     ccp	b_yellow;
     ccp	b_yellow_green;
+    ccp	b_green_yellow;
     ccp	b_green;
     ccp	b_green_cyan;
+    ccp	b_cyan_green;
     ccp	b_cyan;
     ccp	b_cyan_blue;
+    ccp	b_blue_cyan;
     ccp	b_blue;
     ccp	b_blue_magenta;
+    ccp	b_magenta_blue;
     ccp	b_magenta;
     ccp	b_magenta_red;
 
@@ -571,7 +591,6 @@ typedef void (*PrintColorFunc)
     FILE		*f,		// valid output file
     int			indent,		// normalized indention of output
     const ColorSet_t	*cs,		// valid color set, never NULL
-    uint		mode,		// output mode of PrintColorSetHelper()
     ccp			col_name,	// name of color
     ccp			col_string	// escape string for the color
 );
@@ -612,12 +631,13 @@ void PrintColorSetHelper
     int			indent,		// indention of output
     const ColorSet_t	*cs,		// valid color set; if NULL: use std colors
     PrintColorFunc	func,		// output function, never NULL
-    uint		mode		// output mode (bit field, NULL=default):
+    uint		mode,		// output mode (bit field, NULL=default):
 					//   1: print normal colors (e.g. RED)
 					//   2: print bold colors (e.g. B_RED)
 					//   4: print background (e.g. BLUE_RED)
 					//   8: print color names (e.g. HIGHLIGHT)
 					//  16: include alternative names too (e.g. HL)
+    bool		multi_assign	// TRUE: Allow A=B="...";
 );
 
 //

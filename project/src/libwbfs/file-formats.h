@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -165,10 +165,12 @@ enum // some constants
     GC_MULTIBOOT_MAX_PART	= GC_MULTIBOOT_PTAB_SIZE/4,
     GC_GOOD_PART_ALIGN		= 0x20000,	// alignment (= min off) of GC partitions
 
-    DOL_N_TEXT_SECTIONS		=     7,
-    DOL_N_DATA_SECTIONS		=    11,
-    DOL_N_SECTIONS		= DOL_N_TEXT_SECTIONS + DOL_N_DATA_SECTIONS,
+ #ifndef DC_LIB_DOL_H
+    DOL_N_TEXT_SECTIONS		=  7,
+    DOL_N_DATA_SECTIONS		= 11,
+    DOL_N_SECTIONS		= 18,
     DOL_HEADER_SIZE		= 0x100,
+ #endif
 
     WBFS_MAX_SECTORS		= 0x10000u,	// max number of sectors
     WBFS_MIN_SECTOR_SHIFT	=  6,		// needed for wbfs_calc_size_shift()
@@ -303,8 +305,10 @@ ccp wd_print_compression
 ///////////////////////////////////////////////////////////////////////////////
 // [[dol_header_t]]
 
-typedef struct dol_header_t
-{
+#ifndef DC_LIB_DOL_H
+
+ typedef struct dol_header_t
+ {
     /* 0x00 */	u32 sect_off [DOL_N_SECTIONS];	// file offset
     /* 0x48 */	u32 sect_addr[DOL_N_SECTIONS];	// virtual address
     /* 0x90 */	u32 sect_size[DOL_N_SECTIONS];	// section size
@@ -312,11 +316,13 @@ typedef struct dol_header_t
     /* 0xdc */	u32 bss_size;
     /* 0xe0 */	u32 entry_addr;
     /* 0xe4 */	u8  padding[DOL_HEADER_SIZE-0xe4];
-}
-__attribute__ ((packed)) dol_header_t;
+ }
+ __attribute__ ((packed)) dol_header_t;
 
-void ntoh_dol_header ( dol_header_t * dest, const dol_header_t * src );
-void hton_dol_header ( dol_header_t * dest, const dol_header_t * src );
+ void ntoh_dol_header ( dol_header_t * dest, const dol_header_t * src );
+ void hton_dol_header ( dol_header_t * dest, const dol_header_t * src );
+
+#endif
 
 //-----------------------------------------------------------------------------
 // [[dol_record_t]]

@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -805,13 +805,13 @@ static u32 FindDolAddress
     uint	off_begin,	// begin search here
     uint	off_end,	// end search here
     const u8	*search,	// data to search
-    uint	serach_size	// size of 'search'
+    uint	search_size	// size of 'search'
 )
 {
     while ( off_begin < off_end )
     {
 	const u8 *res
-	    = memmem( data+off_begin, off_end-off_begin, search, serach_size );
+	    = memmem( data+off_begin, off_end-off_begin, search, search_size );
 	if (!res)
 	    return 0;
 	off_begin = res - data;

@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -58,6 +58,7 @@
   #include <linux/fs.h>
 #endif
 
+#include "dclib/lib-dol.h"
 #include "lib-std.h"
 #include "lib-sf.h"
 #include "wbfs-interface.h"
@@ -328,6 +329,7 @@ enumError XResetWFile ( XPARM WFile_t * f, bool remove_file )
     // save user settungs
     const bool open_flags		= f->open_flags;
     const bool disable_errors		= f->disable_errors;
+    const bool disable_nkit_errors	= f->disable_nkit_errors;
     const bool create_directory		= f->create_directory;
     const int  already_created_mode	= f->already_created_mode;
 
@@ -336,6 +338,7 @@ enumError XResetWFile ( XPARM WFile_t * f, bool remove_file )
     // restore user settings
     f->open_flags		= open_flags;
     f->disable_errors		= disable_errors;
+    f->disable_nkit_errors	= disable_nkit_errors;
     f->create_directory		= create_directory;
     f->already_created_mode	= already_created_mode;
 
@@ -495,14 +498,9 @@ enumError XSetWFileTime ( XPARM WFile_t * f, FileAttrib_t * set_time )
     ASSERT(f);
 
     enumError err = ERR_OK;
-    if ( set_time && set_time->mtime )
+    if ( set_time && !IsTimeSpecNull(&set_time->mtime) )
     {
 	err = XCloseWFile( XCALL f, false );
-
-	struct timeval tval[2];
-	tval[0].tv_sec = set_time->atime ? set_time->atime : set_time->mtime;
-	tval[1].tv_sec = set_time->mtime;
-	tval[0].tv_usec = tval[1].tv_usec = 0;
 
 	if (f->split_f)
 	{
@@ -510,13 +508,13 @@ enumError XSetWFileTime ( XPARM WFile_t * f, FileAttrib_t * set_time )
 	    for ( end = ptr + f->split_used; ptr < end; ptr++ )
 	    {
 		TRACE("XSetWFileTime(%p,%p) fname=%s\n",f,set_time,(*ptr)->fname);
-		utimes((*ptr)->fname,tval);
+		SetAMTimes((*ptr)->fname,set_time->times);
 	    }
 	}
 	else
 	{
 	    TRACE("XSetWFileTime(%p,%p) fname=%s\n",f,set_time,f->fname);
-	    utimes(f->fname,tval);
+	    SetAMTimes(f->fname,set_time->times);
 	}
     }
     return err;
@@ -573,7 +571,7 @@ static enumError XOpenWFileHelper
     {
 	TRACE("open %s, create-dir=%d\n",f->fname,f->create_directory);
      #ifdef __CYGWIN__
-	char * temp = AllocNormalizedFilenameCygwin(f->fname);
+	char * temp = AllocNormalizedFilenameCygwin(f->fname,false);
 	TRACE("open %p %p %s\n",f->fname,temp,temp);
 	//FreeString(f->fname); // [[2do]] [memleak] -> forces a core dump -- mhhm
 	f->fname = temp;
@@ -927,7 +925,7 @@ void SetWFileName ( WFile_t * f, ccp source, bool allow_slash )
 {
     char fbuf[PATH_MAX];
     char * dest
-	= NormalizeFileName( fbuf, sizeof(fbuf)-1, source, allow_slash, use_utf8 );
+	= NormalizeFileName( fbuf, sizeof(fbuf)-1, source, allow_slash, use_utf8, TRSL_NONE );
     *dest++ = 0;
     const int len = dest - fbuf;
 
@@ -1001,7 +999,7 @@ void GenWFileName ( WFile_t * f, ccp path, ccp name, ccp title, ccp id6, ccp ext
     }
     else
     {
-	dest = NormalizeFileName(dest,end-dest,title,false,use_utf8);
+	dest = NormalizeFileName(dest,end-dest,title,false,use_utf8,TRSL_NONE);
 	TRACE(" >TITL: |%.*s|\n",(int)(dest-fbuf),fbuf);
 
 	if ( id6 && *id6 )
@@ -1406,7 +1404,7 @@ fprintf(stderr,"FNAME:  %s\n",f->split_fname.format);
 			found = true;
 			break;
 		    }
-		}   
+		}
 	    }
 	    if (!found)
 		return ERR_OK; // no split files found -> return
@@ -3053,16 +3051,18 @@ bool SetPatchFileID
 FileAttrib_t * CopyFileAttribInode
 	( FileAttrib_t * dest, const struct wbfs_inode_info_t * src, off_t size )
 {
-    ASSERT(src);
-    ASSERT(dest);
+    DASSERT(src);
+    DASSERT(dest);
 
-    dest->size  = size;
+    ZeroFileAttrib(dest);
+    dest->size = size;
+
     if (wbfs_is_inode_info_valid(0,src))
     {
-	dest->itime = ntoh64(src->itime);
-	dest->mtime = ntoh64(src->mtime);
-	dest->ctime = ntoh64(src->ctime);
-	dest->atime = ntoh64(src->atime);
+	dest->atime.tv_sec = ntoh64(src->atime);
+	dest->mtime.tv_sec = ntoh64(src->mtime);
+	dest->ctime.tv_sec = ntoh64(src->ctime);
+	dest->itime.tv_sec = ntoh64(src->itime);
     }
 
     return NormalizeFileAttrib(dest);
@@ -3073,8 +3073,8 @@ FileAttrib_t * CopyFileAttribInode
 FileAttrib_t * CopyFileAttribDiscInfo
 	( FileAttrib_t * dest, const struct WDiscInfo_t * src )
 {
-    ASSERT(src);
-    ASSERT(dest);
+    DASSERT(src);
+    DASSERT(dest);
 
     return CopyFileAttribInode(dest,&src->dhead.iinfo,src->size);
 }
@@ -3165,8 +3165,6 @@ void AnalyseSplitFilename ( split_file_t *split, ccp path, enumOFT oft )
 	if ( digit > '9' )
 	    digit = '9';
 
-//xBINGO;
-fprintf(stderr,"PART%u: %s : %s\n",split->index,part,path);
 	dest = copy_escape(dest,dest+buf_size-6,path,part+4);
 	*dest++ = '%';
 	*dest++ = '0';
@@ -3174,8 +3172,6 @@ fprintf(stderr,"PART%u: %s : %s\n",split->index,part,path);
 	*dest++ = digit;
 	*dest++ = 'u';
 	dest = copy_escape(dest,dest+buf_size-2,part+skip,path+strlen(path));
-//xBINGO;
-fprintf(stderr,">P> %s\n",buf);
     }
     else
     {
@@ -3245,7 +3241,7 @@ int CalcSplitFilename ( char *buf, size_t buf_size, ccp path, enumOFT oft )
     const bool suppress_point = oft == OFT_WBFS
 		|| oft == OFT_PLAIN && plen >= 6 && !strcasecmp(path+plen-6,".part0");
     PRINT("CalcSplitFilename(%s,%d) suppress_point=%d\n",path,oft,suppress_point);
-    
+
     if ( plen > 0 && suppress_point )
 	plen--;
     if ( plen > max_path_len )
@@ -3509,7 +3505,7 @@ void SetDest ( ccp dest, bool mkdir )
 {
  #ifdef __CYGWIN__
     opt_dest = IsWindowsDriveSpec(dest)
-		? AllocNormalizedFilenameCygwin(dest)
+		? AllocNormalizedFilenameCygwin(dest,false)
 		: dest;
  #else
     opt_dest = dest;
@@ -3548,7 +3544,7 @@ int AddCertFile ( ccp fname, int unused )
 	    }
 	}
 // [[2do]] [[ft-id]]
-	else if ( sf.f.ftype & (FT_ID_CERT_BIN|FT_ID_TIK_BIN|FT_ID_TMD_BIN) )
+	else if ( sf.f.ftype & (FT_ID_SIG_BIN|FT_ID_CERT_BIN|FT_ID_TIK_BIN|FT_ID_TMD_BIN) )
 	{
 	    const size_t load_size = sf.file_size < sizeof(iobuf)
 				   ? sf.file_size : sizeof(iobuf);
@@ -3573,6 +3569,36 @@ int AddCertFile ( ccp fname, int unused )
 
     ResetSF(&sf,0);
     return err;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static int sort_cert ( const void * va, const void * vb )
+{
+    const cert_item_t *a = (const cert_item_t *)va;
+    const cert_item_t *b = (const cert_item_t *)vb;
+    return strcasecmp(a->name,b->name);
+}
+
+//-----------------------------------------------------------------------------
+
+static int sort_cert_reverse ( const void * va, const void * vb )
+{
+    const cert_item_t *a = (const cert_item_t *)va;
+    const cert_item_t *b = (const cert_item_t *)vb;
+    return strcasecmp(b->name,a->name);
+}
+
+//-----------------------------------------------------------------------------
+
+void SortGlobalCert ( uint smode )
+{
+    if ( smode == SORT_NONE || global_cert.used < 2 )
+	return;
+
+    int (*func) ( const void *, const void * )
+		= smode & SORT_REVERSE ? sort_cert_reverse : sort_cert;
+    qsort(global_cert.cert,global_cert.used,sizeof(*global_cert.cert),func);
 }
 
 //

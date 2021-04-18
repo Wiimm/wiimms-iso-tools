@@ -15,11 +15,11 @@ mac1: mac-x86_64
 	@echo "----- building universal binaries -----"
 	@for i in $(MAIN_TOOLS); do \
 	    lipo -create bin/x86_64/$${i} -output $${i}; \
-	    ln -f $${i} bin/$${i}; \
+	    cp -p $${i} bin/$${i}; \
 	done;
 	@for i in $(WDF_LINKS); do \
-	    ln -f wdf $${i}; \
-	    ln -f wdf bin/$${i}; \
+	    cp -p wdf $${i}; \
+	    cp -p wdf bin/$${i}; \
 	done;
 	@rm -rf bin/i386 bin/x86_64
 	@echo "done"
@@ -31,11 +31,11 @@ mac2: mac-i386 mac-x86_64
 	@echo "----- building universal binaries -----"
 	@for i in $(MAIN_TOOLS); do \
 	    lipo -create bin/i386/$${i} bin/x86_64/$${i} -output $${i}; \
-	    ln -f $${i} bin/$${i}; \
+	    cp -p $${i} bin/$${i}; \
 	done;
 	@for i in $(WDF_LINKS); do \
-	    ln -f wdf $${i}; \
-	    ln -f wdf bin/$${i}; \
+	    cp -p wdf $${i}; \
+	    cp -p wdf bin/$${i}; \
 	done;
 	@rm -rf bin/i386 bin/x86_64
 	@echo "done"
@@ -47,11 +47,11 @@ mac3: mac-i386 mac-x86_64 mac-ppc
 	@echo "----- building universal binaries -----"
 	@for i in $(MAIN_TOOLS); do \
 	    lipo -create bin/ppc/$${i} bin/i386/$${i} bin/x86_64/$${i} -output $${i}; \
-	    ln -f $${i} bin/$${i}; \
+	    cp -p $${i} bin/$${i}; \
 	done;
 	@for i in $(WDF_LINKS); do \
-	    ln -f wdf $${i}; \
-	    ln -f wdf bin/$${i}; \
+	    cp -p wdf $${i}; \
+	    cp -p wdf bin/$${i}; \
 	done;
 	@rm -rf bin/ppc bin/i386 bin/x86_64
 	@echo "done"
@@ -99,14 +99,17 @@ gen-mac-distrib:
 	@mkdir -p $(DISTRIB_PATH)/share $(DISTRIB_PATH)/doc
 
 	@cp -p $(DISTRIB_FILES) $(DISTRIB_PATH)
-	@ln -f $(MAIN_TOOLS) $(WDF_LINKS) $(DISTRIB_PATH)/bin
+	@cp -p $(MAIN_TOOLS) $(WDF_LINKS) $(DISTRIB_PATH)/bin
 	@cp -p share/*.txt $(DISTRIB_PATH)/share
 	@cp -p $(DOC_FILES) $(DISTRIB_PATH)/doc
 	@cp -p $(SCRIPTS)/*.{sh,txt} $(DISTRIB_PATH)/scripts
 
 	@chmod -R 755 $(DISTRIB_PATH)
-	@chmod a+x $(DISTRIB_PATH)/*.sh $(DISTRIB_PATH)/scripts/*.sh $(DISTRIB_PATH)/bin*/*
+	@chmod a+x $(DISTRIB_PATH)/*.sh $(DISTRIB_PATH)/scripts/*.sh $(DISTRIB_PATH)/bin/*
 	@chmod -R a+X $(DISTRIB_PATH)
+
+	-$(DISTRIB_PATH)/bin/wit version -l
+	-$(DISTRIB_PATH)/bin/wit version -ll
 
 	@tar -czf $(DISTRIB_PATH).tar.gz $(DISTRIB_PATH)
 	@ln $(DISTRIB_PATH).tar.gz latest-mac.tar.gz

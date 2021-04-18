@@ -1,4 +1,4 @@
-.file	"sha1-586.s"
+.file	"sha1-586-cygwin.s"
 .text
 .globl	_wit_sha1_block_data_order
 .def	_wit_sha1_block_data_order;	.scl	2;	.type	32;	.endef

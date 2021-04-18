@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -49,6 +49,7 @@
 #define BMG_INF_MAX_SIZE	(4+BMG_ATTRIB_SIZE)	// max supported inf size
 #define BMG_INF_LIMIT		1000			// max allowed inf size
 #define BMG_LEGACY_BLOCK_SIZE	32			// block size for legacy files
+#define BMG_MAX_SECTIONS	100			// max supported sections (sanity check)
 
 // [[xbuf]]
 #define BMG_MSG_BUF_SIZE	20050			// good buf size for messages
@@ -68,6 +69,7 @@
 typedef u16 bmg_slot_t;			// type of slot
 
 typedef struct bmg_t bmg_t;
+
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -240,6 +242,7 @@ extern bool		opt_bmg_use_raw_sections;// true: use raw sections
 
 //-----------------------------------------------------------------------------
 
+extern int		opt_bmg_endian;
 extern int		opt_bmg_encoding;
 extern uint		opt_bmg_inf_size;
 extern OffOn_t		opt_bmg_mid;
@@ -398,6 +401,22 @@ typedef struct bmg_section_t
  /*08*/  u8		data[0];	// section data
 }
 __attribute__ ((packed)) bmg_section_t;
+
+//-----------------------------------------------------------------------------
+// [[bmg_endian_t]]
+
+typedef enum bmg_endian_t
+{
+    BMG_AUTO_ENDIAN,
+    BMG_BIG_ENDIAN,	// used in MKWii
+    BMG_LITTLE_ENDIAN,
+
+    BMG_DEFAULT_ENDIAN	= BMG_BIG_ENDIAN,
+}
+__attribute__ ((packed)) bmg_endian_t;
+
+extern const KeywordTab_t TabEndianBMG[];
+ccp GetEndianNameBMG	( int endian, ccp return_if_invalid );
 
 //-----------------------------------------------------------------------------
 // [[bmg_encoding_t]]
@@ -583,11 +602,11 @@ bmg_sect_info_t;
 
 typedef struct bmg_sect_list_t
 {
-    // all pointers point into raw source data
-
     uint		source_size;	// valid source size
     uint		this_size;	// total size of this including info[]
+    const endian_func_t	*endian;	// endian functions, never NULL
 
+    // all following pointers point into raw source data
     bmg_header_t	*header;	// NULL or pointer to BMG file header
     bmg_inf_t		*pinf;		// NULL or pointer to INF1 header
     bmg_dat_t		*pdat;		// NULL or pointer to DAT1 header
@@ -606,7 +625,8 @@ bmg_sect_list_t;
 //-----------------------------------------------------------------------------
 
 // result is alloced => FREE(result)
-bmg_sect_list_t * ScanSectionsBMG ( cvp data, uint size );
+bmg_sect_list_t * ScanSectionsBMG
+	( cvp data, uint size, const endian_func_t *endian ); // endian==0: auto detect
 
 const bmg_sect_info_t * SearchSectionBMG
 (
@@ -729,6 +749,7 @@ typedef struct bmg_t
     ccp			fname;			// alloced filename of loaded file
     FileAttrib_t	fatt;			// file attribute
     bool		is_text_src;		// true: source was text
+    const endian_func_t	* endian;		// endian functions, never NULL
 
     //--- container, used by SZS tools
 
@@ -897,6 +918,10 @@ enumError SaveTextBMG
 typedef struct bmg_create_t
 {
     bmg_t	*bmg;			// current bmg
+    const endian_func_t			// endian functions, never NULL
+		*endian;		// init by bmg->endian, overridden by opt_bmg_endian
+			
+
     FastBuf_t	inf;			// INF1 data
     FastBuf_t	dat;			// DAT1 data
     FastBuf_t	mid;			// MID1 data

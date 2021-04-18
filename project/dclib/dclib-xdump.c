@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -676,6 +676,45 @@ void InitializeXDump ( XDump_t *xd )
     xd->print_text	=
     xd->print_diff_sep	=
     xd->print_summary	= true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp  hexdump_prefix = "";
+ccp  hexdump_eol    = "\n";
+bool hexdump_align  = false;
+
+//-----------------------------------------------------------------------------
+
+void InitializeXDumpEx
+(
+    XDump_t	*xd,
+    FILE	*f,
+    int		indent,
+    u64		addr,
+    int		addr_fw,
+    int		row_len
+)
+{
+    DASSERT(xd);
+    InitializeXDump(xd);
+
+    xd->f		= f;
+    xd->prefix		= hexdump_prefix;
+    xd->eol		= hexdump_eol;
+    xd->mode_align	= hexdump_align;
+    xd->indent		= indent;
+    xd->start_addr	= addr;
+    xd->min_addr_fw	= addr_fw;
+    xd->min_width	= row_len;
+    xd->format		= XDUMPF_INT_1;
+    xd->print_format	= false;
+    xd->print_summary	= false;
+    xd->print_diff_sep	= false;
+
+    hexdump_prefix	= EmptyString;
+    hexdump_eol		= "\n";
+    hexdump_align	= false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

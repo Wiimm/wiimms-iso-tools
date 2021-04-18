@@ -60,8 +60,10 @@
 #include <string.h>
 #include "wiimm-sha.h"
 
-unsigned char *WIIMM_SHA1(const unsigned char *d, size_t n, unsigned char *md)
-{
+#ifndef USE_SHA_LIB
+
+ unsigned char *WIIMM_SHA1(const unsigned char *d, size_t n, unsigned char *md)
+ {
 	WIIMM_SHA_CTX c;
 	static unsigned char m[SHA_DIGEST_LENGTH];
 
@@ -71,4 +73,7 @@ unsigned char *WIIMM_SHA1(const unsigned char *d, size_t n, unsigned char *md)
 	WIIMM_SHA1_Update(&c,d,n);
 	WIIMM_SHA1_Final(md,&c);
 	return(md);
-}
+ }
+
+#endif
+

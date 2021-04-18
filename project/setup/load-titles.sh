@@ -17,7 +17,7 @@
     ##   This file is part of the WIT project.                         ##
     ##   Visit https://wit.wiimm.de/ for project details and sources.  ##
     ##                                                                 ##
-    ##   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>      ##
+    ##   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>      ##
     ##                                                                 ##
     #####################################################################
     ##                                                                 ##
@@ -28,7 +28,7 @@
 
 #------------------------------------------------------------------------------
 
-NEEDED="wit wget tr"
+NEEDED="wit tr"
 
 BASE_PATH="@@INSTALL-PATH@@"
 SHARE_PATH="@@SHARE-PATH@@"
@@ -60,6 +60,22 @@ fi
 
 #------------------------------------------------------------------------------
 
+function webget()
+{
+    if which wget >/dev/null 2>&1
+    then
+	wget -qO- "$1"
+    elif which curl >/dev/null 2>&1
+    then
+	curl -fs "$1"
+    else
+	printf "\e[1;31mWarning: Neither »wget« nor »curl« found!\e[0m\n" >&2
+	return 1
+    fi
+}
+
+#------------------------------------------------------------------------------
+
 function load_and_store()
 {
     local URI="$1"
@@ -68,7 +84,7 @@ function load_and_store()
 
     echo "***    load $DEST from $URI"
 
-    if wget -q -O- "$URI" | wit titles / - >"$DEST.tmp" && test -s "$DEST.tmp"
+    if webget "$URI" | wit titles / - >"$DEST.tmp" && test -s "$DEST.tmp"
     then
 	if [[ $ADD != "" ]]
 	then

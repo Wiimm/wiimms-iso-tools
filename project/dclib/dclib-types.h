@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -51,6 +51,22 @@
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			endian				///////////////
 ///////////////////////////////////////////////////////////////////////////////
+
+#undef IS_BIG_ENDIAN
+#undef IS_LITTLE_ENDIAN
+
+#if __BYTE_ORDER == __BIG_ENDIAN
+  #define IS_BIG_ENDIAN		1
+  #define IS_LITTLE_ENDIAN	0
+#elif __BYTE_ORDER == __LITTLE_ENDIAN
+  #define IS_BIG_ENDIAN		0
+  #define IS_LITTLE_ENDIAN	1
+#else
+  #define IS_BIG_ENDIAN		0
+  #define IS_LITTLE_ENDIAN	0
+#endif
+
+//-----------------------------------------------------------------------------
 // [[dcEndian_t]]
 
 typedef enum dcEndian_t
@@ -63,7 +79,7 @@ typedef enum dcEndian_t
 
     //--- define local & reverse endian, if possible
 
- #if __BYTE_ORDER == __LITTLE_ENDIAN || __BYTE_ORDER == __BIG_ENDIAN
+ #if IS_BIG_ENDIAN || IS_LITTLE_ENDIAN
 
     DC_LOCAL_ENDIAN	= DC_DEFAULT_ENDIAN,
     DC_REVERSE_ENDIAN	= DC_SECOND_ENDIAN,
@@ -73,7 +89,7 @@ typedef enum dcEndian_t
 
     //--- define aliases for little & big endian
 
- #if __BYTE_ORDER == __BIG_ENDIAN
+ #if IS_BIG_ENDIAN
 
     DC_BIG_ENDIAN	= DC_DEFAULT_ENDIAN,
     DC_LITTLE_ENDIAN	= DC_SECOND_ENDIAN,

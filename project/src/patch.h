@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -41,6 +41,74 @@
 #include "dclib/dclib-types.h"
 #include "lib-std.h"
 #include "wiidisc.h"
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			AnalyzeFile_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+extern PrintScriptFF	script_fform;
+extern ccp		script_varname;
+extern int		script_array;
+
+//-----------------------------------------------------------------------------
+// [[PatchStat_t]]
+
+typedef struct PatchStat_t
+{
+    int n_files;	// number of analyzed files
+    int n_host;		// number of 'Host' patches
+    int n_string;	// number of string patches
+    int n_http;		// number of HTTP patches
+    int n_domain;	// number of domain patches
+    int n_agent;	// number of user-agent patches
+    int n_p2p;		// number of peer-to-peer patches
+    int n_master;	// number of MASTER patches
+}
+PatchStat_t;
+
+//-----------------------------------------------------------------------------
+// [[AnalyzeFile_t]]
+
+typedef struct AnalyzeFile_t
+{
+    //-- job
+
+    struct SuperFile_t	*sf;			// related source file
+    bool		load_dol;		// TRUE: load complete DOL
+    bool		patch_dol;		// TRUE: patch DOL
+    bool		allow_mkw;		// TRUE: allow DOL analysis of MKW
+
+
+    //-- dol
+
+    dol_header_t	*dol;			// NULL or dol file
+    dol_header_t	*dol_patch;		// NULL or copy of 'dol' for patching
+    uint		dol_load_size;		// alloced size of 'dol' & 'dol_patch'
+						// 0  or  >= DOL_HEADER_SIZE
+    bool		dol_alloced;		// TRUE: 'dol' is alloced
+    bool		dol_patch_alloced;	// TRUE: 'dol_patch' is alloced
+
+    uint		dol_file_size;		// file size of complete DOL
+    int			dol_is_mkw;		// -1:unknown, 0:no, 1:yes
+    char		dol_region[4];		// ? | PAL | USA | JAP | KOR
+
+
+    //-- stats
+
+    PatchStat_t		pstat_main;		// patch stats for main.dol
+    PatchStat_t		pstat_staticr;		// patch stats for staticr.rel
+    u_usec_t		dur_dol_patch;		// time of DOL patch #2
+}
+AnalyzeFile_t;
+
+//-----------------------------------------------------------------------------
+
+void InitializeAnaFile ( AnalyzeFile_t * af );
+void ResetAnaFile ( AnalyzeFile_t * af );
+bool SetupDolPatchAnalyzeFile ( AnalyzeFile_t * af );
+
+void AnalyzeFile ( AnalyzeFile_t * af );
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -138,8 +206,12 @@ int ScanOptIOS ( ccp arg );
 
 extern bool opt_http;
 extern ccp  opt_domain;
-int ScanOptDomain ( bool http, ccp domain );
-int patch_main ( wd_disc_t * disc );
+extern bool opt_security_fix;
+extern int  disable_patch_on_load;
+
+int ScanOptDomain ( bool http, bool security_fix, ccp domain );
+uint PatchDomain  ( bool is_dol, u8 *data, uint size, ccp title, bool patch, PatchStat_t *pstat );
+int patch_main_and_rel ( wd_disc_t * disc, AnalyzeFile_t *af );
 
 //-----------------------------------------------------------------------------
 

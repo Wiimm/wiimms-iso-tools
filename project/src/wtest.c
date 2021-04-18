@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -82,7 +82,7 @@
 
 #define NAME "wtest"
 #undef TITLE
-#define TITLE NAME " v" VERSION " r" REVISION " " SYSTEM " - " AUTHOR " - " DATE
+#define TITLE NAME " v" VERSION " r" REVISION " " SYSTEM2 " - " AUTHOR " - " DATE
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -501,7 +501,7 @@ static void test_filename ( int argc, char ** argv )
 
     for ( i = 1; i < argc; i++ )
     {
-	NormalizeFileName(buf,sizeof(buf),argv[i],true,use_utf8);
+	NormalizeFileName(buf,sizeof(buf),argv[i],true,use_utf8,TRSL_NONE);
 	printf("%s -> %s\n",argv[i],buf);
    }
 }
@@ -672,6 +672,23 @@ static void test_hexdump ( int argc, char ** argv )
 	    }
 	    CloseSF(&sf,0);
 	}
+    }
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			test_patch_host()		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_patch_host ( int argc, char ** argv )
+{
+    putchar('\n');
+
+    int i;
+    for ( i = 1; i < argc; i++ )
+    {
+	ccp arg = argv[i];
+	printf("\e[44;37;1m %s \e[0m\n",arg);
     }
 }
 
@@ -1200,6 +1217,7 @@ enum
     CMD_MATCH_PATTERN,		// test_match_pattern(argc,argv);
     CMD_OPEN_DISC,		// test_open_disc(argc,argv);
     CMD_HEXDUMP,		// test_hexdump(argc,argv);
+    CMD_PATCH_HOST,		// test_patch_host(argc,argv);
 
     CMD_SHA1,			// test_sha1();
     CMD_BZIP2,			// test_bzip2(argc,argv);
@@ -1221,6 +1239,7 @@ static const KeywordTab_t CommandTab[] =
 	{ CMD_MATCH_PATTERN,	"MATCH",	0,		0 },
 	{ CMD_OPEN_DISC,	"OPENDISC",	"ODISC",	0 },
 	{ CMD_HEXDUMP,		"HEXDUMP",	0,		0 },
+	{ CMD_PATCH_HOST,	"PATCHHOST",	"PH",		0 },
 
  #ifdef HAVE_OPENSSL
 	{ CMD_SHA1,		"SHA1",		0,		0 },
@@ -1269,14 +1288,20 @@ int main ( int argc, char ** argv )
     printf("*****  %s  *****\n",TITLE);
     SetupLib(argc,argv,NAME,PROG_UNKNOWN);
 
-    printf("term width = %d\n",GetTermWidth(80,0));
-
  #ifdef HAVE_FIEMAP
     printf("* HAVE_FIEMAP defined!\n");
  #endif
  #ifdef FS_IOC_FIEMAP
     printf("* FS_IOC_FIEMAP defined!\n");
  #endif
+
+    if (0)
+    {
+	printf("\nprintf()\n");
+	fprintf(stdout,"\nfprintf(stdout)\n");
+	fprintf(stderr,"\nfprintf(stderr)\n");
+	return 0;
+    }
 
  #if defined(TEST) && defined(DEBUG)
     if (0)
@@ -1312,6 +1337,7 @@ int main ( int argc, char ** argv )
 	case CMD_MATCH_PATTERN:		test_match_pattern(argc,argv); break;
 	case CMD_OPEN_DISC:		test_open_disc(argc,argv); break;
 	case CMD_HEXDUMP:		test_hexdump(argc,argv); break;
+	case CMD_PATCH_HOST:		test_patch_host(argc,argv); break;
 
  #ifdef HAVE_OPENSSL
 	case CMD_SHA1:			test_sha1(); break;

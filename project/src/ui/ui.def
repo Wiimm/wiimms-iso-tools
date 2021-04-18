@@ -482,7 +482,8 @@
 
 #:def_opt( "IGNORE_FST", "ignore-fst|ignorefst", "C", \
 	"", \
-	"Disable composing and ignore FST directories as input." )
+	"Disable composing and ignore FST directories as input. This legacy" \
+	" option is a shortcut for {--allow-fst=off}." )
 
 #:def_opt( "IGNORE_SETUP", "ignore-setup|ignoresetup", "C", \
 	"", \
@@ -662,10 +663,14 @@
 	" of 'sake.gamespy.com' is replaced too.  This is a special support" \
 	" for 'Super Smash Bros. Brawl'." )
 
+#:def_opt( "SECURITY_FIX", "security-fix|securityfix", "C", \
+	"", \
+	"Try to fix a security bug in the game. This is game dependent." )
+
 #:def_opt( "WIIMMFI", "wiimmfi", "C", \
 	"", \
 	"Patch the images for $Wiimmfi$, the new custom server. It is a short" \
-	" cut for {--http --domain wiimmfi.de}." )
+	" cut for {--http --domain wiimmfi.de --security-fix}." )
 
 #:def_opt( "RM_FILES", "rm-files|rm-file|rmfiles|rmfile", "CP", \
 	"ruleset", \
@@ -877,9 +882,9 @@
 #:def_opt( "WDF", "W|wdf", "CO", \
 	"[=param]", \
 	"Set the image output file type to WDF (Wii Disc Format). The output" \
-	" format is either WDFv1 or WDFv2. It depends of the input file format" \
-	" and of the aligning. {--wdf=param} is a short cut for {--wdf" \
-	" --align-wdf=param}." )
+	" format is either WDFv1 or WDFv2 (default). It depends of the input" \
+	" file format and of the aligning. {--wdf=param} is a short cut for" \
+	" {--wdf --align-wdf=param}." )
 
 #:def_opt( "WDF1", "wdf1", "CO", \
 	"[=param]", \
@@ -891,7 +896,7 @@
 	"Set image output file type to WDF and force version 2. {--wdf2=param}" \
 	" is a short cut for {--wdf2 --align-wdf=param}." )
 
-#:def_opt( "ALIGN_WDF", "align-wdf|alignwdf|wdf-align|wdfalign", "GP", \
+#:def_opt( "ALIGN_WDF", "align-wdf|alignwdf", "GP", \
 	"[align][,minhole]", \
 	"Parameter @align@ defines the aligning factor for new WDF images. It" \
 	" must be a power of 2 and smaller or equal than 1 GiB. The default" \
@@ -944,12 +949,65 @@
 	"", \
 	"Set image output mode to 'file system' (extracted ISO)." )
 
+#:def_opt( "ALLOW_FST", "allow-fst|allowfst", "GO", \
+	"[=mode]", \
+	"Enable the usage of extracted images.@MODE@ is either @OFF@, @AUTO@" \
+	" (default) or @ON@. Without value, @ON@ is used. If mode is @AUTO@," \
+	" extracted images are usually enabled." )
+
+#:def_opt( "ALLOW_NKIT", "allow-nkit|allownkit", "GO", \
+	"[=mode]", \
+	"Enable the detection of NKIT images.@MODE@ is either @OFF@, @AUTO@" \
+	" (default) or @ON@. Without value, @ON@ is used. If mode is @AUTO@," \
+	" the NKIT detection is enabled only for a few analytic commands.\n" \
+	"  Anyway, NKIT images are not supported yet, but detected to print" \
+	" warnings." )
+
 #:def_opt( "FILES", "F|files", "CMP", \
 	"ruleset", \
 	"Append file select rules. This option can be used multiple times to" \
 	" extend the rule list. Rules beginning with a '+' or a '-' are allow" \
 	" or deny rules rules. Rules beginning with a ':' are macros for" \
 	" predefined rule sets." )
+
+#:def_opt( "SH", "sh", "G", \
+	"", \
+	"Dump info using SH syntax. Use {--var name} as prefix." )
+
+#:def_opt( "BASH", "bash", "G", \
+	"", \
+	"Dump info using BASH syntax. Use {--var name} as prefix." )
+
+#:def_opt( "JSON", "json", "G", \
+	"", \
+	"Dump info using JSON syntax. Options {--var} and {--array} are" \
+	" ignored." )
+
+#:def_opt( "PHP", "php", "G", \
+	"", \
+	"Dump infos using PHP syntax. Use {--var name} as variable name of the" \
+	" resulting object." )
+
+#:def_opt( "MAKEDOC", "makedoc", "G", \
+	"", \
+	"Dump infos using MakeDoc syntax. Use {--var name} as variable name of" \
+	" the resulting map." )
+
+#:def_opt( "VAR", "var", "GP", \
+	"varname", \
+	"Use @VARNAME@ as variable name or prefix on script output. The" \
+	" default variabe name is 'res'." )
+
+#:def_opt( "ARRAY", "array", "G", \
+	"", \
+	"Use an array on script output if possible. If arrays are not" \
+	" supported, then append a '_#' suffix with an zero based index to the" \
+	" variable name defined by {--var name}. In this case, only one output" \
+	" file is created." )
+
+#:def_opt( "AVAR", "avar", "GP", \
+	"varname", \
+	"Shortcut for: {--array --var name}" )
 
 #:def_opt( "ITIME", "itime", "C", \
 	"", \
@@ -1061,6 +1119,10 @@
 	" CTIME, ATIME, TIME = DATE, DEFAULT, ASCENDING, DESCENDING =" \
 	" REVERSE@." )
 
+#:def_opt( "NO_SORT", "no-sort|nosort", "C", \
+	"", \
+	"Don't sort. Same as {--sort=none}." )
+
 #:def_opt( "LIMIT", "limit", "CP", \
 	"num", \
 	"Limit the output to NUM messages." )
@@ -1147,6 +1209,62 @@
 	"Normally, a status line for each supported feature is printed. If" \
 	" set, print an info line for each requested feature." )
 
+#:def_cmd_opt( "ANALYZE", "IGNORE", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "QUIET", \
+	"", \
+	"Suppress logging of input and output files." )
+
+#:def_cmd_opt( "ANALYZE", "SH", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "BASH", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "JSON", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "PHP", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "MAKEDOC", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "VAR", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "ARRAY", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "AVAR", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "ALLOW_NKIT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "DEST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "DEST2", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "ANAID", "NO_HEADER", \
 	"", \
 	"" )
@@ -1206,6 +1324,15 @@
 	"", \
 	"If printing, print the complete key as hex dump, not only the first" \
 	" bytes. If set twice, print BASE64 encoded." )
+
+#:def_cmd_opt( "CERT", "SORT", \
+	"", \
+	"Define the sort mode for the certificate listing. The parameter is" \
+	" either @NONE, ASCENDING@ or @DESCENDING = REVERSE@." )
+
+#:def_cmd_opt( "CERT", "NO_SORT", \
+	"", \
+	" Disable sorting of keys." )
 
 #:def_cmd_opt( "CREATE", "TEST", \
 	"", \
@@ -1335,6 +1462,14 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "FILELIST", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "FILELIST", "ALLOW_NKIT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "FILELIST", "LONG", \
 	"", \
 	"Print the real path instead of given path." )
@@ -1400,6 +1535,14 @@
 	"" )
 
 #:def_cmd_opt( "FILETYPE", "LINKS", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "FILETYPE", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "FILETYPE", "ALLOW_NKIT", \
 	"", \
 	"" )
 
@@ -1474,6 +1617,14 @@
 	"" )
 
 #:def_cmd_opt( "ISOSIZE", "LINKS", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ISOSIZE", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ISOSIZE", "ALLOW_NKIT", \
 	"", \
 	"" )
 
@@ -1680,6 +1831,10 @@
 	"" )
 
 #:def_cmd_opt( "DUMP", "DOMAIN", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "DUMP", "SECURITY_FIX", \
 	"", \
 	"" )
 
@@ -2081,6 +2236,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST", "SECTIONS", \
 	"", \
 	"" )
@@ -2216,6 +2375,10 @@
 	"" )
 
 #:def_cmd_opt( "LIST_L", "SORT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "LIST_L", "NO_SORT", \
 	"", \
 	"" )
 
@@ -2357,6 +2520,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST_LL", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST_LL", "SECTIONS", \
 	"", \
 	"" )
@@ -2495,6 +2662,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST_LLL", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST_LLL", "SECTIONS", \
 	"", \
 	"" )
@@ -2609,6 +2780,14 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "FILES", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "FILES", "ALLOW_NKIT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "FILES", "PSEL", \
 	"", \
 	"" )
@@ -2675,6 +2854,10 @@
 	" separated list of the following keywords: NONE, NAME, SIZE, OFFSET," \
 	" ASCENDING, DESCENDING = REVERSE." )
 
+#:def_cmd_opt( "FILES", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "FILES_L", "AUTO", \
 	"", \
 	"" )
@@ -2736,6 +2919,14 @@
 	"" )
 
 #:def_cmd_opt( "FILES_L", "LINKS", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "FILES_L", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "FILES_L", "ALLOW_NKIT", \
 	"", \
 	"" )
 
@@ -2805,6 +2996,10 @@
 	" separated list of the following keywords: NONE, NAME, SIZE, OFFSET," \
 	" ASCENDING, DESCENDING = REVERSE." )
 
+#:def_cmd_opt( "FILES_L", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "FILES_LL", "AUTO", \
 	"", \
 	"" )
@@ -2866,6 +3061,14 @@
 	"" )
 
 #:def_cmd_opt( "FILES_LL", "LINKS", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "FILES_LL", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "FILES_LL", "ALLOW_NKIT", \
 	"", \
 	"" )
 
@@ -2934,6 +3137,10 @@
 	"Define the sort mode for the file listing. The parameter is a comma" \
 	" separated list of the following keywords: NONE, NAME, SIZE, OFFSET," \
 	" ASCENDING, DESCENDING = REVERSE." )
+
+#:def_cmd_opt( "FILES_LL", "NO_SORT", \
+	"", \
+	"" )
 
 #:def_cmd_opt( "DIFF", "TEST", \
 	"", \
@@ -3023,6 +3230,14 @@
 	"" )
 
 #:def_cmd_opt( "DIFF", "LINKS", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "DIFF", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "DIFF", "ALLOW_NKIT", \
 	"", \
 	"" )
 
@@ -3258,6 +3473,14 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "FDIFF", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "FDIFF", "ALLOW_NKIT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "FDIFF", "PSEL", \
 	"", \
 	"" )
@@ -3483,6 +3706,14 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "EXTRACT", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "EXTRACT", "ALLOW_NKIT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "EXTRACT", "PSEL", \
 	"", \
 	"" )
@@ -3524,6 +3755,10 @@
 	"Define the extracting order. The parameter is a comma separated list" \
 	" of the following keywords: NONE, NAME, SIZE, OFFSET, ASCENDING," \
 	" DESCENDING = REVERSE." )
+
+#:def_cmd_opt( "EXTRACT", "NO_SORT", \
+	"", \
+	"" )
 
 #:def_cmd_opt( "EXTRACT", "QUIET", \
 	"", \
@@ -3611,6 +3846,10 @@
 	"" )
 
 #:def_cmd_opt( "EXTRACT", "DOMAIN", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "EXTRACT", "SECURITY_FIX", \
 	"", \
 	"" )
 
@@ -3742,6 +3981,14 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "COPY", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "COPY", "ALLOW_NKIT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "COPY", "PSEL", \
 	"", \
 	"" )
@@ -3783,6 +4030,10 @@
 	"Define the extracting order. The parameter is a comma separated list" \
 	" of the following keywords: NONE, NAME, SIZE, OFFSET, ASCENDING," \
 	" DESCENDING = REVERSE." )
+
+#:def_cmd_opt( "COPY", "NO_SORT", \
+	"", \
+	"" )
 
 #:def_cmd_opt( "COPY", "QUIET", \
 	"", \
@@ -3870,6 +4121,10 @@
 	"" )
 
 #:def_cmd_opt( "COPY", "DOMAIN", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "COPY", "SECURITY_FIX", \
 	"", \
 	"" )
 
@@ -4101,6 +4356,14 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "CONVERT", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONVERT", "ALLOW_NKIT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "CONVERT", "PSEL", \
 	"", \
 	"" )
@@ -4190,6 +4453,10 @@
 	"" )
 
 #:def_cmd_opt( "CONVERT", "DOMAIN", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONVERT", "SECURITY_FIX", \
 	"", \
 	"" )
 
@@ -4462,6 +4729,10 @@
 	"" )
 
 #:def_cmd_opt( "EDIT", "DOMAIN", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "EDIT", "SECURITY_FIX", \
 	"", \
 	"" )
 
@@ -5005,6 +5276,14 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "VERIFY", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "VERIFY", "ALLOW_NKIT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "VERIFY", "PSEL", \
 	"", \
 	"" )
@@ -5142,6 +5421,14 @@
 	"" )
 
 #:def_cmd_opt( "SKELETON", "LINKS", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "SKELETON", "ALLOW_FST", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "SKELETON", "ALLOW_NKIT", \
 	"", \
 	"" )
 
@@ -5810,7 +6097,8 @@
 
 #:def_opt( "IGNORE_FST", "ignore-fst|ignorefst", "C", \
 	"", \
-	"Disable composing and ignore FST directories as input." )
+	"Disable composing and ignore FST directories as input. This legacy" \
+	" option is a shortcut for {--allow-fst=off}." )
 
 #:def_opt( "IGNORE_SETUP", "ignore-setup|ignoresetup", "C", \
 	"", \
@@ -5964,10 +6252,14 @@
 	" of 'sake.gamespy.com' is replaced too.  This is a special support" \
 	" for 'Super Smash Bros. Brawl'." )
 
+#:def_opt( "SECURITY_FIX", "security-fix|securityfix", "C", \
+	"", \
+	"Try to fix a security bug in the game. This is game dependent." )
+
 #:def_opt( "WIIMMFI", "wiimmfi", "C", \
 	"", \
 	"Patch the images for $Wiimmfi$, the new custom server. It is a short" \
-	" cut for {--http --domain wiimmfi.de}." )
+	" cut for {--http --domain wiimmfi.de --security-fix}." )
 
 #:def_opt( "RM_FILES", "rm-files|rm-file|rmfiles|rmfile", "CP", \
 	"ruleset", \
@@ -6221,9 +6513,9 @@
 #:def_opt( "WDF", "W|wdf", "CO", \
 	"[=param]", \
 	"Set the image output file type to WDF (Wii Disc Format). The output" \
-	" format is either WDFv1 or WDFv2. It depends of the input file format" \
-	" and of the aligning. {--wdf=param} is a short cut for {--wdf" \
-	" --align-wdf=param}." )
+	" format is either WDFv1 or WDFv2 (default). It depends of the input" \
+	" file format and of the aligning. {--wdf=param} is a short cut for" \
+	" {--wdf --align-wdf=param}." )
 
 #:def_opt( "WDF1", "wdf1", "CO", \
 	"[=param]", \
@@ -6235,7 +6527,7 @@
 	"Set image output file type to WDF and force version 2. {--wdf2=param}" \
 	" is a short cut for {--wdf2 --align-wdf=param}." )
 
-#:def_opt( "ALIGN_WDF", "align-wdf|alignwdf|wdf-align|wdfalign", "GP", \
+#:def_opt( "ALIGN_WDF", "align-wdf|alignwdf", "GP", \
 	"[align][,minhole]", \
 	"Parameter @align@ defines the aligning factor for new WDF images. It" \
 	" must be a power of 2 and smaller or equal than 1 GiB. The default" \
@@ -6245,6 +6537,18 @@
 	" before a new chunk is created. If NULL, an internal value is used to" \
 	" minimize the total file size. @minhole@ can't be smaller than" \
 	" @align@." )
+
+#:def_opt( "ISO", "I|iso", "C", \
+	"", \
+	"Set image output file type to PLAIN ISO." )
+
+#:def_opt( "CISO", "C|ciso", "C", \
+	"", \
+	"Set image output file type to CISO (Compact ISO, same as WBI)." )
+
+#:def_opt( "WBFS", "B|wbfs", "C", \
+	"", \
+	"Set image output file type to WBFS (Wii Backup File System, default)." )
 
 #:def_opt( "WIA", "wia", "CO", \
 	"[=compr]", \
@@ -6272,21 +6576,23 @@
 	" managment data and reduce the compression ratio. Use the option with" \
 	" caution!" )
 
-#:def_opt( "ISO", "I|iso", "C", \
-	"", \
-	"Set image output file type to PLAIN ISO." )
-
-#:def_opt( "CISO", "C|ciso", "C", \
-	"", \
-	"Set image output file type to CISO (Compact ISO, same as WBI)." )
-
-#:def_opt( "WBFS", "B|wbfs", "C", \
-	"", \
-	"Set image output file type to WBFS (Wii Backup File System, default)." )
-
 #:def_opt( "FST", "fst", "CO", \
 	"", \
 	"Set image output mode to 'file system' (extracted ISO)." )
+
+#:def_opt( "ALLOW_FST", "allow-fst|allowfst", "GO", \
+	"[=mode]", \
+	"Enable the usage of extracted images.@MODE@ is either @OFF@, @AUTO@" \
+	" (default) or @ON@. Without value, @ON@ is used. If mode is @AUTO@," \
+	" extracted images are usually enabled." )
+
+#:def_opt( "ALLOW_NKIT", "allow-nkit|allownkit", "GO", \
+	"[=mode]", \
+	"Enable the detection of NKIT images.@MODE@ is either @OFF@, @AUTO@" \
+	" (default) or @ON@. Without value, @ON@ is used. If mode is @AUTO@," \
+	" the NKIT detection is enabled only for a few analytic commands.\n" \
+	"  Anyway, NKIT images are not supported yet, but detected to print" \
+	" warnings." )
 
 #:def_opt( "FILES", "files", "CO", \
 	"ruleset", \
@@ -6397,6 +6703,10 @@
 	" FILE, SIZE, OFFSET, REGION, WBFS, NPART, FRAGMENTS, ITIME, MTIME," \
 	" CTIME, ATIME, TIME = DATE, DEFAULT, ASCENDING, DESCENDING =" \
 	" REVERSE@." )
+
+#:def_opt( "NO_SORT", "no-sort|nosort", "CP", \
+	"", \
+	"Don't sort. Same as {--sort=none}." )
 
 #:def_opt( "LIMIT", "limit", "CP", \
 	"num", \
@@ -6717,6 +7027,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST", "ITIME", \
 	"", \
 	"" )
@@ -6820,6 +7134,10 @@
 	"" )
 
 #:def_cmd_opt( "LIST_L", "SORT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "LIST_L", "NO_SORT", \
 	"", \
 	"" )
 
@@ -6929,6 +7247,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST_LL", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST_LL", "ITIME", \
 	"", \
 	"" )
@@ -7032,6 +7354,10 @@
 	"" )
 
 #:def_cmd_opt( "LIST_LLL", "SORT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "LIST_LLL", "NO_SORT", \
 	"", \
 	"" )
 
@@ -7141,6 +7467,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST_A", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST_A", "ITIME", \
 	"", \
 	"" )
@@ -7244,6 +7574,10 @@
 	"" )
 
 #:def_cmd_opt( "LIST_M", "SORT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "LIST_M", "NO_SORT", \
 	"", \
 	"" )
 
@@ -7353,6 +7687,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "LIST_U", "NO_SORT", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "LIST_U", "ITIME", \
 	"", \
 	"" )
@@ -7456,6 +7794,10 @@
 	"" )
 
 #:def_cmd_opt( "LIST_F", "SORT", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "LIST_F", "NO_SORT", \
 	"", \
 	"" )
 
@@ -7969,6 +8311,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "ADD", "SECURITY_FIX", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "ADD", "WIIMMFI", \
 	"", \
 	"" )
@@ -8215,6 +8561,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "UPDATE", "SECURITY_FIX", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "UPDATE", "WIIMMFI", \
 	"", \
 	"" )
@@ -8453,6 +8803,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "NEW", "SECURITY_FIX", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "NEW", "WIIMMFI", \
 	"", \
 	"" )
@@ -8688,6 +9042,10 @@
 	"" )
 
 #:def_cmd_opt( "SYNC", "DOMAIN", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "SYNC", "SECURITY_FIX", \
 	"", \
 	"" )
 
@@ -8999,6 +9357,10 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "EXTRACT", "SECURITY_FIX", \
+	"", \
+	"" )
+
 #:def_cmd_opt( "EXTRACT", "WIIMMFI", \
 	"", \
 	"" )
@@ -9251,6 +9613,10 @@
 	"" )
 
 #:def_cmd_opt( "SCRUB", "DOMAIN", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "SCRUB", "SECURITY_FIX", \
 	"", \
 	"" )
 

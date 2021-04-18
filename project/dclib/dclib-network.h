@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -39,6 +39,13 @@
 #include "dclib-system.h"
 #include "dclib-basics.h"
 #include "dclib-file.h"
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			definitions			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+#define GOOD_SOCKADR_SIZE sizeof(struct sockaddr_un)
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -444,17 +451,17 @@ typedef struct ip4_head_t
 {
     // http://de.wikipedia.org/wiki/IP-Paket
 
-    u8		vers_ihl;	// high nibble: version, low nibble: IHL (Ip Header Len)
-    u8		tos;
-    u16		total_len;
-    u16		id;
-    u16		frag_off;	// low 12 bits: fragment offset, high 4 bits: flags
-    u8		ttl;
-    u8		protocol;
-    u16		checksum;
-    u32		ip_src;
-    u32		ip_dest;
-    // optional: options + padding
+ /*00*/	u8	vers_ihl;	// high nibble: version, low nibble: IHL (Ip Header Len)
+ /*01*/	u8	tos;
+ /*02*/	u16	total_len;
+ /*04*/	u16	id;
+ /*06*/	u16	frag_off;	// low 12 bits: fragment offset, high 4 bits: flags
+ /*08*/	u8	ttl;
+ /*09*/	u8	protocol;
+ /*0a*/	u16	checksum;
+ /*0c*/	u32	ip_src;
+ /*10*/	u32	ip_dest;
+ /*14*/	// optional: options + padding
 }
 __attribute__ ((packed)) ip4_head_t;
 

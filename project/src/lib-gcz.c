@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -163,7 +163,7 @@ static enumError CheckAdler32
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool IsValidGCZ
+enumFileType AnalyzeGCZ
 (
     const void		*data,		// valid pointer to data
     uint		data_size,	// size of data to analyze
@@ -177,7 +177,7 @@ bool IsValidGCZ
     {
 	if (head)
 	    memset(head,0,sizeof(*head));
-	return false;
+	return 0;
     }
 
     GCZ_Head_t local_head;
@@ -191,13 +191,8 @@ bool IsValidGCZ
     head->block_size	= le32(&src_head->block_size);
     head->num_blocks	= le32(&src_head->num_blocks);
 
-    if	(  head->magic != GCZ_MAGIC_NUM
-	|| head->sub_type != GCZ_TYPE
-	|| !head->block_size
-	)
-    {
-	return false;
-    }
+    if (  head->magic != GCZ_MAGIC_NUM || !head->block_size )
+	return 0;
 
     const uint max_blocks = WII_MAX_DISC_SIZE / head->block_size;
 
@@ -222,7 +217,7 @@ bool IsValidGCZ
  #endif
 
     if ( head->num_blocks > max_blocks )
-	return false;
+	return 0;
 
     if (file_size)
     {
@@ -230,10 +225,25 @@ bool IsValidGCZ
 			+ 12 * head->num_blocks
 			+ head->num_blocks;
 	if ( total > file_size )
-	    return false;
+	    return 0;
     }
 
-    return true;
+    return head->sub_type == GCZ_TYPE ? FT_A_GCZ : FT_A_NKIT_GCZ;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool IsValidGCZ
+(
+    const void		*data,		// valid pointer to data
+    uint		data_size,	// size of data to analyze
+    u64			file_size,	// NULL or known file size
+    GCZ_Head_t		*head		// not NULL: store header (local endian) here
+)
+{
+    DASSERT(data);
+    const enumFileType ftype = AnalyzeGCZ(data,data_size,file_size,head);
+    return ( ftype & FT_A_GCZ ) != 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -257,8 +267,9 @@ void ResetGCZ( GCZ_t *gcz )
 
 enumError LoadHeadGCZ
 (
-    GCZ_t		*gcz,		// pointer to data, will be initalized
-    WFile_t		*f		// file to read
+    GCZ_t		*gcz,		// pointer to data, will be initialized
+    WFile_t		*f,		// file to read
+    bool		allow_nkit	// true: allow NKIT/GCZ
 )
 {
     DASSERT(gcz);
@@ -273,7 +284,8 @@ enumError LoadHeadGCZ
     if (stat)
 	return stat;
 
-    if (!IsValidGCZ(&gcz->head,sizeof(gcz->head),f->st.st_size,&gcz->head))
+    const enumFileType ftype = AnalyzeGCZ(&gcz->head,sizeof(gcz->head),f->st.st_size,&gcz->head);
+    if ( allow_nkit ? !ftype : !( ftype & FT_A_GCZ ) )
 	return ERR_NO_GCZ;
 
     const uint list_size = 12 * gcz->head.num_blocks;
@@ -296,7 +308,7 @@ enumError LoadHeadGCZ
 
 enumError LoadDataGCZ
 (
-    GCZ_t		*gcz,		// pointer to data, will be initalized
+    GCZ_t		*gcz,		// pointer to initialized data
     WFile_t		*f,		// source file
     off_t		off,		// file offset
     void		*buf,		// destination buffer
@@ -448,7 +460,7 @@ enumError SetupReadGCZ
 	return ERR_NO_GCZ;
 
     sf->gcz = MALLOC(sizeof(GCZ_t));
-    enumError err = LoadHeadGCZ(sf->gcz,&sf->f);
+    enumError err = LoadHeadGCZ(sf->gcz,&sf->f,false);
     if (err)
 	return ERROR0(ERR_GCZ_INVALID,"Invalid GCZ file: %s\n",sf->f.fname);
 

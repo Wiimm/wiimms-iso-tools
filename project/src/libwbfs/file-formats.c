@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -204,8 +204,10 @@ int validate_file_format_sizes ( int trace_sizes )
 ///////////////		endian conversions for structs		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void ntoh_dol_header ( dol_header_t * dest, const dol_header_t * src )
-{
+#ifndef DC_LIB_DOL_H
+
+ void ntoh_dol_header ( dol_header_t * dest, const dol_header_t * src )
+ {
     DASSERT(dest);
 
     if (!src)
@@ -219,12 +221,12 @@ void ntoh_dol_header ( dol_header_t * dest, const dol_header_t * src )
 
     while ( dest_ptr < dest_end )
 	*dest_ptr++ = ntohl(*src_ptr++);
-}
+ }
 
-//-----------------------------------------------------------------------------
+ //----------------------------------------------------------------------------
 
-void hton_dol_header ( dol_header_t * dest, const dol_header_t * src )
-{
+ void hton_dol_header ( dol_header_t * dest, const dol_header_t * src )
+ {
     DASSERT(dest);
 
     if (!src)
@@ -238,7 +240,9 @@ void hton_dol_header ( dol_header_t * dest, const dol_header_t * src )
 
     while ( dest_ptr < dest_end )
 	*dest_ptr++ = htonl(*src_ptr++);
-}
+ }
+
+#endif // !DC_LIB_DOL_H
 
 ///////////////////////////////////////////////////////////////////////////////
 

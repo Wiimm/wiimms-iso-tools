@@ -26,6 +26,12 @@ have_fuse=0
 [[ $NO_FUSE != 1 && -r /usr/include/fuse.h || -r /usr/local/include/fuse.h ]] \
 	&& have_fuse=1
 
+have_md5=0
+[[ -r /usr/include/openssl/md5.h ]] && have_md5=1
+
+have_sha=0
+[[ -r /usr/include/openssl/sha.h ]] && have_sha=1
+
 have_zlib=0
 if [[ $NO_ZLIB != 1 && -r /usr/include/zlib.h || -r /usr/local/include/zlib.h ]]
 then
@@ -57,6 +63,15 @@ fi
 	&& defines="$defines -DHAVE_FIEMAP=1"
 
 [[ $STATIC = 1 ]] || STATIC=0
+
+#--------------------------------------------------
+
+#gcc $xflags system.c -o system.tmp && ./system.tmp >Makefile.setup
+#rm -f system.tmp
+
+gcc $xflags -E -DPRINT_SYSTEM_SETTINGS system.c \
+	| awk -F= '/^result_/ {printf("%s := %s\n",substr($1,8),gensub(/"/,"","g",$2))}' \
+	> Makefile.setup
 
 #--------------------------------------------------
 
@@ -95,7 +110,7 @@ fi
 
 #--------------------------------------------------
 
-cat <<- ---EOT--- >Makefile.setup
+cat <<- ---EOT--- >>Makefile.setup
 	REVISION	:= $revision
 	REVISION_NUM	:= $revision_num
 	REVISION_NEXT	:= $revision_next
@@ -106,6 +121,8 @@ cat <<- ---EOT--- >Makefile.setup
 	FORCE_M32	:= $force_m32
 	HAVE_FUSE	:= $have_fuse
 	HAVE_ZLIB	:= $have_zlib
+	HAVE_MD5	:= $have_md5
+	HAVE_SHA	:= $have_sha
 	STATIC		:= $STATIC
 	XFLAGS		+= $xflags
 	DEFINES1	:= $defines
@@ -121,6 +138,4 @@ cat <<- ---EOT--- >Makefile.setup
 
 	---EOT---
 
-gcc $xflags system.c -o system.tmp && ./system.tmp >>Makefile.setup
-rm -f system.tmp
 

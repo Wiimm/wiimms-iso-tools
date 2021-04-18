@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -269,7 +269,7 @@ typedef struct GOptions_t
     //--- parameters
 
     int		argc;		// number of parameters
-    char	**argv;		// paramters without options
+    char	**argv;		// parameters without options
 
 
     //--- named options

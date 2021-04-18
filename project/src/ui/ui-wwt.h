@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -98,6 +98,7 @@ typedef enum enumOptions
 	OPT_IOS,
 	OPT_HTTP,
 	OPT_DOMAIN,
+	OPT_SECURITY_FIX,
 	OPT_WIIMMFI,
 	OPT_TWIIMMFI,
 	OPT_RM_FILES,
@@ -139,12 +140,12 @@ typedef enum enumOptions
 	OPT_WDF,
 	OPT_WDF1,
 	OPT_WDF2,
-	OPT_WIA,
-	OPT_GCZ,
-	OPT_GCZ_ZIP,
 	OPT_ISO,
 	OPT_CISO,
 	OPT_WBFS,
+	OPT_WIA,
+	OPT_GCZ,
+	OPT_GCZ_ZIP,
 	OPT_FST,
 	OPT_FILES,
 	OPT_ITIME,
@@ -165,9 +166,10 @@ typedef enum enumOptions
 	OPT_OLD_STYLE,
 	OPT_SECTIONS,
 	OPT_SORT,
+	OPT_NO_SORT,
 	OPT_LIMIT,
 
-	OPT__N_SPECIFIC, // == 111
+	OPT__N_SPECIFIC, // == 113
 
 	//----- global options -----
 
@@ -197,8 +199,10 @@ typedef enum enumOptions
 	OPT_FORCE,
 	OPT_ALIGN_WDF,
 	OPT_GCZ_BLOCK,
+	OPT_ALLOW_FST,
+	OPT_ALLOW_NKIT,
 
-	OPT__N_TOTAL // == 137
+	OPT__N_TOTAL // == 141
 
 } enumOptions;
 
@@ -255,6 +259,7 @@ typedef enum enumOptions
 //	OB_IOS			= 1llu << OPT_IOS,
 //	OB_HTTP			= 1llu << OPT_HTTP,
 //	OB_DOMAIN		= 1llu << OPT_DOMAIN,
+//	OB_SECURITY_FIX		= 1llu << OPT_SECURITY_FIX,
 //	OB_WIIMMFI		= 1llu << OPT_WIIMMFI,
 //	OB_TWIIMMFI		= 1llu << OPT_TWIIMMFI,
 //	OB_RM_FILES		= 1llu << OPT_RM_FILES,
@@ -296,12 +301,12 @@ typedef enum enumOptions
 //	OB_WDF			= 1llu << OPT_WDF,
 //	OB_WDF1			= 1llu << OPT_WDF1,
 //	OB_WDF2			= 1llu << OPT_WDF2,
-//	OB_WIA			= 1llu << OPT_WIA,
-//	OB_GCZ			= 1llu << OPT_GCZ,
-//	OB_GCZ_ZIP		= 1llu << OPT_GCZ_ZIP,
 //	OB_ISO			= 1llu << OPT_ISO,
 //	OB_CISO			= 1llu << OPT_CISO,
 //	OB_WBFS			= 1llu << OPT_WBFS,
+//	OB_WIA			= 1llu << OPT_WIA,
+//	OB_GCZ			= 1llu << OPT_GCZ,
+//	OB_GCZ_ZIP		= 1llu << OPT_GCZ_ZIP,
 //	OB_FST			= 1llu << OPT_FST,
 //	OB_FILES		= 1llu << OPT_FILES,
 //	OB_ITIME		= 1llu << OPT_ITIME,
@@ -322,6 +327,7 @@ typedef enum enumOptions
 //	OB_OLD_STYLE		= 1llu << OPT_OLD_STYLE,
 //	OB_SECTIONS		= 1llu << OPT_SECTIONS,
 //	OB_SORT			= 1llu << OPT_SORT,
+//	OB_NO_SORT		= 1llu << OPT_NO_SORT,
 //	OB_LIMIT		= 1llu << OPT_LIMIT,
 //
 //	//----- group & command options -----
@@ -408,6 +414,7 @@ typedef enum enumOptions
 //				| OB_IOS
 //				| OB_HTTP
 //				| OB_DOMAIN
+//				| OB_SECURITY_FIX
 //				| OB_WIIMMFI
 //				| OB_TWIIMMFI
 //				| OB_RM_FILES
@@ -490,6 +497,7 @@ typedef enum enumOptions
 //				| OB_MIXED
 //				| OB_UNIQUE
 //				| OB_SORT
+//				| OB_NO_SORT
 //				| OB_GRP_TIME
 //				| OB_LONG
 //				| OB_FRAGMENTS
@@ -827,6 +835,7 @@ typedef enum enumGetOpt
 	GO_IOS,
 	GO_HTTP,
 	GO_DOMAIN,
+	GO_SECURITY_FIX,
 	GO_WIIMMFI,
 	GO_TWIIMMFI,
 	GO_RM_FILES,
@@ -863,6 +872,8 @@ typedef enum enumGetOpt
 	GO_GCZ_ZIP,
 	GO_GCZ_BLOCK,
 	GO_FST,
+	GO_ALLOW_FST,
+	GO_ALLOW_NKIT,
 	GO_FILES,
 	GO_ITIME,
 	GO_MTIME,
@@ -876,6 +887,7 @@ typedef enum enumGetOpt
 	GO_INODE,
 	GO_OLD_STYLE,
 	GO_SECTIONS,
+	GO_NO_SORT,
 	GO_LIMIT,
 
 } enumGetOpt;

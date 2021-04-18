@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -308,6 +308,7 @@ typedef struct Iterator_t
 
 	bool		open_modify;	// open in modify mode
 	bool		newer;		// newer option set, caller needs mtime
+	bool		opt_allow;	// copy of InitializeIterator() parameter
 	enumAction	act_non_exist;	// action for non existing files
 	enumAction	act_non_iso;	// action for non iso files
 	enumAction	act_known;	// action for non iso files but well known files
@@ -315,6 +316,7 @@ typedef struct Iterator_t
 	enumAction	act_wbfs_disc;	// action for a wbfs disc (selector used), default=ALLOW
 	enumAction	act_fst;	// action for fst
 	enumAction	act_gc;		// action for GameCube discs
+	enumAction	act_nkit;	// action for NKIT discs
 	enumAction	act_open;	// action for open output files
 
 	// source info
@@ -360,12 +362,13 @@ typedef struct Iterator_t
 	struct WBFS_t	* wbfs;		// open WBFS
 	dev_t		open_dev;	// dev_t of open output file
 	ino_t		open_ino;	// ino_t of open output file
+	PrintScript_t	*ps;		// for script output
 
 } Iterator_t;
 
 //-----------------------------------------------------------------------------
 
-void InitializeIterator ( Iterator_t * it );
+void InitializeIterator ( Iterator_t * it, bool allow );
 void ResetIterator ( Iterator_t * it );
 
 enumError SourceIterator
@@ -393,7 +396,9 @@ enumError SourceIteratorWarning ( Iterator_t * it, enumError max_err, bool silen
 ///////////////			global options			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-extern bool allow_fst;		// FST diabled by default
+extern OffOn_t opt_allow_fst;	// disable or enable usage of FST images
+extern OffOn_t opt_allow_nkit;	// disable or enable detection of NKIT images
+
 extern bool ignore_setup;	// ignore file 'setup.txt' while composing
 extern bool opt_links;		// find linked files and create hard links
 extern bool opt_user_bin;	// enable management of "sys/user.bin"
@@ -402,6 +407,11 @@ extern wd_select_t part_selector;
 
 extern u8 wdisc_usage_tab [WII_MAX_SECTORS];
 extern u8 wdisc_usage_tab2[WII_MAX_SECTORS];
+
+//-----------------------------------------------------------------------------
+
+int ScanOptAllowFST ( ccp arg );
+int ScanOptAllowNKIT ( ccp arg );
 
 enumError ScanPartSelector
 (

@@ -509,6 +509,9 @@
   { T_OPT_CP,	"DOMAIN",	"domain",
 		0, 0 /* copy of wit */ },
 
+  { T_OPT_C,	"SECURITY_FIX",	"security-fix|securityfix",
+		0, 0 /* copy of wit */ },
+
   { T_OPT_C,	"WIIMMFI",	"wiimmfi",
 		0, 0 /* copy of wit */ },
 
@@ -674,8 +677,16 @@
   { T_OPT_CO,	"WDF2",		"wdf2",
 		0, 0 /* copy of wit */ },
 
-		// [[2do]] 2014-01: wdf-align is obsolete at 2014-07
-  { T_OPT_GP,	"ALIGN_WDF",	"align-wdf|alignwdf|wdf-align|wdfalign",
+  { T_OPT_GP,	"ALIGN_WDF",	"align-wdf|alignwdf",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_C,	"ISO",		"I|iso",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_C,	"CISO",		"C|ciso",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_C,	"WBFS",		"B|wbfs",
 		0, 0 /* copy of wit */ },
 
   { T_OPT_CO,	"WIA",		"wia",
@@ -690,16 +701,13 @@
   { T_OPT_GP,	"GCZ_BLOCK",	"gcz-block|gczblock",
 		0, 0 /* copy of wit */ },
 
-  { T_OPT_C,	"ISO",		"I|iso",
-		0, 0 /* copy of wit */ },
-
-  { T_OPT_C,	"CISO",		"C|ciso",
-		0, 0 /* copy of wit */ },
-
-  { T_OPT_C,	"WBFS",		"B|wbfs",
-		0, 0 /* copy of wit */ },
-
   { T_OPT_CO,	"FST",		"fst",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_GO,	"ALLOW_FST",	"allow-fst|allowfst",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_GO,	"ALLOW_NKIT",	"allow-nkit|allownkit",
 		0, 0 /* copy of wit */ },
 
   { T_OPT_CO,	"FILES",	"files",
@@ -764,6 +772,9 @@
 		0, 0 /* copy of wit */ },
 
   { T_OPT_CP,	"SORT",		"S|sort",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_CP,	"NO_SORT",	"no-sort|nosort",
 		0, 0 /* copy of wit */ },
 
   { T_OPT_CP,	"LIMIT",	"limit",
@@ -934,6 +945,7 @@
   { T_COPT,	"IOS",		0,0,0 },
   { T_COPT,	"HTTP",		0,0,0 },
   { T_COPT,	"DOMAIN",	0,0,0 },
+  { T_COPT,	"SECURITY_FIX",	0,0,0 },
   { T_COPT,	"WIIMMFI",	0,0,0 },
   { H_COPT,	"TWIIMMFI",	0,0,0 },
   { T_COPT,	"RM_FILES",	0,0,0 },
@@ -1119,6 +1131,7 @@
   { T_COPT,	"MIXED",	0,0,0 },
   { T_COPT,	"UNIQUE",	0,0,0 },
   { T_COPT,	"SORT",		0,0,0 },
+  { T_COPT,	"NO_SORT",	0,0,0 },
   { T_COPY_GRP,	"TIME",		0,0,0 },
   { T_COPT_M,	"LONG",		0,0,
 	"If set, the size in MiB and the region is printed too."

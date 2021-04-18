@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -67,6 +67,20 @@
 
 #define PTR_DISTANCE(a,b) ( (u8*)(a) - (u8*)(b) )
 #define PTR_DISTANCE_INT(a,b) ( (int)( (u8*)(a) - (u8*)(b) ))
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			    HAVE_*			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+#undef HAVE_CLOCK_GETTIME
+#if _POSIX_C_SOURCE >= 199309L
+  #define HAVE_CLOCK_GETTIME 1
+#else
+  #define HAVE_CLOCK_GETTIME 0
+#endif
+ 
+///////////////////////////////////////////////////////////////////////////////
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -566,7 +580,7 @@ typedef struct endian_func_t
 {
     //--- info section
 
-    u8   bom[2];	// btye order mark: BE=0xfe,0xff, LE=0xff,0xfe
+    u8   bom[2];	// byte order mark: BE=0xfe,0xff, LE=0xff,0xfe
     bool is_be;		// true: is big endian
     bool is_le;		// true: is little endian
     dcEndian_t endian;	// DC_BIG_ENDIAN or DC_LITTLE_ENDIAN
@@ -595,6 +609,16 @@ typedef struct endian_func_t
     void (*wrf4) ( void * data_ptr, float data );
     void (*wrf8) ( void * data_ptr, double data );
 
+    //--- convert functions
+
+    u16 (*n2hs)  ( u16 data );
+    u32 (*n2hl)  ( u32 data );
+    u64 (*n2h64) ( u64 data );
+
+    u16 (*h2ns)  ( u16 data );
+    u32 (*h2nl)  ( u32 data );
+    u64 (*h2n64) ( u64 data );
+
 } endian_func_t;
 
 extern const endian_func_t be_func;
@@ -602,6 +626,40 @@ extern const endian_func_t le_func;
 
 const endian_func_t * GetEndianFunc ( const void * byte_order_mark );
 uint GetTextBOMLen ( const void * data, uint data_size );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			    CopyMode_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[CopyMode_t]]
+
+typedef enum CopyMode_t
+{
+    CPM_COPY,	// make a copy of the data, alloced
+    CPM_MOVE,	// move the alloced data
+    CPM_LINK,	// link the data
+
+} CopyMode_t;
+
+///////////////////////////////////////////////////////////////////////////////
+
+void * CopyData
+(
+    const void		*data,		// data to copy/move/link
+    uint		size,		// size of 'data'
+    CopyMode_t		mode,		// copy mode
+    bool		*res_alloced	// not NULL:
+					//   store true, if data must be freed
+					//   otherwise store false
+);
+
+///////////////////////////////////////////////////////////////////////////////
+
+void FreeData
+(
+    const void		*data,		// data to free
+    CopyMode_t		mode		// copy mode
+);
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -616,8 +674,8 @@ typedef struct mem_t
 }
 mem_t;
 
-extern mem_t EmptyMem;	    // mem_t(EmptyString,0)
-extern mem_t NullMem;	    // mem_t(0,0)
+extern mem_t EmptyMem;	// mem_t(EmptyString,0)
+extern mem_t NullMem;	// mem_t(0,0)
 
 //-----------------------------------------------------------------------------
 
@@ -627,6 +685,7 @@ static inline mem_t MemByChar ( char ch )
     return mem;
 }
 
+// NULL allowed
 static inline mem_t MemByString0 ( ccp str )
 {
     if (!str)
@@ -636,18 +695,21 @@ static inline mem_t MemByString0 ( ccp str )
     return mem;
 }
 
+// NULL forbidden
 static inline mem_t MemByString ( ccp str )
 {
     mem_t mem = { str, strlen(str) };
     return mem;
 }
 
+// NULL forbidden if len<0
 static inline mem_t MemByStringS ( ccp str, int len )
 {
     mem_t mem = { str, len < 0 ? strlen(str) : len };
     return mem;
 }
 
+// NULL forbidden if end=0
 static inline mem_t MemByStringE ( ccp str, ccp end )
 {
     mem_t mem = { str, end ? end-str : strlen(str) };
@@ -675,6 +737,8 @@ int CheckIndex1	   ( int max, int index );
 int CheckIndex1End ( int max, int index );
 int CheckIndex2    ( int max, int * p_begin, int * p_end );
 int CheckIndex2End ( int max, int * p_begin, int * p_end );
+int CheckIndexC    ( int max, int * p_begin, int count );
+int CheckIndexCEnd ( int max, int * p_begin, int count );
 
 //-----------------------------------------------------------------------------
 
@@ -766,6 +830,103 @@ static inline char * DupStrMem ( const mem_t src )
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			struct exmem_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[exmem_t]]
+
+typedef struct exmem_t
+{
+    mem_t	data;		// pointer and size of data
+    u32		attrib;		// user defined attribute
+    bool	is_original;	// true: 'data' is a copy of source
+    bool	is_circ_buf;	// true: 'data' is part of circ-buf
+    bool	is_alloced;	// true: 'data' is alloced (not circ-buf)
+    bool	is_key_alloced;	// true: external key is alloced
+}
+exmem_t;
+
+extern exmem_t EmptyExMem;	// mem_t(EmptyString,0),false,false
+extern exmem_t NullExMem;	// mem_t(0,0),false,false
+
+//-----------------------------------------------------------------------------
+// constructors
+
+static inline exmem_t ExMemByChar ( char ch )
+{
+    exmem_t em = { .data={ &ch, 1 }, .is_original=true };
+    return em;
+}
+
+static inline exmem_t ExMemByString0 ( ccp str )
+{
+    if (!str)
+	return NullExMem;
+
+    exmem_t em = { .data={ str, strlen(str) }, .is_original=true };
+    return em;
+}
+
+static inline exmem_t ExMemByString ( ccp str )
+{
+    exmem_t em = { .data={ str, str ? strlen(str) : 0 }, .is_original=true };
+    return em;
+}
+
+static inline exmem_t ExMemByStringS ( ccp str, int len )
+{
+    exmem_t em = { .data={ str, !str ? 0 : len < 0 ? strlen(str) : len }, .is_original=true };
+    return em;
+}
+
+static inline exmem_t ExMemByStringE ( ccp str, ccp end )
+{
+    exmem_t em = { .data={ str, !str ? 0 : end ? end-str : strlen(str) }, .is_original=true };
+    return em;
+}
+
+static inline exmem_t ExMemByS ( ccp str, int len )
+{
+    exmem_t em = { .data={ str, len }, .is_original=true };
+    return em;
+}
+
+static inline exmem_t ExMemByE ( ccp str, ccp end )
+{
+    exmem_t em = { .data={ str, end-str }, .is_original=true };
+    return em;
+}
+
+//-----------------------------------------------------------------------------
+// interface
+
+// 'em' maybe modified ignoring 'const'
+void FreeExMem ( const exmem_t *em );
+void FreeExMemCM ( const exmem_t *em, CopyMode_t copy_mode ); // free if CPM_MOVE
+
+exmem_t AllocExMemS
+(
+    cvp		src,		// NULL or source
+    int		src_len,	// len of 'src'; if -1: use strlen(source)
+    bool	try_circ,	// use circ-buffer, if result is small enough
+    cvp		orig,		// NULL or data to compare
+    int		orig_len	// len of 'orig'; if -1: use strlen(source)
+);
+
+static inline exmem_t AllocExMemM ( mem_t src, bool try_circ, mem_t orig )
+	{ return AllocExMemS(src.ptr,src.len,try_circ,orig.ptr,orig.len); }
+
+void AssignExMem ( exmem_t *dest, const exmem_t *source, CopyMode_t copy_mode );
+static inline exmem_t CopyExMem ( const exmem_t *source, CopyMode_t copy_mode )
+	{ exmem_t em = {{0}}; AssignExMem(&em,source,copy_mode); return em; }
+
+exmem_t CopyExMemS ( ccp string, int slen, CopyMode_t copy_mode );
+static inline exmem_t CopyExMemM ( const mem_t source, CopyMode_t copy_mode )
+	{ return CopyExMemS(source.ptr,source.len,copy_mode); }
+
+ccp PrintExMem ( const exmem_t * em ); // print to circ-buf
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct mem_list_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 // [[mem_list_t]]
@@ -799,7 +960,9 @@ mem_list_mode_t;
 
 //-----------------------------------------------------------------------------
 
-void InitializeMemList ( mem_list_t *ml );
+static inline void InitializeMemList ( mem_list_t *ml )
+	{ DASSERT(ml); memset(ml,0,sizeof(*ml)); }
+
 void ResetMemList ( mem_list_t *ml );
 void MoveMemList ( mem_list_t *dest, mem_list_t *src );
 
@@ -1011,39 +1174,6 @@ uint PurgeCircBuf  ( CircBuf_t *cb );
 
 //
 ///////////////////////////////////////////////////////////////////////////////
-///////////////			    CopyMode_t			///////////////
-///////////////////////////////////////////////////////////////////////////////
-
-typedef enum CopyMode_t
-{
-    CPM_COPY,	// make a copy of the data, alloced
-    CPM_MOVE,	// move the alloced data
-    CPM_LINK,	// link the data
-
-} CopyMode_t;
-
-///////////////////////////////////////////////////////////////////////////////
-
-void * CopyData
-(
-    const void		*data,		// data to copy/move/link
-    uint		size,		// size of 'data'
-    CopyMode_t		mode,		// copy mode
-    bool		*res_alloced	// not NULL:
-					//   store true, if data must be freed
-					//   otherwise store false
-);
-
-///////////////////////////////////////////////////////////////////////////////
-
-void FreeData
-(
-    const void		*data,		// data to free
-    CopyMode_t		mode		// copy mode
-);
-
-//
-///////////////////////////////////////////////////////////////////////////////
 ///////////////			split strings			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1166,7 +1296,7 @@ ccp ProgramDirectory(void);
 void DefineLogDirectory ( ccp path0, bool force );
 
 // get 'ProgInfo.logdir' without tailing '/' ("." as fall back)
-ccp GetLogDirectory();
+ccp GetLogDirectory(void);
 
 #ifdef __CYGWIN__
     ccp ProgramPathNoExt(void);
@@ -1209,10 +1339,15 @@ static inline char * StringCopySMem ( char * buf, size_t bufsize, mem_t mem )
 static inline char * StringCopyEMem ( char * buf, ccp buf_end, mem_t mem )
 	{ return StringCopyEM(buf,buf_end,mem.ptr,mem.len); }
 
-char * StringLowerS  ( char * buf, size_t bufsize, ccp src );
-char * StringLowerE  ( char * buf, ccp buf_end,    ccp src );
-char * StringUpperS  ( char * buf, size_t bufsize, ccp src );
-char * StringUpperE  ( char * buf, ccp buf_end,    ccp src );
+char * StringLowerS ( char * buf, size_t bufsize, ccp src );
+char * StringLowerE ( char * buf, ccp buf_end,    ccp src );
+char * StringUpperS ( char * buf, size_t bufsize, ccp src );
+char * StringUpperE ( char * buf, ccp buf_end,    ccp src );
+
+char * MemLowerE    ( char * buf, ccp buf_end,    mem_t src );
+char * MemLowerS    ( char * buf, size_t bufsize, mem_t src );
+char * MemUpperE    ( char * buf, ccp buf_end,    mem_t src );
+char * MemUpperS    ( char * buf, size_t bufsize, mem_t src );
 
 // special handling for unsigned decimals
 int StrNumCmp ( ccp a, ccp b );
@@ -1233,7 +1368,7 @@ ccp PathAllocPPE    ( ccp path1, ccp path2, ccp ext );
 static inline ccp PathCatPPE ( char *buf, size_t bufsize, ccp path1, ccp path2, ccp ext )
 	{ return PathCatBufPPE(buf,bufsize,path1,path2,ext); }
 
-// Same as PathCatPP*(), but use 'base' as prefix for relative pathes.
+// Same as PathCatPP*(), but use 'base' as prefix for relative paths.
 // If 'base' is NULL (but not empty), use getcwd() instead.
 // PathCatBufBP() and PathCatBP() are special: path can be part of buf
 char *PathCatBufBP   ( char *buf, size_t bufsize, ccp base, ccp path );
@@ -1358,9 +1493,12 @@ char * PrintID
 #define CIRC_BUF_MAX_ALLOC 0x0400  // request limit
 #define CIRC_BUF_SIZE      0x4000  // internal buffer size
 
+// returns true if 'ptr' points into circ buffer => ignored by FreeString()
+bool IsCircBuf ( cvp ptr );
+
 char * GetCircBuf
 (
-    // never returns NULL, but always ALIGN(4)
+    // Never returns NULL, but always ALIGN(4)
 
     u32		buf_size	// wanted buffer size, caller must add 1 for NULL-term
 				// if buf_size > CIRC_BUF_MAX_ALLOC:
@@ -1369,7 +1507,7 @@ char * GetCircBuf
 
 char * CopyCircBuf
 (
-    // never returns NULL, but always ALIGN(4)
+    // Never returns NULL, but always ALIGN(4)
 
     cvp		data,		// source to copy
     u32		data_size	// see GetCircBuf()
@@ -1377,8 +1515,8 @@ char * CopyCircBuf
 
 char * CopyCircBuf0
 (
-    // never returns NULL, but always ALIGN(4)
-    // an additional char is alloced and set to NULL
+    // Like CopyCircBuf(), but an additional char is alloced and set to NULL
+    // Never returns NULL, but always ALIGN(4).
 
     cvp		data,		// source to copy
     u32		data_size	// see GetCircBuf()
@@ -1386,10 +1524,31 @@ char * CopyCircBuf0
 
 char * PrintCircBuf
 (
+    // returns CopyCircBuf0() or EmptyString.
+
     ccp		format,		// format string for vsnprintf()
     ...				// arguments for 'format'
 )
 __attribute__ ((__format__(__printf__,1,2)));
+
+char * AllocCircBuf
+(
+    // Never returns NULL. Call FreeString(RESULT) to free possible alloced memory.
+
+    cvp		src,		// NULL or source
+    int		src_len,	// len of 'src'; if -1: use strlen(source)
+    bool	try_circ	// use circ-buffer, if result is small enough
+);
+
+char * AllocCircBuf0
+(
+    // Never returns NULL. Call FreeString(RESULT) to free possible alloced memory.
+    // Like AllocCircBuf(), but an additional char is alloced and set to NULL
+
+    cvp		src,		// NULL or source
+    int		src_len,	// len of 'src'; if -1: use strlen(source)
+    bool	try_circ	// use circ-buffer, if result is small enough
+);
 
 void ReleaseCircBuf
 (
@@ -1666,6 +1825,42 @@ int ScanSplitArg
 				// size must be: length of 'src' + 1
 				// if NULL, a temporary buffer is alloced.
 );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			arg_manager_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[arg_manager_t]]
+
+typedef struct arg_manager_t
+{
+    char	**argv;	// list of strings
+    int		argc;	// number of used elements in 'argv'
+    uint	size;	// >0: 'argv' is alloced to store # elements
+			// last NULL element is not counted here
+}
+arg_manager_t;
+
+//-----------------------------------------------------------------------------
+
+void ResetArgManager  ( arg_manager_t *am );
+void SetupArgManager  ( arg_manager_t *am, int argc, char ** argv, bool clone );
+void AttachArgManager ( arg_manager_t *am, int argc, char ** argv );
+void CloneArgManager  ( arg_manager_t *am, int argc, char ** argv );
+
+void AddSpaceArgManager ( arg_manager_t *am, int needed_space );
+
+void CopyArgManager ( arg_manager_t *dest, const arg_manager_t *src );
+void MoveArgManager ( arg_manager_t *dest,        arg_manager_t *src );
+
+void PrepareEditArgManager ( arg_manager_t *am, int needed_space );
+
+uint AppendArgManager ( arg_manager_t *am,          ccp arg1, ccp arg2, bool move_arg );
+uint InsertArgManager ( arg_manager_t *am, int pos, ccp arg1, ccp arg2, bool move_arg );
+uint ReplaceArgManager( arg_manager_t *am, int pos, ccp arg1, ccp arg2, bool move_arg );
+uint RemoveArgManager ( arg_manager_t *am, int pos, int count );
+
+void DumpArgManager ( FILE *f, int indent, const arg_manager_t *am, ccp title );
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -1988,7 +2183,7 @@ void PutLines
     int		first_line,	// length without prefix of already printed first line
     ccp		prefix,		// NULL or prefix for each line
     ccp		text,		// text to print
-    ccp		eol		// End Of Line test. If NULL -> LF
+    ccp		eol		// End-Of-Line text. If NULL -> LF
 );
 
 void PrintArgLines
@@ -2051,7 +2246,7 @@ uint PutColoredLines
     int			indent,		// indent of output
     int			fw,		// field width; indent+prefix+eol don't count
     ccp			prefix,		// NULL or prefix for each line
-    ccp			eol,		// End Of Line test. If NULL -> LF
+    ccp			eol,		// End-Of-Line text. If NULL -> LF
     ccp			text		// text to print
 );
 
@@ -2064,7 +2259,7 @@ uint PrintArgColoredLines
     int			indent,		// indent of output
     int			fw,		// field width; indent+prefix+eol don't count
     ccp			prefix,		// NULL or prefix for each line
-    ccp			eol,		// End Of Line test. If NULL -> LF
+    ccp			eol,		// End-Of-Line text. If NULL -> LF
     ccp			format,		// format string for vsnprintf()
     va_list		arg		// parameters for 'format'
 );
@@ -2078,7 +2273,7 @@ uint PrintColoredLines
     int			indent,		// indent of output
     int			fw,		// field width; indent+prefix+eol don't count
     ccp			prefix,		// NULL or prefix for each line
-    ccp			eol,		// End Of Line test. If NULL -> LF
+    ccp			eol,		// End-Of-Line text. If NULL -> LF
     ccp			format,		// format string for vsnprintf()
     ...					// arguments for 'vsnprintf(format,...)'
 )
@@ -2104,6 +2299,7 @@ typedef enum CharMode_t // select encodig/decoding method
     CHMD_UTF8		= 0x01,  // UTF8 support enabled (compatible with legacy bool)
     CHMD_ESC		= 0x02,  // escape ESC by \e
 
+    CHMD__MODERN	= CHMD_UTF8 | CHMD_ESC,
     CHMD__ALL		= CHMD_UTF8 | CHMD_ESC,
 }
 __attribute__ ((packed)) CharMode_t;
@@ -2166,13 +2362,25 @@ extern ccp TableDecode64default, TableEncode64default;
 
 ///////////////////////////////////////////////////////////////////////////////
 
+uint GetEscapedSize
+(
+    // returns the needed buffer size for PrintEscapedString() 
+
+    ccp		source,		// NULL or string to print
+    int		src_len,	// length of string. if -1, str is null terminated
+    CharMode_t	char_mode,	// modes, bit field (CHMD_*)
+    char	quote		// NULL or quotation char, that must be quoted
+);
+
+//-----------------------------------------------------------------------------
+
 char * PrintEscapedString
 (
     // returns 'buf'
 
     char	*buf,		// valid destination buffer
     uint	buf_size,	// size of 'buf', >= 10
-    ccp		source,		// NULL string to print
+    ccp		source,		// NULL or string to print
     int		len,		// length of string. if -1, str is null terminated
     CharMode_t	char_mode,	// modes, bit field (CHMD_*)
     char	quote,		// NULL or quotation char, that must be quoted
@@ -2183,7 +2391,7 @@ char * PrintEscapedString
 
 uint ScanEscapedString
 (
-    // returns the number of valid bytes in 'buf' (NULL term not counted)
+    // returns the number of valid bytes in 'buf' (NULL term added but not counted)
 
     char	*buf,		// valid destination buffer, maybe source
     uint	buf_size,	// size of 'buf'
@@ -2257,8 +2465,10 @@ uint EncodeBase64
     int		source_len,		// length of 'source'; if <0: use strlen(source)
     const char	encode64[64+1],		// encoding table; if NULL: use TableEncode64default
     bool	use_filler,		// use filler for aligned output
+
     ccp		next_line,		// not NULL: use this string as new line sep
-    uint	next_line_trigger	// >0: use 'next_line' every # input bytes
+    uint	bytes_per_line		// >0: use 'next_line' every # input bytes
+					// will be rounded down to multiple of 3
 );
 
 //-----------------------------------------------------------------------------
@@ -2274,15 +2484,35 @@ mem_t EncodeBase64Circ
     const char	encode64[64+1]		// encoding table; if NULL: use TableEncode64default
 );
 
+//-----------------------------------------------------------------------------
+
+uint EncodeBase64ml // ml: multi line
+(
+    // returns the number of scanned bytes of 'source'
+
+    char	*buf,			// valid destination buffer
+    uint	buf_size,		// size of 'buf', >= 4
+    const void	*source,		// NULL or data to encode
+    int		source_len,		// length of 'source'; if <0: use strlen(source)
+    const char	encode64[64+1],		// encoding table; if NULL: use TableEncode64default
+    bool	use_filler,		// use filler for aligned output
+
+    int		indent,			// indention of output
+    ccp		prefix,			// NULL or prefix before encoded data
+    ccp		eol,			// line terminator, if NULL then use NL
+    int		bytes_per_line		// create a new line every # input bytes
+					// will be rounded down to multiple of 3
+);
+
 ///////////////////////////////////////////////////////////////////////////////
 
-static inline uint EncodeBase64Len ( uint src_len )
+static inline uint GetEncodeBase64Len ( uint src_len )
 	{ return 4 * (src_len+2) / 3; }
 
-static inline uint EncodeBase64FillLen ( uint src_len )
+static inline uint GetEncodeBase64FillLen ( uint src_len )
 	{ return (src_len+2) / 3 * 4; }
 
-static inline uint DecodeBase64Len ( uint src_len )
+static inline uint GetDecodeBase64Len ( uint src_len )
 	{ return 3 * src_len / 4; }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2448,6 +2678,71 @@ void SetupGetShiftJISCache(void);
 int GetShiftJISChar ( u32 code );
 
 ccp GetShiftJISStatistics(void);
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////		escape/quote strings, alloc space	///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+char * EscapeString
+(
+    // Returns a pointer.
+    // Use FreeString(result) to free possible alloced result.
+    // circ-buffer is ignored by FreeString().
+
+    cvp		src,			// NULL or source
+    int		src_len,		// size of 'src'. If -1: Use strlen(src)
+    cvp		return_if_null,		// return this, if 'src==NULL'
+    cvp		return_if_empty,	// return this, if src is empty (have no chars)
+    CharMode_t	char_mode,		// how to escape
+    char	quote,			// quoting character: "  or  '  or  $ (for $'...')
+    bool	try_circ,		// use circ-buffer, if result is small enough
+    uint	*dest_len		// not NULL: Store length of result here
+);
+
+//-----------------------------------------------------------------------------
+
+static inline char * EscapeStringM ( mem_t src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src.ptr,src.len,if_null,EmptyString,cm,0,false,0); }
+
+static char * EscapeStringS ( ccp src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src,-1,if_null,EmptyString,cm,0,false,0); }
+
+//-----------------------------------------------------------------------------
+
+static inline char * EscapeStringCircM ( mem_t src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src.ptr,src.len,if_null,EmptyString,cm,0,true,0); }
+
+static char * EscapeStringCircS ( ccp src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src,-1,if_null,EmptyString,cm,0,true,0); }
+
+//-----------------------------------------------------------------------------
+
+static inline char * QuoteStringM ( mem_t src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src.ptr,src.len,if_null,EmptyQuote,cm,true,false,0); }
+
+static char * QuoteStringS ( ccp src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src,-1,if_null,EmptyQuote,cm,'"',false,0); }
+
+static inline char * QuoteBashM ( mem_t src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src.ptr,src.len,if_null,EmptyQuote,cm,'$',false,0); }
+
+static char * QuoteBashS ( ccp src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src,-1,if_null,EmptyQuote,cm,'$',false,0); }
+
+//-----------------------------------------------------------------------------
+
+static inline char * QuoteStringCircM ( mem_t src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src.ptr,src.len,if_null,EmptyQuote,cm,'"',true,0); }
+
+static char * QuoteStringCircS ( ccp src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src,-1,if_null,EmptyQuote,cm,'"',true,0); }
+
+static inline char * QuoteBashCircM ( mem_t src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src.ptr,src.len,if_null,EmptyQuote,cm,'$',true,0); }
+
+static char * QuoteBashCircS ( ccp src, cvp if_null, CharMode_t cm )
+	{ return EscapeString(src,-1,if_null,EmptyQuote,cm,'$',true,0); }
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -2641,7 +2936,7 @@ enumError Command_COLORS
     uint	format		// output format => see PrintColorSetEx()
 );
 
-
+//
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			OFF/AUTO/ON/FORCE		///////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -2659,9 +2954,42 @@ OffOn_t;
 
 extern const KeywordTab_t KeyTab_OFF_AUTO_ON[];
 
-int ScanKeywordOffAutoOn
+int ScanKeywordOffAutoOnEx
 (
     // returns one of OFFON_*
+
+    const KeywordTab_t	*keytab,	// Keyword table. If NULL, then use KeyTab_OFF_AUTO_ON[]
+    ccp			arg,		// argument to scan
+    int			on_empty,	// return this value on empty
+    uint		max_num,	// >0: additionally accept+return number <= max_num
+    ccp			object		// NULL (silent) or object for error messages
+);
+
+static inline int ScanKeywordOffAutoOn( ccp arg, int on_empty, uint max_num, ccp object )
+	{ return ScanKeywordOffAutoOnEx(0,arg,on_empty,max_num,object); }
+
+ccp GetKeywordOffAutoOn ( OffOn_t value );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			LOWER/AUTO/UPPER		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[LowerUpper_t]]
+
+typedef enum LowerUpper_t
+{
+    LOUP_ERROR	= -99,
+    LOUP_LOWER	=  -1,
+    LOUP_AUTO	=   0,
+    LOUP_UPPER	=   1,
+}
+LowerUpper_t;
+
+extern const KeywordTab_t KeyTab_LOWER_AUTO_UPPER[];
+
+int ScanKeywordLowerAutoUpper
+(
+    // returns one of LOUP_*
 
     ccp			arg,		// argument to scan
     int			on_empty,	// return this value on empty
@@ -2669,9 +2997,9 @@ int ScanKeywordOffAutoOn
     ccp			object		// NULL (silent) or object for error messages
 );
 
-ccp GetKeywordOffAutoOn ( OffOn_t value );
+ccp GetKeywordLowerAutoUpper ( LowerUpper_t value );
 
-////
+//
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			scan command lists		///////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -3342,6 +3670,14 @@ char * ScanSIFactor
 #define USEC_PER_DAY	(SEC_PER_DAY*USEC_PER_SEC)
 #define USEC_PER_WEEK	(SEC_PER_WEEK*USEC_PER_SEC)
 
+#define NSEC_PER_USEC	1000ull
+#define NSEC_PER_MSEC	1000000ull
+#define NSEC_PER_SEC	1000000000ull
+#define NSEC_PER_MIN	(60*NSEC_PER_SEC)
+#define NSEC_PER_HOUR	(3600*NSEC_PER_SEC)
+#define NSEC_PER_DAY	(SEC_PER_DAY*NSEC_PER_SEC)
+#define NSEC_PER_WEEK	(SEC_PER_WEEK*NSEC_PER_SEC)
+
 //--- time types
 
 typedef uint u_sec_t;	// unsigned type to store time as seconds
@@ -3350,6 +3686,8 @@ typedef u64  u_msec_t;	// unsigned type to store time as milliseconds
 typedef s64  s_msec_t;	//   signed type to store time as milliseconds
 typedef u64  u_usec_t;	// unsigned type to store time as microseconds
 typedef s64  s_usec_t;	//   signed type to store time as microseconds
+typedef u64  u_nsec_t;	// unsigned type to store time as nanoseconds
+typedef s64  s_nsec_t;	//   signed type to store time as nanoseconds
 
 // [[DayTime_t]]
 typedef struct DayTime_t
@@ -3360,6 +3698,7 @@ typedef struct DayTime_t
     int		min;	// minute of hour
     int		sec;	// second of minute
     int		usec;	// microsecond of second
+    int		nsec;	// nanosecond of second
 }
 DayTime_t;
 
@@ -3367,6 +3706,7 @@ DayTime_t;
 
 extern s64 timezone_adjust_sec;
 extern s64 timezone_adjust_usec;
+extern s64 timezone_adjust_nsec;
 extern int timezone_adjust_isdst;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3375,25 +3715,31 @@ void SetupTimezone ( bool force );
 int GetTimezoneAdjust ( time_t tim );
 
 struct timeval	GetTimeOfDay ( bool localtime );
+struct timespec	GetClockTime ( bool localtime );
 DayTime_t	GetDayTime   ( bool localtime );
 u_sec_t		GetTimeSec   ( bool localtime );
 u_msec_t	GetTimeMSec  ( bool localtime );
 u_usec_t	GetTimeUSec  ( bool localtime );
+u_nsec_t	GetTimeNSec  ( bool localtime );
 
 u_msec_t GetTimerMSec(void);
 u_usec_t GetTimerUSec(void);
+u_nsec_t GetTimerNSec(void);
 
 static inline u64 double2msec ( double d ) { return d>0.0 ? (u64)trunc( 1e3*d+0.5 ) : 0; }
 static inline u64 double2usec ( double d ) { return d>0.0 ? (u64)trunc( 1e6*d+0.5 ) : 0; }
+static inline u64 double2nsec ( double d ) { return d>0.0 ? (u64)trunc( 1e9*d+0.5 ) : 0; }
 
 static inline double msec2double ( u64 num ) { return num * 1e-3; }
 static inline double usec2double ( u64 num ) { return num * 1e-6; }
+static inline double nsec2double ( u64 num ) { return num * 1e-9; }
 
 //--- another epoch: Monday, 2001-01-01
 
 #define EPOCH_2001_SEC  0x3a4fc880
 #define EPOCH_2001_MSEC (EPOCH_2001_SEC*MSEC_PER_SEC)
 #define EPOCH_2001_USEC (EPOCH_2001_SEC*USEC_PER_SEC)
+#define EPOCH_2001_NSEC (EPOCH_2001_SEC*NSEC_PER_SEC)
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -3415,25 +3761,53 @@ ccp PrintTimeByFormatUTC
 
 //-----------------------------------------------------------------------------
 
-ccp PrintUsecByFormat
+ccp PrintNSecByFormat
 (
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-					// 1-6 '@' in row replaced by digits of 'usec'
+					// 1-9 '@' in row replaced by digits of 'nsec'
     time_t		tim,		// seconds since epoch
-    uint		usec		// micro second of second
+    uint		nsec		// nanosecond of second
 );
 
-ccp PrintUsecByFormatUTC
+ccp PrintNSecByFormatUTC
 (
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-					// 1-6 '@' in row replaced by digits of 'usec'
+					// 1-9 '@' in row replaced by digits of 'nsec'
     time_t		tim,		// seconds since epoch
-    uint		usec		// micro second of second
+    uint		nsec		// nanosecond of second
 );
+
+//-----------------------------------------------------------------------------
+
+static inline ccp PrintUSecByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+					// 1-9 '@' in row replaced by digits of 'usec'
+    time_t		tim,		// seconds since epoch
+    uint		usec		// microsecond of second
+)
+{
+    return PrintNSecByFormat(format,tim,usec*NSEC_PER_USEC);
+}
+
+static inline ccp PrintUSecByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+					// 1-9 '@' in row replaced by digits of 'usec'
+    time_t		tim,		// seconds since epoch
+    uint		usec		// microsecond of second
+)
+{
+    return PrintNSecByFormatUTC(format,tim,usec*NSEC_PER_USEC);
+}
 
 //-----------------------------------------------------------------------------
 
@@ -3453,6 +3827,24 @@ ccp PrintTimevalByFormatUTC
     const struct timeval *tv		// time to print, if NULL use gettimeofday()
 );
 
+//-----------------------------------------------------------------------------
+
+ccp PrintTimespecByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    const struct timespec *ts		// time to print, if NULL use GetClockTime(false)
+);
+
+ccp PrintTimespecByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    const struct timespec *ts		// time to print, if NULL use GetClockTime(false)
+);
+
 ///////////////////////////////////////////////////////////////////////////////
 
 ccp PrintTimeSec
@@ -3463,8 +3855,6 @@ ccp PrintTimeSec
     u_sec_t		sec		// seconds (=time) to print
 );
 
-//-----------------------------------------------------------------------------
-
 ccp PrintTimeMSec
 (
     char		* buf,		// result buffer (>23 bytes are good)
@@ -3474,8 +3864,6 @@ ccp PrintTimeMSec
     uint		fraction	// number of digits (0-3) to print as fraction
 );
 
-//-----------------------------------------------------------------------------
-
 ccp PrintTimeUSec
 (
     char		* buf,		// result buffer (>26 bytes are good)
@@ -3483,6 +3871,15 @@ ccp PrintTimeUSec
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     u_usec_t		usec,		// microseconds to print
     uint		fraction	// number of digits (0-6) to print as fraction
+);
+
+ccp PrintTimeNSec
+(
+    char		* buf,		// result buffer (>26 bytes are good)
+					// If NULL, a local circulary static buffer is used
+    size_t		buf_size,	// size of 'buf', ignored if buf==NULL
+    u_nsec_t		nsec,		// nanoseconds to print
+    uint		fraction	// number of digits (0-9) to print as fraction
 );
 
 //-----------------------------------------------------------------------------
@@ -3502,7 +3899,16 @@ ccp PrintTimerUSec
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     s_usec_t		usec,		// microseconds to print
-    uint		fraction	// number of digits (0-3) to print as fraction
+    uint		fraction	// number of digits (0-6) to print as fraction
+);
+
+ccp PrintTimerNSec
+(
+    char		* buf,		// result buffer (>16 bytes are good)
+					// If NULL, a local circulary static buffer is used
+    size_t		buf_size,	// size of 'buf', ignored if buf==NULL
+    s_nsec_t		nsec,		// nanoseconds to print
+    uint		fraction	// number of digits (0-9) to print as fraction
 );
 
 //-----------------------------------------------------------------------------
@@ -3513,7 +3919,8 @@ ccp PrintTimer3 // helper function
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     u64			sec,		// seconds to print
-    int			usec,		// 0...999999: usec fraction, otherwise suppress ms/us output
+    int			usec,		// 0...999999: usec fraction,
+					// otherwise suppress ms/us output
     bool		aligned		// true: print aligned 3 character output
 );
 
@@ -3561,7 +3968,8 @@ ccp PrintTimer4 // helper function
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     u64			sec,		// seconds to print
-    int			usec,		// 0...999999: usec fraction, otherwise suppress ms/us output
+    int			usec,		// 0...999999: usec fraction,
+					// otherwise suppress ms/us output
     bool		aligned		// true: print aligned 4 character output
 );
 
@@ -3610,7 +4018,7 @@ ccp PrintTimer6 // helper function
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     u64			sec,		// seconds to print
     int			usec,		// 0...999999: usec fraction,
-					//    otherwise suppress ms/us output
+					// otherwise suppress ms/us output
     bool		aligned		// true: print aligned 6 character output
 );
 
@@ -3720,19 +4128,6 @@ static inline ccp PrintTimerSec7s
     return PrintTimerUSec7s(buf,buf_size,1000000ll*sec,mode);
 }
 
-//-----------------------------------------------------------------------------
-
-typedef struct xtime_t
-{
-    time_t	time;
-    suseconds_t	usec;
-    u64		total_usec;
-    u64	rel_usec;
-
-} xtime_t;
-
-u64 GetXTime ( xtime_t * xtime );
-
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			scan date & time		///////////////
@@ -3740,18 +4135,41 @@ u64 GetXTime ( xtime_t * xtime );
 
 // ScanInterval*() is old ==> try ScanDuration()
 
-char * ScanInterval
+//-----------------------------------------------------------------------------
+// new interface : all functions return first not scanned char
+
+char * ScanIntervalTS
 (
-    time_t	*res_time,	// not NULL: store seconds
-    u32		*res_usec,	// not NULL: store micro seconds of second
+    struct timespec *res_ts,	// not NULL: store result here
     ccp		source		// source text
 );
 
-///////////////////////////////////////////////////////////////////////////////
+char * ScanIntervalUSec
+(
+    u_usec_t	*res_usec,	// not NULL: store total microseconds
+    ccp		source		// source text
+);
+
+
+char * ScanIntervalNSec
+(
+    u_nsec_t	*res_nsec,	// not NULL: store total nanoseconds
+    ccp		source		// source text
+);
+
+//-----------------------------------------------------------------------------
+// legacy interface : all functions return first not scanned char
+
+char * ScanInterval
+(
+    time_t	*res_time,	// not NULL: store seconds
+    u32		*res_usec,	// not NULL: store microseconds of second
+    ccp		source		// source text
+);
 
 char * ScanInterval64
 (
-    u64		*res_usec,	// not NULL: store total micro seconds
+    u64		*res_usec,	// not NULL: store total microseconds
     ccp		source		// source text
 );
 
@@ -3760,7 +4178,7 @@ char * ScanInterval64
 char * ScanDateTime
 (
     time_t	*res_time,	// not NULL: store seconds
-    u32		*res_usec,	// not NULL: store micro seconds of second
+    u32		*res_usec,	// not NULL: store microseconds of second
     ccp		source,		// source text
     bool	allow_delta	// true: allow +|- interval
 );
@@ -3769,7 +4187,7 @@ char * ScanDateTime
 
 char * ScanDateTime64
 (
-    u64		*res_usec,	// not NULL: store total micro seconds
+    u64		*res_usec,	// not NULL: store total microseconds
     ccp		source,		// source text
     bool	allow_delta	// true: allow +|- interval
 );
@@ -4127,7 +4545,7 @@ typedef struct DynDataList_t
 {
     DynData_t	*list;		// pointer to the data list
     uint	used;		// number of used data elements
-    uint	size;		// number of allocated pointer in 'list'
+    uint	size;		// number of allocated pointers in 'list'
 }
 DynDataList_t;
 
@@ -4161,7 +4579,7 @@ typedef struct StringField_t
 {
     ccp		* field;		// pointer to the string field
     uint	used;			// number of used titles in the title field
-    uint	size;			// number of allocated pointer in 'field'
+    uint	size;			// number of allocated pointers in 'field'
     int	(*func_cmp)( ccp s1, ccp s2 );	// compare function, default is strcmp()
 
 } StringField_t;
@@ -4185,8 +4603,11 @@ uint RemoveStringFieldByIndex ( StringField_t * sf, int index, int n );
 // helper function
 ccp * InsertStringFieldHelper ( StringField_t * sf, int idx );
 
-// append at the end an do not sort
+// append at the end and do not sort
 void AppendStringField ( StringField_t * sf, ccp key, bool move_key );
+
+// append at the end if nor already exists, do not sort
+void AppendUniqueStringField ( StringField_t * sf, ccp key, bool move_key );
 
 // re-sort field using sf->func_cmp()
 void SortStringField ( StringField_t * sf );
@@ -4268,7 +4689,7 @@ typedef struct ParamField_t
 {
     ParamFieldItem_t	* field;	// pointer to the string field
     uint		used;		// number of used titles in the title field
-    uint		size;		// number of allocated pointer in 'field'
+    uint		size;		// number of allocated pointers in 'field'
     bool		free_data;	// true: unused data will be free'd
 					//   initialized with 'false'
     int	(*func_cmp)( ccp s1, ccp s2 );	// compare function, default is strcmp()
@@ -4276,7 +4697,9 @@ typedef struct ParamField_t
 
 //-----------------------------------------------------------------------------
 
-void InitializeParamField ( ParamField_t * pf );
+static inline void InitializeParamField ( ParamField_t * pf )
+	{ DASSERT(pf); memset(pf,0,sizeof(*pf)); }
+
 void ResetParamField ( ParamField_t * pf );
 void MoveParamField ( ParamField_t * dest, ParamField_t * src );
 
@@ -4284,18 +4707,16 @@ int FindParamFieldIndex ( const ParamField_t * pf, ccp key, int not_found_value 
 ParamFieldItem_t * FindParamField ( const ParamField_t * pf, ccp key );
 ParamFieldItem_t * FindParamFieldByNum ( const ParamField_t * pf, uint num );
 ParamFieldItem_t * FindInsertParamField
-		( ParamField_t * pf, ccp key, bool move_key, bool *old_found );
-ParamFieldItem_t * CountParamField ( ParamField_t * pf, ccp key, bool move_key );
+		( ParamField_t * pf, ccp key, bool move_key, uint num, bool *old_found );
+ParamFieldItem_t * IncrementParamField ( ParamField_t * pf, ccp key, bool move_key );
 
+// Insert: Insert only if not found, Replace: Insert or replace data
 // return: true if item inserted/deleted
 bool InsertParamField ( ParamField_t * pf, ccp key, bool move_key, uint num, cvp data );
 bool ReplaceParamField( ParamField_t * pf, ccp key, bool move_key, uint num, cvp data );
 bool RemoveParamField ( ParamField_t * pf, ccp key );
 
-ParamFieldItem_t * InsertParamFieldEx
-	( ParamField_t * pf, ccp key, bool move_key, uint num, bool *found );
-
-// append at the end an do not sort
+// append at the end and do not sort
 ParamFieldItem_t * AppendParamField
 	( ParamField_t * pf, ccp key, bool move_key, uint num, cvp data );
 
@@ -4304,6 +4725,81 @@ uint FindParamFieldHelper ( const ParamField_t * pf, bool * found, ccp key );
 
 // find first pattern that matches
 ParamFieldItem_t * MatchParamField ( const ParamField_t * pf, ccp key );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct exmem_list_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[exmem_key_t]]
+
+typedef struct exmem_key_t
+{
+    ccp			key;		// string as main key => data.is_key_alloced
+    exmem_t		data;		// data
+}
+exmem_key_t;
+
+//-----------------------------------------------------------------------------
+// [[exmem_list_t]]
+
+typedef struct exmem_list_t
+{
+    exmem_key_t		*list;		// data list
+    uint		used;		// number of used titles in the title field
+    uint		size;		// number of allocated pointers in 'field'
+    bool		is_unsorted;	// true: list is not sorted (Append() was used)
+    int	(*func_cmp)( ccp s1, ccp s2 );	// compare function, default is strcmp()
+}
+exmem_list_t;
+
+//-----------------------------------------------------------------------------
+
+static inline void InitializeEML ( exmem_list_t * eml )
+	{ DASSERT(eml); memset(eml,0,sizeof(*eml)); }
+
+void ResetEML ( exmem_list_t * eml );
+void MoveEML ( exmem_list_t * dest, exmem_list_t * src );
+
+// return the index of the (next) item
+uint FindHelperEML ( const exmem_list_t * eml, ccp key, bool *found );
+
+int FindIndexEML ( const exmem_list_t * eml, ccp key, int not_found_value );
+exmem_key_t * FindEML ( const exmem_list_t * eml, ccp key );
+exmem_key_t * FindAttribEML ( const exmem_list_t * eml, u32 attrib );
+exmem_key_t * FindInsertEML ( exmem_list_t * eml, ccp key, CopyMode_t cm_key, bool *old_found );
+
+// Insert if not found, ignore othwerwise. Return true if item inserted
+bool InsertEML ( exmem_list_t * eml, ccp key, CopyMode_t cm_key,
+					const exmem_t *data, CopyMode_t cm_data );
+
+// Insert or replace content. Return true if item inserted
+bool ReplaceEML ( exmem_list_t * eml, ccp key, CopyMode_t cm_key,
+					const exmem_t *data, CopyMode_t cm_data );
+
+// Replace content if found. Return true if item found
+bool OverwriteEML ( exmem_list_t * eml, ccp key, CopyMode_t cm_key,
+					const exmem_t *data, CopyMode_t cm_data );
+
+// Append at the end and do not sort
+exmem_key_t * AppendEML  ( exmem_list_t * eml, ccp key, CopyMode_t cm_key,
+					const exmem_t *data, CopyMode_t cm_data );
+
+// Return true if item found and removed
+bool RemoveEML ( exmem_list_t * eml, ccp key );
+
+
+// find first pattern that matches
+exmem_key_t * MatchEML ( const exmem_list_t * eml, ccp key );
+
+void DumpEML ( FILE *f, int indent, const exmem_list_t * eml, ccp info );
+
+//-----------------------------------------------------------------------------
+
+exmem_t ResolveSymbolsEML ( const exmem_list_t * eml, ccp source );
+uint ResolveAllSymbolsEML ( exmem_list_t * eml );
+
+// add symbols 'home', 'etc', 'install' = 'prog' and 'cwd'
+void AddStandardSymbolsEML ( exmem_list_t * eml, bool overwrite );
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -4328,7 +4824,7 @@ typedef struct MemMap_t
 {
     MemMapItem_t ** field;	// pointer to the item field
     uint	used;		// number of used titles in the item field
-    uint	size;		// number of allocated pointer in 'field'
+    uint	size;		// number of allocated pointers in 'field'
     u64		begin;		// first address
 
 } MemMap_t;
@@ -4707,7 +5203,15 @@ typedef struct RestoreState_t
 }
 RestoreState_t;
 
-//-----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
+
+static inline void InitializeRestoreState ( RestoreState_t *rs )
+	{ DASSERT(rs); memset(rs,0,sizeof(*rs)); }
+
+void ResetRestoreState ( RestoreState_t *rs );
+
+///////////////////////////////////////////////////////////////////////////////
+// [[RestoreStateFunc]]
 
 typedef void (*RestoreStateFunc)
 (
@@ -4716,6 +5220,7 @@ typedef void (*RestoreStateFunc)
 );
 
 //-----------------------------------------------------------------------------
+// [[RestoreStateTab_t]]
 
 typedef struct RestoreStateTab_t
 {
@@ -4724,6 +5229,16 @@ typedef struct RestoreStateTab_t
     cvp			user_table;	// any user provided pointer
 }
 RestoreStateTab_t;
+
+///////////////////////////////////////////////////////////////////////////////
+
+enumError ScanRestoreState
+(
+    RestoreState_t	*rs,		// valid control
+    void		*data,		// file data, modified, terminated by NULL or LF
+    uint		size,		// size of file data
+    void		**end_data	// not NULL: store end of analysed here
+);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -4984,6 +5499,11 @@ __attribute__ ((packed)) SaveRestoreTab_t;
 #define DEF_SRT_ARRAY_A(v)		DEF_SRT_ARRAY(v,0,SRT_DEF_ARRAY,0)
 #define DEF_SRT_ARRAY_AC(v)		DEF_SRT_ARRAY_C(v,0,SRT_DEF_ARRAY,0)
 #define DEF_SRT_ARRAY_END()		{0,0,0,0,SRT_DEF_ARRAY,0}
+
+//--- global array of structs
+
+#define DEF_SRT_ARRAY_GN(ne)		{0,sizeof(SRT_NAME),0,ne,SRT_DEF_ARRAY,0}
+#define DEF_SRT_ARRAY_GA(v)		{0,sizeof(*v),0,sizeof(v)/sizeof(*v),SRT_DEF_ARRAY,0}
 
 //--- special
 
@@ -5285,7 +5805,9 @@ extern int opt_new; // default 0
 
 float double2float ( double d ); // reduce precision
 
-uint CreateUniqueId ( int range );
+uint CreateUniqueIdN ( int range );
+static inline uint CreateUniqueId()	{ return CreateUniqueIdN(1); }
+static inline uint CreateUniqueIdNBO() 	{ return htonl(CreateUniqueIdN(1)); }
 
 void Sha1Hex2Bin ( sha1_hash_t bin, ccp src, ccp end );
 void Sha1Bin2Hex ( sha1_hex_t hex, cvp bin );
@@ -5325,6 +5847,7 @@ static inline char * snprintfE ( char *buf, char *end, ccp format, ... )
 ///////////////////////////////////////////////////////////////////////////////
 
 void * dc_memrchr ( cvp src, int ch, size_t size );
+bool IsMemConst ( cvp mem, uint size, u8 val );
 
 #ifdef __APPLE__
  #define memrchr dc_memrchr

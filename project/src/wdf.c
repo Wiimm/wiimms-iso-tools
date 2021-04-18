@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -53,7 +53,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #define NAME "wdf"
-#define TITLE " v" VERSION " r" REVISION " " SYSTEM " - " AUTHOR " - " DATE
+#define TITLE " v" VERSION " r" REVISION " " SYSTEM2 " - " AUTHOR " - " DATE
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -126,7 +126,7 @@ static void version_exit()
     if ( brief_count > 1 )
 	fputs( VERSION "\n", stdout );
     else if (brief_count)
-	fputs( VERSION " r" REVISION " " SYSTEM "\n", stdout );
+	fputs( VERSION " r" REVISION " " SYSTEM2 "\n", stdout );
     else 
 	printf("%s%s\n%.*s",
 		ProgInfo.progname, TITLE,

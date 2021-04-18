@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -46,6 +46,111 @@
 #endif
 
 #include "dclib-network.h"
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			    IP/UDP			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ssize_t ReceiveUDPv4
+(
+    int			sock,		// valid socket
+    void		*buf,		// buffer tostore incoming data
+    size_t		buf_size,	// size of buffer
+    int			flags,		// flags for recffrom() or recvmsg()
+    struct sockaddr_in	*src_addr,	// not NULL: store source address
+    in_addr_t		*dest_addr	// not NULL: store destination IPv4 (NBO)
+)
+{
+    DASSERT(buf);
+
+    if (!dest_addr)
+    {
+	socklen_t src_len = sizeof(*src_addr);
+	return recvfrom( sock, buf, buf_size, flags,
+			(struct sockaddr*)src_addr, &src_len );
+    }
+
+    struct sockaddr_in sa_temp;
+    if (!src_addr)
+	src_addr = &sa_temp;
+
+    *dest_addr = 0;
+    u8 control[CMSG_SPACE(sizeof(struct in_pktinfo))];
+
+    struct iovec iov;
+    iov.iov_base	= buf;
+    iov.iov_len		= buf_size;
+
+    struct msghdr msg	= {0};
+    msg.msg_name	= src_addr;
+    msg.msg_namelen	= sizeof(*src_addr);
+    msg.msg_iov		= &iov;
+    msg.msg_iovlen	= 1;
+    msg.msg_control	= control;
+    msg.msg_controllen	= sizeof(control);
+
+    ssize_t stat = recvmsg(sock,&msg,flags);
+    if ( stat < 0 )
+	return stat;
+
+    struct cmsghdr *cp;
+    for ( cp = CMSG_FIRSTHDR(&msg); cp; cp = CMSG_NXTHDR(&msg,cp))
+    {
+	if ( cp->cmsg_level == IPPROTO_IP && cp->cmsg_type == IP_PKTINFO )
+	{
+	    struct in_pktinfo *pktinfo = (struct in_pktinfo*) CMSG_DATA(cp);
+	    *dest_addr = pktinfo->ipi_spec_dst.s_addr;
+	    break;
+	}
+    }
+
+    return stat;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ssize_t SendUDPv4
+(
+    int			sock,		// valid socket
+    const void		*data,		// data to send
+    size_t		data_size,	// size of data
+    int			flags,		// flags for sendto() or sendmsg()
+    struct sockaddr_in	*dest_addr,	// destination address (NULL possible)
+    in_addr_t		src_addr	// not 0: source IPv4 (NBO)
+)
+{
+    DASSERT(data);
+    DASSERT(dest_addr);
+
+    if (!src_addr)
+	return sendto(sock,data,data_size,flags,dest_addr,sizeof(*dest_addr));
+
+    u8 control[CMSG_SPACE(sizeof(struct in_pktinfo))];
+
+    struct iovec iov;
+    iov.iov_base		= (void*)data;
+    iov.iov_len			= data_size;
+
+    struct msghdr msg		= {0};
+    msg.msg_name		= dest_addr;
+    msg.msg_namelen		= sizeof(*dest_addr);
+    msg.msg_iov			= &iov;
+    msg.msg_iovlen		= 1;
+    msg.msg_control		= control;
+    msg.msg_controllen		= sizeof(control);
+
+    struct cmsghdr *cp		= CMSG_FIRSTHDR(&msg);
+    cp->cmsg_level		= IPPROTO_IP;
+    cp->cmsg_type		= IP_PKTINFO;
+    cp->cmsg_len		= CMSG_LEN(sizeof(struct in_pktinfo));
+
+    struct in_pktinfo *pki	= (struct in_pktinfo*) CMSG_DATA(cp);
+    pki->ipi_ifindex		= 0;
+    pki->ipi_spec_dst.s_addr	= src_addr;
+    
+    return sendmsg(sock,&msg,flags);
+}
 
 //
 ///////////////////////////////////////////////////////////////////////////////

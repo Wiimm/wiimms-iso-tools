@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -39,6 +39,7 @@
 
 #include "dclib/dclib-types.h"
 #include "dclib/dclib-basics.h"
+#include "dclib/lib-dol.h"
 
 //
 ///////////////////////////////////////////////////////////////////////////////

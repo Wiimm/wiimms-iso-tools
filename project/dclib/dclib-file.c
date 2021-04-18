@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -36,6 +36,7 @@
 
 #include <sys/types.h>
 #include <sys/ioctl.h>
+#include <sys/time.h>
 #include <fcntl.h>
 #include <string.h>
 #include <time.h>
@@ -198,7 +199,18 @@ FileAttrib_t * ClearFileAttrib
 )
 {
     if (dest)
+    {
 	memset(dest,0,sizeof(*dest));
+	dest->atime.tv_nsec =
+	dest->mtime.tv_nsec =
+	dest->ctime.tv_nsec =
+	dest->itime.tv_nsec =
+     #ifdef UTIME_OMIT
+		UTIME_OMIT;
+     #else
+		-2;
+     #endif
+    }
     return dest;
 }
 
@@ -210,7 +222,8 @@ FileAttrib_t * TouchFileAttrib
 )
 {
     DASSERT(dest);
-    dest->mtime = dest->ctime = dest->atime = dest->itime = time(0);
+    dest->atime = GetClockTime(false);
+    dest->mtime = dest->ctime = dest->itime = dest->atime;
     return dest;
 }
 
@@ -230,17 +243,27 @@ FileAttrib_t * SetFileAttrib
 	memcpy(dest,src_fa,sizeof(*dest));
     else if (src_stat)
     {
-	memset(dest,0,sizeof(*dest));
-	if ( S_ISREG(src_stat->st_mode) )
+	ZeroFileAttrib(dest);
+	if (S_ISREG(src_stat->st_mode))
 	{
-	    dest->mtime = src_stat->st_mtime;
-	    dest->ctime = src_stat->st_ctime;
-	    dest->itime = dest->mtime > dest->ctime ? dest->mtime : dest->ctime;
-	    dest->atime = src_stat->st_atime;
+	 #if HAVE_STATTIME_NSEC
+	    dest->atime = src_stat->st_atim;
+	    dest->mtime = src_stat->st_mtim;
+	    dest->ctime = src_stat->st_ctim;
+	 #else
+	    dest->atime.tv_sec = src_stat->st_atime;
+	    dest->mtime.tv_sec = src_stat->st_mtime;
+	    dest->ctime.tv_sec = src_stat->st_ctime;
+	 #endif
+	    dest->itime =  CompareTimeSpec(&dest->mtime,&dest->ctime) > 0
+			? dest->mtime : dest->ctime;
 	    dest->size  = src_stat->st_size;
 	}
+	else
+	    ClearFileAttrib(dest);
 	dest->mode = src_stat->st_mode;
     }
+
     return dest;
 }
 
@@ -257,13 +280,13 @@ FileAttrib_t * MaxFileAttrib
 
     if (src_fa)
     {
-	if ( dest->mtime < src_fa->mtime ) dest->mtime = src_fa->mtime;
-	if ( dest->ctime < src_fa->ctime ) dest->ctime = src_fa->ctime;
-	if ( dest->atime < src_fa->atime ) dest->atime = src_fa->atime;
-	if ( dest->itime < src_fa->itime ) dest->itime = src_fa->itime;
+	if (CompareTimeSpec(&dest->atime,&src_fa->atime)<0) dest->atime = src_fa->atime;
+	if (CompareTimeSpec(&dest->mtime,&src_fa->mtime)<0) dest->mtime = src_fa->mtime;
+	if (CompareTimeSpec(&dest->ctime,&src_fa->ctime)<0) dest->ctime = src_fa->ctime;
+	if (CompareTimeSpec(&dest->itime,&src_fa->itime)<0) dest->itime = src_fa->itime;
 
-	if ( dest->size  < src_fa->size )  dest->size  = src_fa->size;
-
+	if ( dest->size < src_fa->size )
+	     dest->size = src_fa->size;
 	dest->mode = src_fa->mode;
     }
 
@@ -271,14 +294,53 @@ FileAttrib_t * MaxFileAttrib
     {
 	if ( S_ISREG(src_stat->st_mode) )
 	{
-	    if ( dest->mtime < src_stat->st_mtime ) dest->mtime = src_stat->st_mtime;
-	    if ( dest->ctime < src_stat->st_ctime ) dest->ctime = src_stat->st_ctime;
-	    if ( dest->atime < src_stat->st_atime ) dest->atime = src_stat->st_atime;
+	 #if HAVE_STATTIME_NSEC
+	    if ( CompareTimeSpec(&dest->atime,&src_stat->st_atim) < 0 )
+		dest->atime = src_stat->st_atim;
 
-	    if ( dest->itime < dest->mtime ) dest->itime = dest->mtime;
-	    if ( dest->itime < dest->ctime ) dest->itime = dest->ctime;
+	    if ( CompareTimeSpec(&dest->mtime,&src_stat->st_mtim) < 0 )
+		dest->mtime = src_stat->st_mtim;
 
-	    if ( dest->size  < src_stat->st_size ) dest->size  = src_stat->st_size;
+	    if ( CompareTimeSpec(&dest->ctime,&src_stat->st_ctim) < 0 )
+		dest->ctime = src_stat->st_ctim;
+
+	    if ( CompareTimeSpec(&dest->itime,&src_stat->st_mtim) < 0 )
+		dest->itime = src_stat->st_mtim;
+	    if ( CompareTimeSpec(&dest->itime,&src_stat->st_ctim) < 0 )
+		dest->itime = src_stat->st_ctim;
+	 #else
+	    if ( CompareTimeSpecTime(&dest->atime,src_stat->st_atime) < 0 )
+	    {
+		dest->atime.tv_sec  = src_stat->st_atime;
+		dest->atime.tv_nsec = 0;
+	    }
+
+	    if ( CompareTimeSpecTime(&dest->mtime,src_stat->st_mtime) < 0 )
+	    {
+		dest->mtime.tv_sec  = src_stat->st_mtime;
+		dest->mtime.tv_nsec = 0;
+	    }
+
+	    if ( CompareTimeSpecTime(&dest->ctime,src_stat->st_ctime) < 0 )
+	    {
+		dest->ctime.tv_sec  = src_stat->st_ctime;
+		dest->ctime.tv_nsec = 0;
+	    }
+
+	    if ( CompareTimeSpecTime(&dest->itime,src_stat->st_mtime) < 0 )
+	    {
+		dest->itime.tv_sec  = src_stat->st_mtime;
+		dest->itime.tv_nsec = 0;
+	    }
+	    if ( CompareTimeSpecTime(&dest->itime,src_stat->st_ctime) < 0 )
+	    {
+		dest->itime.tv_sec  = src_stat->st_ctime;
+		dest->itime.tv_nsec = 0;
+	    }
+	 #endif
+
+	    if ( dest->size < src_stat->st_size )
+		 dest->size = src_stat->st_size;
 	}
 	dest->mode = src_stat->st_mode;
     }
@@ -298,29 +360,62 @@ FileAttrib_t * NormalizeFileAttrib
     if ( fa->size < 0 )
 	fa->size = 0;
 
-    time_t mtime = fa->mtime;
-    if (!mtime)
+    if (IsTimeSpecNull(&fa->mtime))
     {
-	mtime = fa->itime;
-	if (!mtime)
-	{
-	    mtime = fa->ctime;
-	    if (!mtime)
-		mtime = fa->atime;
-	}
+	if (!IsTimeSpecNull(&fa->itime))
+	    fa->mtime = fa->itime;
+	else if (!IsTimeSpecNull(&fa->ctime))
+	    fa->mtime = fa->ctime;
     }
-    fa->mtime = mtime;
 
-    if (!fa->itime)
-	fa->itime = fa->ctime > mtime ? fa->ctime : mtime;
+    if (IsTimeSpecNull(&fa->itime))
+	fa->itime = CompareTimeSpec(&fa->ctime,&fa->mtime) > 0
+			? fa->ctime : fa->mtime;
 
-    if (!fa->ctime)
-	fa->ctime = fa->itime > mtime ? fa->itime : mtime;
+    if (IsTimeSpecNull(&fa->ctime))
+	fa->ctime = CompareTimeSpec(&fa->itime,&fa->mtime) > 0
+			? fa->itime : fa->mtime;
 
-    if (!fa->atime)
-	fa->atime = fa->itime > fa->ctime ? fa->itime : fa->ctime;
+    if (IsTimeSpecNull(&fa->atime))
+	fa->atime = CompareTimeSpec(&fa->itime,&fa->ctime) > 0
+			? fa->itime : fa->ctime;
 
     return fa;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// struct timespec helpers
+
+const struct timespec null_timespec = {0,0};
+
+///////////////////////////////////////////////////////////////////////////////
+
+int CompareTimeSpec0 ( const struct timespec *a, const struct timespec *b )
+{
+    if (!a) a = &null_timespec;
+    if (!b) b = &null_timespec;
+    return CompareTimeSpec(a,b);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void SetAMTimes ( ccp fname, const struct timespec times[2] )
+{
+ #ifdef UTIME_OMIT
+    utimensat(AT_FDCWD,fname,times,0);
+ #else
+    struct timeval tv[2];
+    tv[1].tv_sec  = times[1].tv_sec;
+    tv[1].tv_usec = times[1].tv_nsec / 1000;
+    if (IsTimeSpecNull(times+0))
+    {
+	tv[0].tv_sec  = times[0].tv_sec;
+	tv[0].tv_usec = times[0].tv_nsec / 1000;
+    }
+    else
+	tv[0] = tv[1];
+    utimes(fname,tv);
+ #endif
 }
 
 //
@@ -723,14 +818,8 @@ enumError CloseFile
 			TRACE("UNLINK %s\n",f->fname);
 			unlink(f->fname);
 		    }
-		    else if ( set_time == 1 && f->fatt.mtime )
-		    {
-			struct utimbuf ubuf;
-			ubuf.actime  = f->fatt.atime
-				     ? f->fatt.atime : f->fatt.mtime;
-			ubuf.modtime = f->fatt.mtime;
-			utime(f->fname,&ubuf);
-		    }
+		    else if ( set_time == 1 && !IsTimeSpecNull(&f->fatt.mtime) )
+			SetAMTimes(f->fname,f->fatt.times);
 		    else if ( set_time > 1 || f->fmode & FM_TOUCH )
 		    {
 			utime(f->fname,0);
@@ -1300,7 +1389,7 @@ s64 GetFileSize
     if ( stat(path,&st) || !S_ISREG(st.st_mode) )
     {
 	if ( fatt && !fatt_max )
-	    memset(fatt,0,sizeof(*fatt));
+	    ClearFileAttrib(fatt);
 	return not_found_val;
     }
 
@@ -1832,7 +1921,7 @@ enumError TransferFile
 	return ERR_MISSING_PARAM;
 
     if (IsSameFile(src,dest))
-	return ERR_OK;
+	return ERR_NOTHING_TO_DO;
 
     if ( tfer_mode & TFMD_J_MOVE1 )
     {
@@ -2601,6 +2690,47 @@ uint PrintLineBuffer
 ///////////////			file helpers			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+const char inode_type_char[INTY__N+1] = "?-+SLFBCDR";
+
+//-----------------------------------------------------------------------------
+
+inode_type_t GetInodeType ( int ret_status, mode_t md )
+{
+    return ret_status	? INTY_NOTFOUND
+	: S_ISREG(md)	? INTY_REG
+	: S_ISDIR(md)	? INTY_DIR
+	: S_ISCHR(md)	? INTY_CHAR
+	: S_ISBLK(md)	? INTY_BLOCK
+	: S_ISFIFO(md)	? INTY_FIFO
+	: S_ISLNK(md)	? INTY_LINK
+	: S_ISSOCK(md)	? INTY_SOCK
+	:		  INTY_AVAIL;
+}
+
+//-----------------------------------------------------------------------------
+
+inode_type_t GetInodeTypeByPath ( ccp path, mode_t *mode )
+{
+    struct stat st;
+    const int ret_status = stat(path,&st);
+    if (mode)
+	*mode = ret_status ? 0 : st.st_mode;
+    return GetInodeType(ret_status,st.st_mode);
+}
+
+//-----------------------------------------------------------------------------
+
+inode_type_t GetInodeTypeByFD ( int fd, mode_t *mode )
+{
+    struct stat st;
+    const int ret_status = fstat(fd,&st);
+    if (mode)
+	*mode = ret_status ? 0 : st.st_mode;
+    return GetInodeType(ret_status,st.st_mode);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 int IsDirectory
 (
     // analyse filename (last char == '/') and stat(fname)
@@ -2901,7 +3031,7 @@ enumError RemoveSource
 (
     ccp			fname,		// file to remove
     ccp			dest_fname,	// NULL or dest file name
-					//   If real pathes are same: don't remove
+					//   If real paths are same: don't remove
     bool		print_log,	// true: print a log message
     bool		testmode	// true: don't remove, log only
 )
@@ -3129,14 +3259,15 @@ char * NormalizeFileName
     uint		buf_size,	// size of buf
     ccp			source,		// NULL or source
     bool		allow_slash,	// true: allow '/' in source
-    bool		is_utf8		// true: enter UTF-8 mode
+    bool		is_utf8,	// true: enter UTF-8 mode
+    trailing_slash	slash_mode	// manipulate trailing slash
 )
 {
     DASSERT(buf);
     DASSERT(buf_size>1);
 
     char *dest = buf, *end = buf + buf_size - 1;
-    TRACE("NormalizeFileName(%s,%d)\n",source,allow_slash);
+    TRACE("NormalizeFileName(%s,%d,%d,%d)\n",source,allow_slash,is_utf8,slash_mode);
 
     if (source)
     {
@@ -3182,19 +3313,22 @@ char * NormalizeFileName
 				  || ch == 0xd6 // Ö
 				  || ch == 0xdc // Ü
 			    )
-			|| strchr("_+-=%'\"$%&,.!()[]{}<>",ch)
-			|| ch == '/' && allow_slash )
+			|| strchr("_+-=%'\"$%&#,.!()[]{}<>",ch)
+			)
 		{
 		    *dest++ = ch;
 		    skip_space = false;
 		}
 	     #ifdef __CYGWIN__
-		else if ( ch == '\\' && allow_slash )
+		else if ( ( ch == '/' || ch == '\\' ) && allow_slash )
+	     #else
+		else if ( ch == '/' && allow_slash )
+	     #endif
 		{
-		    *dest++ = '/';
+		    if ( dest == buf || dest[-1] != '/' )
+			*dest++ = '/';
 		    skip_space = false;
 		}
-	     #endif
 		else if (!skip_space)
 		{
 		    *dest++ = ' ';
@@ -3206,6 +3340,35 @@ char * NormalizeFileName
     if ( dest > buf && dest[-1] == ' ' )
 	dest--;
 
+    switch (slash_mode)
+    {
+     case TRSL_NONE:		// do nothing special
+	break;
+
+     case TRSL_AUTO:		// add trailing slash if it is a directory, remove otherwise
+	*dest = 0;
+	if (IsDirectory(buf,false))
+	    goto add_slash;
+	// fall through
+
+     case TRSL_REMOVE:		// remove trailing slash always
+	if ( dest > buf && dest[-1] == '/' )
+	    dest--;
+	break;
+
+     case TRSL_ADD_AUTO:	// add trailing slash if it is a directory
+	*dest = 0;
+	if (!IsDirectory(buf,false))
+	    break;
+	// fall through
+
+     case TRSL_ADD_ALWAYS:	// add trailing slash always
+	add_slash:
+	if ( dest > buf && dest < end && dest[-1] != '/' )
+	    *dest++ = '/';
+	break;
+    }
+
     DASSERT( dest <= end );
     *dest = 0;
     return dest;
@@ -3214,19 +3377,16 @@ char * NormalizeFileName
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifdef __CYGWIN__
-
- uint IsWindowsDriveSpec
- (
+uint IsWindowsDriveSpec
+(
     // returns the length of the found windows drive specification (0|2|3)
 
-    ccp			src		// valid string
- )
- {
-    DASSERT(src);
-
-    if ( ( *src >= 'a' && *src <= 'z' || *src >= 'A' && *src <= 'Z' )
-	&& src[1] == ':' )
+    ccp			src		// NULL or valid string
+)
+{
+    if ( src
+	&& src[1] == ':'
+	&& ( *src >= 'a' && *src <= 'z' || *src >= 'A' && *src <= 'Z' ) )
     {
 	if (!src[2])
 	    return 2;
@@ -3235,41 +3395,40 @@ char * NormalizeFileName
 	    return 3;
     }
     return 0;
- }
-
-#endif // __CYGWIN__
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifdef __CYGWIN__
-
- uint NormalizeFilenameCygwin
- (
+uint NormalizeFilenameCygwin
+(
     // returns a pointer to the NULL terminator within 'buf'
 
     char		* buf,		// valid destination buffer
     uint		buf_size,	// size of buf
     ccp			src		// NULL or source
- )
- {
+)
+{
     static char prefix[] = "/cygdrive/";
 
     if ( buf_size < sizeof(prefix) + 5 || !src )
     {
-	*buf = 0;
+	if ( buf && buf_size )
+	    *buf = 0;
 	return 0;
     }
 
     char * end = buf + buf_size - 1;
     char * dest = buf;
 
-    if (   ( *src >= 'a' && *src <= 'z' || *src >= 'A' && *src <= 'Z' )
+    if ( ( *src >= 'a' && *src <= 'z' || *src >= 'A' && *src <= 'Z' )
 	&& src[1] == ':'
 	&& ( src[2] == 0 || src[2] == '/' || src[2] == '\\' ))
     {
 	memcpy(buf,prefix,sizeof(prefix));
 	dest = buf + sizeof(prefix)-1;
 	*dest++ = tolower((int)*src); // cygwin needs the '(int)'
+ #ifdef __CYGWIN__
+	// this can only be checked with real Cygwin.
 	*dest = 0;
 	if (IsDirectory(buf,false))
 	{
@@ -3280,8 +3439,15 @@ char * NormalizeFileName
 	}
 	else
 	    dest = buf;
+ #else // 
+	*dest++ = '/';
+	src += 2;
+	if (*src)
+	    src++;
+ #endif
+
     }
-    ASSERT( dest < buf + buf_size );
+    DASSERT( dest < buf + buf_size );
 
     while ( dest < end && *src )
 	if ( *src == '\\' )
@@ -3295,29 +3461,367 @@ char * NormalizeFileName
     *dest = 0;
     ASSERT( dest < buf + buf_size );
     return dest - buf;
- }
-
-#endif // __CYGWIN__
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifdef __CYGWIN__
+exmem_t GetNormalizeFilenameCygwin
+(
+    // returns an object. Call FreeExMem(RESULT) to possible alloced memory.
 
- char * AllocNormalizedFilenameCygwin
- (
-    // returns an alloced buffer with the normalized filename
-
-    ccp source				// NULL or string
- )
- {
+    ccp		source,		// NULL or source
+    bool	try_circ	// use circ-buffer, if result is small enough
+)
+{
     char buf[PATH_MAX];
     const uint len = NormalizeFilenameCygwin(buf,sizeof(buf),source);
-    char * result = MEMDUP(buf,len); // MEMDUP allocs +1 byte and set it to NULL
-    DASSERT(buf[len]==0);
-    return result;
- }
+    return AllocExMemS(buf,len,try_circ,source,-1);
+}
 
-#endif // __CYGWIN__
+///////////////////////////////////////////////////////////////////////////////
+
+char * AllocNormalizedFilenameCygwin
+(
+    // returns an alloced buffer with the normalized filename
+
+    ccp		source,		// NULL or source
+    bool	try_circ	// use circ-buffer, if result is small enough
+)
+{
+    char buf[PATH_MAX];
+    const uint len = NormalizeFilenameCygwin(buf,sizeof(buf),source);
+    return AllocCircBuf(buf,len,try_circ);
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			search file & config		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void ResetSearchFile ( search_file_list_t *sfl )
+{
+    if (sfl)
+    {
+	if (sfl->list)
+	{
+	    uint i;
+	    search_file_t *sf =  sfl->list;
+	    for ( i = 0; i < sfl->used; i++, sf++ )
+		if (sf->alloced)
+		    FreeString(sf->fname);
+	    FREE(sfl->list);
+	}
+
+	ResetEML(&sfl->symbols);
+	InitializeSearchFile(sfl);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+search_file_t * AppendSearchFile
+(
+    search_file_list_t *sfl,	// valid search list, new files will be appended
+    ccp		fname,		// path+fname to add
+    CopyMode_t	copy_mode,	// copy mode for 'fname'
+    ccp		append_if_dir	// append this if 'fname' is a directory
+)
+{
+    search_file_t *res = 0;
+    if ( fname && *fname )
+    {
+ #if 0
+	ccp rpath = realpath(fname,0);
+	if (rpath)
+	{
+	    if ( copy_mode == CPM_MOVE )
+		FreeString(fname);
+	    fname = rpath;
+	    copy_mode = CPM_MOVE;
+	}
+ #endif
+
+	uint i;
+	search_file_t *sf =  sfl->list;
+	for ( i = 0; i < sfl->used; i++, sf++ )
+	{
+	    if (!strcmp(sf->fname,fname))
+	    {
+		res = sf;
+		goto end;
+	    }
+	}
+	DASSERT( i == sfl->used );
+
+
+	//-- check for directory
+
+	const inode_type_t itype = GetInodeTypeByPath(fname,0);
+	if ( itype == INTY_DIR && append_if_dir )
+	{
+	    char buf[PATH_MAX];
+	    ccp fname2 = PathCatPP(buf,sizeof(buf),fname,append_if_dir);
+	    res = AppendSearchFile(sfl,fname2,CPM_COPY,0);
+	}
+	else
+	{
+	    if ( sfl->used == sfl->size )
+	    {
+		sfl->size += sfl->size/8 + 20;
+		sfl->list = REALLOC(sfl->list,sfl->size*sizeof(*sfl->list));
+	    }
+
+	    res = sfl->list + sfl->used++;
+	    memset(res,0,sizeof(*res));
+	    res->itype = itype;
+	    res->fname = CopyData(fname,strlen(fname)+1,copy_mode,&res->alloced);
+	    fname = 0;
+	}
+    }
+
+ end:
+    if ( fname && copy_mode == CPM_MOVE )
+	FreeString(fname);
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void DumpSearchFile ( FILE *f, int indent,
+			const search_file_list_t *sfl, bool show_symbols, ccp info )
+{
+    if ( f && sfl && ( sfl->used || show_symbols && sfl->symbols.used ))
+    {
+	indent = NormalizeIndent(indent);
+	fprintf(f,"%*s%s%s" "SearchList %p, N=%u/%u\n",
+		indent,"", info ? info : "", info ? " : " : "",
+		sfl, sfl->used, sfl->size );
+
+	char buf[20];
+	const int fw_idx = indent
+			+ snprintf(buf,sizeof(buf),"%d",sfl->used)
+			+ ( show_symbols ? 3 : 1 );
+
+	uint idx = 0;
+	search_file_t *ptr, *end = sfl->list + sfl->used;
+	for ( ptr = sfl->list; ptr < end; ptr++, idx++ )
+	    fprintf(f,"%*d [%c,%c:%02x] %s\n",
+		fw_idx, idx,
+		ptr->alloced ? 'A' : '-',
+		inode_type_char[ptr->itype], ptr->hint, ptr->fname );
+
+	if (show_symbols)
+	    DumpEML(f,indent+2,&sfl->symbols,"Symbols");
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+uint SearchConfig1
+(
+    search_file_list_t *sfl,
+			// valid search list, new file will be appended
+    ccp config_fname,	// default filename (without path) of config file
+
+    ccp option,		// NULL or filename by option		=> CONF_HINT_OPT
+    ccp home_path,	// NULL or home path for config file	=> CONF_HINT_HOME
+    ccp etc_path,	// NULL or etc path for config file	=> CONF_HINT_ETC
+    ccp share_path,	// NULL or share path for config file	=> CONF_HINT_MISC
+
+    int stop_mode	// >0: stop if found, >1: stop on option
+
+    // hints (by source, values=prio): 8:option, 4:home, 2:etc, 1:prog-path
+)
+{
+    DASSERT(sfl);
+    char buf[PATH_MAX];
+
+    uint count = 0;
+    search_file_t *sf;
+    if ( option && *option )
+    {
+	sf = AppendSearchFile(sfl,option,CPM_COPY,config_fname);
+	if (sf)
+	{
+	    sf->hint |= CONF_HINT_OPT;
+	    if ( sf->itype == INTY_REG && ++count && stop_mode > 0 )
+		return 1;
+	    if ( stop_mode > 1 )
+		return 0;
+	}
+    }
+
+    if (home_path)
+    {
+	ccp home = getenv("HOME");
+	if (home)
+	    home_path = PathCatPP(buf,sizeof(buf),home,home_path);
+	sf = AppendSearchFile(sfl,home_path,CPM_COPY,config_fname);
+	if (sf)
+	{
+	    sf->hint |= CONF_HINT_HOME;
+	    if ( sf->itype == INTY_REG && ++count && stop_mode > 0 )
+		return 1;
+	}
+    }
+
+    if (etc_path)
+    {
+	sf = AppendSearchFile(sfl,etc_path,CPM_COPY,config_fname);
+	if (sf)
+	{
+	    sf->hint |= CONF_HINT_ETC;
+	    if ( sf->itype == INTY_REG && ++count && stop_mode > 0 )
+		return 1;
+	}
+    }
+
+    if (share_path)
+    {
+	sf = AppendSearchFile(sfl,share_path,CPM_COPY,config_fname);
+	if (sf)
+	{
+	    sf->hint |= CONF_HINT_MISC;
+	    if ( sf->itype == INTY_REG && ++count && stop_mode > 0 )
+		return 1;
+	}
+    }
+
+    ccp progpath = ProgramDirectory();
+    if (progpath)
+    {
+	sf = AppendSearchFile(sfl,progpath,CPM_COPY,config_fname);
+	if (sf)
+	{
+	    sf->hint |= CONF_HINT_INST;
+	    if ( sf->itype == INTY_REG && ++count && stop_mode > 0 )
+		return 1;
+	}
+    }
+
+    return count;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static int add_search
+(
+    // returns 0 if !stop_if_found, 2 if added+found, 1 if added, 0 else
+
+    search_file_list_t *sfl,	// valid data
+    ccp		config_fname,	// default filename (without path) of config file 
+    ccp		*list,		// NULL or list of filenames
+    int		n_list,		// num of 'list' elements, -1:null terminated list
+    ccp		prefix,		// prefix for relative filenames
+    uint	hint,		// attributes
+    int		stop_if_found	// >0: stop if file found
+)
+{
+    DASSERT(sfl);
+    if (!list)
+	return 0;
+
+    if ( n_list < 0 )
+    {
+	ccp *ptr;
+	for ( ptr = list; *ptr; ptr++ )
+	    ;
+	n_list = ptr - list;
+    }
+    if (!n_list)
+	return 0;
+
+    int ret_val = 0;
+    char buf[PATH_MAX];
+    for ( ; n_list > 0; n_list--, list++ )
+    {
+	if (!*list)
+	    continue;
+
+	ccp path = **list == '/' || !prefix || !*prefix
+		? *list
+		: PathCatPP(buf,sizeof(buf),prefix,*list);
+	exmem_t res = ResolveSymbolsEML(&sfl->symbols,path);
+	search_file_t *sf = AppendSearchFile( sfl, res.data.ptr,
+				res.is_alloced ? CPM_MOVE : CPM_COPY, config_fname );
+	if (sf)
+	{    
+	    sf->hint |= hint;
+	    if ( sf->itype == INTY_REG && stop_if_found > 0 )
+		return 2;
+	    ret_val = 1;
+	}
+    }
+
+    return stop_if_found > 0 ? ret_val : 0;
+}
+
+//-----------------------------------------------------------------------------
+
+bool SearchConfig
+(
+    // for all paths:
+    //	/...		is an absolute path
+    //  $(home)/...	path relative to getenv("HOME")
+    //  $(xdg_home)/...	path relative to first path of getenv("XDG_CONFIG_HOME")
+    //  $(xdg_etc)/...	path relative to first path of getenv("XDG_CONFIG_DIRS")
+    //  $(etc)/...	path relative to /etc directory
+    //  $(install)/...	path relative to installation directory = ProgramDirectory()
+    //  $(NAME)/...	path relative to symbol in sfl->symbols
+    //  xx		relative paths otherwise
+
+    search_file_list_t *sfl,
+			// valid search list, new paths will be appended
+			// sfl->symbols: home, etc and install are added (not replaced)
+			//	It is used to resolve all $(NAME) references.
+
+    ccp config_fname,	// default filename (without path) of config file
+
+    ccp *option,	// NULL or filenames by option		=> CONF_HINT_OPT
+     int n_option,	//  num of 'option' elements, -1:null terminated list
+    ccp *xdg_home,	// NULL or $(xdg_home) based paths	=> CONF_HINT_HOME
+     int n_xdg_home,	//  num of 'home' elements, -1:null terminated list
+    ccp *home,		// NULL or $(home) based paths		=> CONF_HINT_HOME
+     int n_home,	//  num of 'home' elements, -1:null terminated list
+    ccp *etc,		// NULL or $(etc) based paths		=> CONF_HINT_ETC
+     int n_etc,		//  num of 'etc' elements, -1:null terminated list
+    ccp *install,	// NULL or $(install) based paths 	=> CONF_HINT_INST
+     int n_install,	//  num of 'install' elements, -1:null terminated list
+    ccp *misc,		// NULL or absolute paths		=> CONF_HINT_MISC
+     int n_misc,	//  num of 'misc' elements, -1:null terminated list
+
+    int stop_mode	// >0: stop if found, >1: stop on option
+)
+{
+    // ==> see: https://wiki.archlinux.org/index.php/XDG_Base_Directory
+
+    DASSERT(sfl);
+    AddStandardSymbolsEML(&sfl->symbols,false);
+
+    int stat = add_search(sfl,config_fname,option,n_option,0,CONF_HINT_OPT,stop_mode);
+    if ( stat > 1 )
+	return true;
+    if ( stop_mode > 1 && stat )
+	return false;
+
+    if (add_search(sfl,config_fname,xdg_home,n_xdg_home,"$(xdg_home)",CONF_HINT_HOME,stop_mode)>1)
+	return true;
+
+    if (add_search(sfl,config_fname,home,n_home,"$(home)",CONF_HINT_HOME,stop_mode)>1)
+	return true;
+
+    if (add_search(sfl,config_fname,etc,n_etc,"$(xdg_etc)",CONF_HINT_ETC,stop_mode)>1)
+	return true;
+
+    if (add_search(sfl,config_fname,etc,n_etc,"$(etc)",CONF_HINT_ETC,stop_mode)>1)
+	return true;
+
+    if (add_search(sfl,config_fname,install,n_install,"$(install)",CONF_HINT_INST,stop_mode)>1)
+	return true;
+
+    return add_search(sfl,config_fname,misc,n_misc,0,CONF_HINT_MISC,stop_mode)>1;
+}
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -4075,6 +4579,81 @@ int ScanSections
 ///////////////			scan configuration		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+void ResetRestoreState ( RestoreState_t *rs )
+{
+    if (rs)
+    {
+	ResetParamField(&rs->param);
+	InitializeRestoreState(rs);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enumError ScanRestoreState
+(
+    RestoreState_t	*rs,		// valid control
+    void		*data,		// file data, modified, terminated by NULL or LF
+    uint		size,		// size of file data
+    void		**end_data	// not NULL: store end of analysed here
+)
+{
+    DASSERT(rs);
+    DASSERT(data||!size);
+    if (!size)
+	return ERR_OK;
+
+    char *ptr = data;
+    char *end = ptr + size;
+
+    if (!rs->param.field)
+	InitializeParamField(&rs->param);
+
+    //--- scan name=value
+
+    while ( ptr < end )
+    {
+	//--- skip lines and blanks
+	while ( ptr < end && (uchar)*ptr <= ' ' )
+	    ptr++;
+
+	if ( *ptr == '[' )
+	    break;
+
+	//--- scan name
+	ccp name = ptr;
+	while ( *ptr >= '!' && *ptr <= '~' && *ptr != '=' )
+	    ptr++;
+	char *name_end = ptr;
+
+	//--- scan param
+	while ( *ptr == ' ' || *ptr == '\t' )
+	    ptr++;
+	if ( *ptr != '=' )
+	    continue;
+	if ( *++ptr == ' ' ) // skip max 1 space
+	    ptr++;
+
+	ccp value = ptr;
+	while ( (uchar)*ptr >= ' ' || *ptr == '\t' )
+	    ptr++;
+
+	*name_end = *ptr = 0;
+	InsertParamField(&rs->param,name,false,0,value);
+
+	//--- next line
+	while ( ptr < end && *ptr && *ptr != '\n' )
+	    ptr++;
+    }
+
+    if (end_data)
+	*end_data = ptr;
+
+    return ERR_OK;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 enumError RestoreState
 (
     const RestoreStateTab_t
@@ -4206,8 +4785,9 @@ enumError RestoreState
 	}
 	#endif
 
-	tab->func(&rs,tab->user_table);
-	if ( log_mode & RSL_UNUSED_NAMES )
+	if (tab->func)
+	    tab->func(&rs,tab->user_table);
+	if ( log_file && log_mode & RSL_UNUSED_NAMES )
 	{
 	    ParamFieldItem_t *ptr = rs.param.field, *end;
 	    for ( end = ptr + rs.param.used; ptr < end; ptr++ )
@@ -4224,7 +4804,7 @@ enumError RestoreState
 				ptr->key, len, (ccp)ptr->data );
 		}
 	}
-	ResetParamField(&rs.param);
+	ResetRestoreState(&rs);
     }
 
     return ERR_OK;
@@ -4737,68 +5317,50 @@ void SaveCurrentStateByTable
 	    break;
 
 	case SRT_FLOAT:
-	    switch(srt->size)
+	    if ( srt->size == sizeof(float) )
 	    {
-	     case sizeof(float):
-		{
-		    const u8 *d = data + srt->offset;
-		    for ( i = 0; i < n_elem; i++, d += elem_off )
-			fprintf(f, "%s%.8g", i ? "," : "", *(float*)d );
-		}
-		break;
-
-	     case sizeof(double):
-		{
-		    const u8 *d = data + srt->offset;
-		    for ( i = 0; i < n_elem; i++, d += elem_off )
-			fprintf(f, "%s%.16g", i ? "," : "", *(double*)d );
-		}
-		break;
-
-	     case sizeof(long double):
-		{
-		    const u8 *d = data + srt->offset;
-		    for ( i = 0; i < n_elem; i++, d += elem_off )
-			fprintf(f, "%s%.20Lg", i ? "," : "", *(long double*)d );
-		}
-		break;
-
-	      default:
-		fputs("0.0",f);
+		const u8 *d = data + srt->offset;
+		for ( i = 0; i < n_elem; i++, d += elem_off )
+		    fprintf(f, "%s%.8g", i ? "," : "", *(float*)d );
 	    }
+	    else if ( srt->size == sizeof(double) )
+	    {
+		const u8 *d = data + srt->offset;
+		for ( i = 0; i < n_elem; i++, d += elem_off )
+		    fprintf(f, "%s%.16g", i ? "," : "", *(double*)d );
+	    }
+	    else if ( srt->size == sizeof(long double) )
+	    {
+		const u8 *d = data + srt->offset;
+		for ( i = 0; i < n_elem; i++, d += elem_off )
+		    fprintf(f, "%s%.20Lg", i ? "," : "", *(long double*)d );
+	    }
+	    else
+		fputs("0.0",f);
 	    fputc('\n',f);
 	    break;
 
 	case SRT_XFLOAT:
-	    switch(srt->size)
+	    if ( srt->size == sizeof(float) )
 	    {
-	     case sizeof(float):
-		{
-		    const u8 *d = data + srt->offset;
-		    for ( i = 0; i < n_elem; i++, d += elem_off )
-			fprintf(f, "%s%a", i ? "," : "", *(float*)d );
-		}
-		break;
-
-	     case sizeof(double):
-		{
-		    const u8 *d = data + srt->offset;
-		    for ( i = 0; i < n_elem; i++, d += elem_off )
-			fprintf(f, "%s%a", i ? "," : "", *(double*)d );
-		}
-		break;
-
-	     case sizeof(long double):
-		{
-		    const u8 *d = data + srt->offset;
-		    for ( i = 0; i < n_elem; i++, d += elem_off )
-			fprintf(f, "%s%La", i ? "," : "", *(long double*)d );
-		}
-		break;
-
-	      default:
-		fputs("0.0",f);
+		const u8 *d = data + srt->offset;
+		for ( i = 0; i < n_elem; i++, d += elem_off )
+		    fprintf(f, "%s%a", i ? "," : "", *(float*)d );
 	    }
+	    else if ( srt->size == sizeof(double) )
+	    {
+		const u8 *d = data + srt->offset;
+		for ( i = 0; i < n_elem; i++, d += elem_off )
+		    fprintf(f, "%s%a", i ? "," : "", *(double*)d );
+	    }
+	    else if ( srt->size == sizeof(long double) )
+	    {
+		const u8 *d = data + srt->offset;
+		for ( i = 0; i < n_elem; i++, d += elem_off )
+		    fprintf(f, "%s%La", i ? "," : "", *(long double*)d );
+	    }
+	    else
+		fputs("0.0",f);
 	    fputc('\n',f);
 	    break;
 
@@ -5039,12 +5601,12 @@ void RestoreStateByTable
 		uint i = 0;
 		while (*src)
 		{
-		    switch(srt->size)
-		    {
-		     case sizeof(float):	*(float*)val = strtof(src,&src); break;
-		     case sizeof(double):	*(double*)val = strtod(src,&src); break;
-		     case sizeof(long double):	*(long double*)val = strtold(src,&src); break;
-		    }
+		    if ( srt->size == sizeof(float) )
+			*(float*)val = strtof(src,&src);
+		    else if ( srt->size == sizeof(double) )
+			*(double*)val = strtod(src,&src);
+		    else if ( srt->size == sizeof(long double) )
+			*(long double*)val = strtold(src,&src);
 		    if ( ++i == n_elem )
 			break;
 		    val += elem_off;
@@ -5169,7 +5731,7 @@ void RestoreStateByTable
 	    break;
 	}
       }
-    }    
+    }
 }
 
 //
@@ -5526,6 +6088,380 @@ ccp PrintOpenFiles ( bool count_current )
 	stat_file_count.cur_limit,
 	stat_file_count.max_limit );
 };
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			PrintScript			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetNamePSFF ( PrintScriptFF fform )
+{
+    switch(fform)
+    {
+	case PSFF_UNKNOWN:	return "TEXT";
+	case PSFF_ASSIGN:	return "ASSIGN";
+	case PSFF_CONFIG:	return "CONFIG";
+	case PSFF_JSON:		return "JSON";
+	case PSFF_BASH:		return "BASH";
+	case PSFF_SH:		return "SH";
+	case PSFF_PHP:		return "PHP";
+	case PSFF_MAKEDOC:	return "MDOC";
+	case PSFF_C:		return "C";
+    }
+    return "???";
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void PrintScriptHeader ( PrintScript_t *ps )
+{
+    DASSERT(ps);
+
+    ps->index = 0;
+    ps->add_index = false;
+    ps->sep[0] = ps->sep[1] = 0;
+
+    if ( !ps->var_name || !*ps->var_name )
+	ps->var_name = "res";
+    if ( !ps->var_prefix )
+	ps->var_prefix = "";
+
+    if ( ps->f )
+    {
+	switch (ps->fform)
+	{
+	    case PSFF_JSON:
+		if (ps->create_array)
+		    fputs("[",ps->f);
+		ps->boc = 0;
+		break;
+
+	    case PSFF_SH:
+	       ps->add_index =ps->create_array;
+		ps->boc = "#";
+	       break;
+
+	    case PSFF_PHP:
+		if (ps->create_array)
+		    fprintf(ps->f,"$%s = array();\n\n",ps->var_name);
+		ps->boc = "#";
+		break;
+
+	    case PSFF_MAKEDOC:
+		if (ps->create_array)
+		    fprintf(ps->f,"%s = @LIST\n\n",ps->var_name);
+		ps->boc = "#!";
+		break;
+
+	    case PSFF_C:
+		if (ps->create_array)
+		    fprintf(ps->f,"%s = @LIST\n\n",ps->var_name);
+		ps->boc = "//";
+		break;
+
+	    default:
+		//fputc('\n',ps->f);
+		ps->boc = "#";
+		break;
+	}
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void PrintScriptFooter ( PrintScript_t *ps )
+{
+    DASSERT(ps);
+
+    if (ps->f)
+    {
+	switch (ps->fform)
+	{
+	    case PSFF_JSON:
+		if (ps->create_array)
+		    fputs("]\n",ps->f);
+		break;
+
+	    case PSFF_SH:
+		if (ps->create_array)
+		    fprintf(ps->f,"%sN=%u\n\n",ps->var_prefix,ps->index);
+		break;
+
+	    case PSFF_PHP:
+		fputs("?>\n",ps->f);
+		break;
+
+	    default:
+		break;
+	}
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int PutScriptVars
+(
+    PrintScript_t	*ps,		// valid control struct
+    uint		mode,		// bit field: 1=open var, 2:close var
+    ccp			text		// text with lines of format NAME=VALUE
+)
+{
+    FILE * f = ps ? ps->f : 0;
+    if (!f)
+	return 0;
+    DASSERT(ps);
+
+
+    //--- begin of output
+
+    if ( mode & 1 )
+    {
+	ps->count = 0;
+
+	if ( ps->add_index )
+	    snprintf( ps->prefix, sizeof(ps->prefix),
+		"%s%u", ps->var_prefix, ps->index );
+	else
+	    StringCopyS( ps->prefix, sizeof(ps->prefix), ps->var_prefix );
+
+	switch (ps->fform)
+	{
+	 case PSFF_JSON:
+	    fprintf(f,"%s{",ps->sep);
+	    ps->sep[0] = ',';
+	    break;
+
+	 case PSFF_PHP:
+	    fputs("$d = new \\stdClass;\n",f);
+	    break;
+
+	 case PSFF_MAKEDOC:
+	    fprintf(f,"d = @MAP\n");
+	    break;
+
+	 default:
+	    break;
+	}
+    }
+
+
+    //--- print var lines
+
+    ccp ptr = text ? text : "";
+    char varbuf[200];
+
+    for(;;)
+    {
+	if ( ps->ena_empty && ps->boc )
+	{
+	    while ( *ptr == ' ' || *ptr == '\t' )
+		ptr++;
+	    if ( *ptr == '\n' )
+	    {
+		ptr++;
+		fputc('\n',f);
+		continue;
+	    }
+	}
+	else
+	    while ( *ptr && (uchar)*ptr <= ' ' )
+		ptr++;
+
+	if ( *ptr == '#' )
+	{
+	    ccp comment = ++ptr;
+	    while ( (uchar)*ptr >= ' ' )
+		ptr++;
+	    if ( ps->ena_comments && ps->boc )
+		fprintf(f,"%s%.*s\n",ps->boc,(int)(ptr-comment),comment);
+	    goto next_line;
+	}
+
+	ccp varname = ptr;
+	while ( *ptr && *ptr != '=' )
+	    ptr++;
+	if ( *ptr != '=' || ptr == varname )
+	    break;
+
+	const int varlen = ptr - varname;
+	if ( ps->force_case <= LOUP_LOWER )
+	{
+	    MemLowerS(varbuf,sizeof(varbuf),MemByS(varname,varlen));
+	    varname = varbuf;
+	}
+	else if ( ps->force_case >= LOUP_UPPER )
+	{
+	    varname = MemUpperS(varbuf,sizeof(varbuf),MemByS(varname,varlen));
+	    varname = varbuf;
+	}
+
+	ccp quote, param;
+	uint plen, free_param = 0;
+	if ( *++ptr == '"' )
+	{
+	    ptr++;
+	    param = ptr;
+	    if (ps->auto_quote)
+	    {
+		quote = EmptyString;
+		while ( *ptr && *ptr != '"' )
+		{
+		    if ( *ptr == '\\' && ptr[1] )
+			ptr++;
+		    ptr++;
+		}
+		param = EscapeString(param,ptr-param,EmptyString,EmptyString,CHMD__MODERN,
+				ps->fform == PSFF_BASH ? '$' : '"', true, &plen );
+		free_param++;
+	    }
+	    else
+	    {
+		quote = "\"";
+		while ( *ptr && !( ptr[0] == '"' && ptr[1] == '\n' ))
+		    ptr++;
+		plen = ptr - param;
+	    }
+	    if ( *ptr == '"' )
+		ptr++;
+	}
+	else
+	{
+	    param = ptr;
+	    quote = EmptyString;
+	    while ( *ptr && *ptr != '\n' )
+		ptr++;
+	    plen = ptr - param;
+	}
+
+	switch (ps->fform)
+	{
+	 case PSFF_ASSIGN:
+	    fprintf(f, "%.*s = %s%.*s%s\n",
+			varlen, varname, quote, plen, param, quote );
+	    break;
+
+	 case PSFF_CONFIG:
+	    if ( ps->eq_tabstop > 0 )
+	    {
+		int tabs = ps->eq_tabstop - varlen/8;
+		if ( tabs < 0 )
+		    tabs = 0;
+		fprintf(f, "%.*s%.*s= %.*s\n",
+			varlen, varname, tabs, Tabs20, plen, param );
+	    }
+	    else
+		fprintf(f, "%.*s = %.*s\n",
+			varlen, varname, plen, param );
+	    break;
+
+	 case PSFF_JSON:
+	    fprintf(f, "%s\"%.*s\":%s%.*s%s",
+			ps->count ? "," : "",
+			varlen, varname, quote, plen, param, quote );
+	    break;
+
+	 case PSFF_BASH:
+	    if (ps->create_array)
+	    {
+		fprintf(f, "%s%.*s%s=(%s%.*s%s)\n",
+			ps->prefix,
+			varlen, varname, ps->index ? "+" : "", quote, plen, param, quote );
+		break;
+	    }
+	    // fall through
+
+	 case PSFF_SH:
+	    fprintf(f, "%s%.*s=%s%.*s%s\n",
+			ps->prefix, varlen, varname, quote, plen, param, quote );
+	    break;
+
+	 case PSFF_PHP:
+	 case PSFF_C:
+	    fprintf(f, "$d->%.*s = %s%.*s%s;\n",
+			varlen, varname, quote, plen, param, quote );
+	    break;
+
+	 case PSFF_MAKEDOC:
+	    fprintf(f, "d[\"%.*s\"] = %s%.*s%s\n",
+			varlen, varname, quote, plen, param, quote );
+	    break;
+
+	 default:
+	    fprintf(f, "%*.*s = %s%.*s%s\n",
+			ps->var_size > 0 ? ps->var_size : 20,
+			varlen, varname, quote, plen, param, quote );
+	    break;
+	}
+	ps->count++;
+	if (free_param)
+	    FreeString(param);
+
+	//-- skip to next line
+     next_line:
+	while ( *ptr && (uchar)*ptr <= ' ' && *ptr != '\n' )
+	    ptr++;
+	if ( *ptr == '\n' )
+	    ptr++;
+    }
+
+
+    //--- end of output
+
+    if ( mode & 2 )
+    {
+	switch (ps->fform)
+	{
+	 case PSFF_JSON:
+	    fputs("}\n",f);
+	    break;
+
+	 case PSFF_PHP:
+	    fprintf(f, "$%s%s = $d;\n\n",
+			ps->var_name, ps->create_array ? "[]" : "" );
+	    break;
+
+	 case PSFF_MAKEDOC:
+	    fprintf(f, "%s %s= move(d);\n\n",
+			ps->var_name, ps->create_array ? "#" : "" );
+	    break;
+
+	 default:
+	    fputc('\n',f);
+	    break;
+	}
+	fflush(f);
+    }
+
+    ps->index++;
+    return ps->count;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int PrintScriptVars
+(
+    PrintScript_t	*ps,		// valid control struct
+    uint		mode,		// bit field: 1=open var, 2:close var
+    ccp			format,		// format of message
+    ...					// arguments
+
+)
+{
+    DASSERT(ps);
+
+    char buf[5000];
+    if (format)
+    {
+	va_list arg;
+	va_start(arg,format);
+	vsnprintf(buf,sizeof(buf),format,arg);
+	va_end(arg);
+    }
+    else
+	*buf = 0;
+
+    return PutScriptVars(ps,mode,buf);
+}
 
 //
 ///////////////////////////////////////////////////////////////////////////////

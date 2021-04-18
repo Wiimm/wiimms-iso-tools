@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -711,13 +711,29 @@ void write_lef4n ( float32 * dest, const float32 * src, int n )
 
 ///////////////////////////////////////////////////////////////////////////////
 
+static inline u16 ident16 ( u16 data ) { return data; }
+static inline u32 ident32 ( u32 data ) { return data; }
+static inline u64 ident64 ( u64 data ) { return data; }
+
+static inline u16 reverse16 ( u16 data ) { return swap16(&data); }
+static inline u32 reverse32 ( u32 data ) { return swap32(&data); }
+static inline u64 reverse64 ( u64 data ) { return swap64(&data); }
+
 const endian_func_t be_func =
 {
     {0xfe,0xff}, true, false, DC_BIG_ENDIAN,
     be16, be24, be32, be40, be48, be56, be64, bef4, bef8,
     write_be16, write_be24, write_be32,
     write_be40, write_be48, write_be56, write_be64,
-    write_bef4, write_bef8
+    write_bef4, write_bef8,
+
+ #if IS_BIG_ENDIAN
+    ident16, ident32, ident64,
+    ident16, ident32, ident64,
+ #else
+    reverse16, reverse32, reverse64,
+    reverse16, reverse32, reverse64,
+ #endif
 };
 
 const endian_func_t le_func =
@@ -726,7 +742,15 @@ const endian_func_t le_func =
     le16, le24, le32, le40, le48, le56, le64, lef4, lef8,
     write_le16, write_le24, write_le32,
     write_le40, write_le48, write_le56, write_le64,
-    write_lef4, write_lef8
+    write_lef4, write_lef8,
+
+ #if IS_LITTLE_ENDIAN
+    ident16, ident32, ident64,
+    ident16, ident32, ident64,
+ #else
+    reverse16, reverse32, reverse64,
+    reverse16, reverse32, reverse64,
+ #endif
 };
 
 const endian_func_t * GetEndianFunc ( const void * byte_order_mark )
@@ -854,6 +878,72 @@ int CheckIndex2End ( int max, int * p_begin, int * p_end )
     return end - begin;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
+int CheckIndexC ( int max, int * p_begin, int count )
+{
+    DASSERT( max >= 0 );
+    DASSERT(p_begin);
+
+    int begin = *p_begin, end = begin + count;
+    if ( begin < 0 )
+    {
+	begin += max;
+	end = begin + count;
+	if ( begin < 0 )
+	    begin = 0;
+    }
+    else if ( begin > max )
+	begin = max;
+
+    if ( end < 0 )
+	end = 0;
+    else if ( end > max )
+	end = max;
+
+    if ( end < begin )
+    {
+	*p_begin = end;
+	return begin-end;
+    }
+
+    *p_begin = begin;
+    return end - begin;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int CheckIndexCEnd ( int max, int * p_begin, int count )
+{
+    DASSERT( max >= 0 );
+    DASSERT(p_begin);
+
+    int begin = *p_begin, end = begin + count;
+    if ( begin <= 0 )
+    {
+	begin += max;
+	end = begin + count;
+	if ( begin < 0 )
+	    begin = 0;
+    }
+    else if ( begin > max )
+	begin = max;
+
+    if ( end < 0 )
+	end = 0;
+    else if ( end > max )
+	end = max;
+
+    if ( end < begin )
+    {
+	*p_begin = end;
+	return begin-end;
+    }
+
+    *p_begin = begin;
+    return end - begin;
+}
+
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			encoding/decoding		///////////////
@@ -878,19 +968,82 @@ ccp GetEncodingName ( EncodeMode_t em )
 
 ///////////////////////////////////////////////////////////////////////////////
 
+uint GetEscapedSize
+(
+    // returns the needed buffer size for PrintEscapedString() 
+
+    ccp		source,		// NULL or string to print
+    int		src_len,	// length of string. if -1, str is null terminated
+    CharMode_t	char_mode,	// modes, bit field (CHMD_*)
+    char	quote		// NULL or quotation char, that must be quoted
+)
+{
+    const CharMode_t utf8	= char_mode & CHMD_UTF8;
+    const CharMode_t allow_e	= char_mode & CHMD_ESC;
+
+    if ( !source || !*source )
+	return 1;
+    ccp str = source;
+    ccp end = src_len < 0 ? 0 : str + src_len;
+
+    uint size = 4; // +4 for escapes at end; +1 for NULL terminator
+    while ( !end || str < end )
+    {
+	const u8 ch = (u8)*str++;
+	switch (ch)
+	{
+	    case 0:
+		if (!end)
+		    return size;
+		size += 4;
+		break;
+
+	    case '\\':
+	    case '\a':
+	    case '\b':
+	    case '\f':
+	    case '\n':
+	    case '\r':
+	    case '\t':
+	    case '\v':
+		size += 2;
+		break;
+
+	    case '\033':
+		size += allow_e ? 2 : 4;
+		break;
+
+	    default:
+		if ( ch == quote )
+		    size += 2;
+		else if ( ch < ' ' || !utf8 && (ch&0x7f) < ' ' || (ch&0x7f) == 0x7f )
+		    size += 4;
+		else
+		    size++;
+	}
+    }
+    return size;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 char * PrintEscapedString
 (
     // returns 'buf'
 
     char	*buf,		// valid destination buffer
     uint	buf_size,	// size of 'buf', >= 10
-    ccp		source,		// NULL string to print
+    ccp		source,		// NULL or string to print
     int		len,		// length of string. if -1, str is null terminated
     CharMode_t	char_mode,	// modes, bit field (CHMD_*)
     char	quote,		// NULL or quotation char, that must be quoted
     uint	*dest_len	// not NULL: Store length of result here
 )
 {
+    /////////////////////////////////////////////////////////
+    /////  Update GetEscapedSize() on modifications!!   /////
+    /////////////////////////////////////////////////////////
+
     DASSERT(buf);
     DASSERT(buf_size>=10);
 
@@ -971,7 +1124,7 @@ char * PrintEscapedString
 
 uint ScanEscapedString
 (
-    // returns the number of valid bytes in 'buf' (NULL term not counted)
+    // returns the number of valid bytes in 'buf' (NULL term added but not counted)
 
     char	*buf,		// valid destination buffer, maybe source
     uint	buf_size,	// size of 'buf'
@@ -1267,8 +1420,10 @@ uint EncodeBase64
     int		source_len,		// length of 'source'; if <0: use strlen(source)
     const char	encode64[64+1],		// encoding table; if NULL: use TableEncode64default
     bool	use_filler,		// use filler for aligned output
+
     ccp		next_line,		// not NULL: use this string as new line sep
-    uint	next_line_trigger	// >0: use 'next_line' every # input bytes
+    uint	bytes_per_line		// >0: use 'next_line' every # input bytes
+					// will be rounded down to multiple of 3
 )
 {
     DASSERT(buf);
@@ -1278,11 +1433,11 @@ uint EncodeBase64
     noPRINT("EncodeBase64(sz=%u,len=%d,fil=%d)\n",buf_size,source_len,use_filler);
 
     if (!next_line)
-	next_line_trigger = ~0;
-    else if (!next_line_trigger)
-	next_line_trigger = 19;
+	bytes_per_line = ~0;
+    else if (!bytes_per_line)
+	bytes_per_line = 19;
     else
-	next_line_trigger /= 3;
+	bytes_per_line /= 3;
 
     char *dest = buf;
     char *dest_end = buf + buf_size - 4;
@@ -1299,7 +1454,7 @@ uint EncodeBase64
 
     while ( src < src_end && dest < dest_end )
     {
-	if ( ++n_tupel > next_line_trigger && next_line )
+	if ( ++n_tupel > bytes_per_line && next_line )
 	{
 	    char *next = StringCopyE(dest,(char*)buf+buf_size,next_line);
 	    if ( next >= dest_end )
@@ -1379,6 +1534,49 @@ mem_t EncodeBase64Circ
 	mem.len = 0;
     }
     return mem;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+
+uint EncodeBase64ml // ml: multi line
+(
+    // returns the number of scanned bytes of 'source'
+
+    char	*buf,			// valid destination buffer
+    uint	buf_size,		// size of 'buf', >= 4
+    const void	*source,		// NULL or data to encode
+    int		source_len,		// length of 'source'; if <0: use strlen(source)
+    const char	encode64[64+1],		// encoding table; if NULL: use TableEncode64default
+    bool	use_filler,		// use filler for aligned output
+
+    int		indent,			// indention of output
+    ccp		prefix,			// NULL or prefix before encoded data
+    ccp		eol,			// line terminator, if NULL then use NL
+    int		bytes_per_line		// create a new line every # input bytes
+					// will be rounded down to multiple of 3
+)
+{
+    indent = NormalizeIndent(indent);
+    if (!eol)
+	eol = "\n";
+
+    char linesep[200];
+    int pre_pos;
+    snprintf(linesep,sizeof(linesep),"%s%n%*s%s",
+		eol,
+		&pre_pos,
+		indent, "",
+		prefix ? prefix : ""
+		);
+
+    char *end = buf + buf_size;
+    char *dest = StringCopyE(buf,end,linesep+pre_pos);
+    const uint scanned = EncodeBase64( dest, end-dest, source, source_len,
+				encode64, use_filler, linesep, bytes_per_line );
+    dest = buf + strlen(buf);
+    StringCopyE(dest,end,eol);
+    return scanned;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1793,22 +1991,22 @@ uint EncodeByMode
 
       case ENCODE_BASE64:
 	len = EncodeBase64(buf,buf_size,source,slen,TableEncode64,true,0,0);
-	len = EncodeBase64FillLen(len);
+	len = GetEncodeBase64FillLen(len);
 	break;
 
       case ENCODE_BASE64URL:
 	len = EncodeBase64(buf,buf_size,source,slen,TableEncode64url,true,0,0);
-	len = EncodeBase64FillLen(len);
+	len = GetEncodeBase64FillLen(len);
 	break;
 
       case ENCODE_BASE64STAR:
 	len = EncodeBase64(buf,buf_size,source,slen,TableEncode64star,true,0,0);
-	len = EncodeBase64FillLen(len);
+	len = GetEncodeBase64FillLen(len);
 	break;
 
       case ENCODE_BASE64XML:
 	len = EncodeBase64(buf,buf_size,source,slen,TableEncode64xml,true,0,0);
-	len = EncodeBase64FillLen(len);
+	len = GetEncodeBase64FillLen(len);
 	break;
 
       case ENCODE_JSON:
@@ -1900,11 +2098,84 @@ mem_t EncodeByModeMem
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////		escape/quote strings, alloc space	///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+char * EscapeString
+(
+    // Returns a pointer.
+    // Use FreeString(result) to free possible alloced result.
+    // circ-buffer is ignored by FreeString().
+
+    cvp		src,			// NULL or source
+    int		src_len,		// size of 'src'. If -1: Use strlen(src)
+    cvp		return_if_null,		// return this, if 'src==NULL'
+    cvp		return_if_empty,	// return this, if src is empty (have no chars)
+    CharMode_t	char_mode,		// how to escape
+    char	quote,			// quoting character: "  or  '  or  $ (for $'...')
+    bool	try_circ,		// use circ-buffer, if result is small enough
+    uint	*dest_len		// not NULL: Store length of result here
+)
+{
+    if (!src)
+	return (char*)return_if_null;
+    if ( src_len < 0 )
+	src_len = strlen(src);
+    if (!src_len)
+	return (char*)return_if_empty;
+
+    char quote_char;
+    uint quote_mode;
+    if ( quote == '$' )
+    {
+	quote_mode = 3;
+	quote_char = '\'';
+    }
+    else if (quote)
+    {
+	quote_mode = 2;
+	quote_char = quote;
+    }
+    else
+    {
+	quote_mode = 0;
+	quote_char = '"';
+    }
+
+    uint size = GetEscapedSize(src,src_len,char_mode,quote_char) + quote_mode;
+    char *buf = try_circ && size <= CIRC_BUF_MAX_ALLOC ? GetCircBuf(size) : MALLOC(size);
+
+    uint len;
+    if ( quote_mode == 3 )
+    {
+	PrintEscapedString(buf+2,size-3,src,src_len,char_mode,quote_char,&len);
+	buf[0] = '$';
+	buf[1] = buf[len+2] = quote_char;
+	buf[len+3] = 0;
+	
+    }
+    else if ( quote_mode == 2 )
+    {
+	PrintEscapedString(buf+1,size-2,src,src_len,char_mode,quote_char,&len);
+	buf[0] = buf[len+1] = quote_char;
+	buf[len+2] = 0;
+    }
+    else
+	PrintEscapedString(buf,size,src,src_len,char_mode,quote_char,&len);
+
+    if (dest_len)
+	*dest_len = len + quote_mode;
+    return buf;
+};
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			    time			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 s64 timezone_adjust_sec   = -1;
 s64 timezone_adjust_usec  = -1;
+s64 timezone_adjust_nsec  = -1;
 int timezone_adjust_isdst = -1;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1914,10 +2185,11 @@ void SetupTimezone ( bool force )
     if ( force || timezone_adjust_sec == -1 )
     {
 	timezone_adjust_sec  = GetTimezoneAdjust(GetTimeSec(false));
-	timezone_adjust_usec = 1000000ll * timezone_adjust_sec;
-	TRACE("TZ: %s,%s, %ld, %d => %lld %lld\n",
+	timezone_adjust_usec = USEC_PER_SEC * timezone_adjust_sec;
+	timezone_adjust_nsec = NSEC_PER_SEC * timezone_adjust_sec;
+	TRACE("TZ: %s,%s, %ld, %d => %lld %lld %lld\n",
 		tzname[0], tzname[1], timezone, daylight,
-		timezone_adjust_sec, timezone_adjust_usec );
+		timezone_adjust_sec, timezone_adjust_usec, timezone_adjust_nsec );
     }
 }
 
@@ -1948,41 +2220,76 @@ int GetTimezoneAdjust ( time_t tim )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-struct timeval GetTimeOfDay ( bool localtime )
+static u_sec_t AdjustLocalTime ( u_sec_t sec )
 {
     static uint last_hour = 0;
+    const uint hour = sec / 3600;
+    if ( last_hour != hour )
+    {
+	last_hour = hour;
+	SetupTimezone(true);
+    }
+    return sec - timezone_adjust_sec;
+}
+
+//-----------------------------------------------------------------------------
+
+struct timeval GetTimeOfDay ( bool localtime )
+{
     struct timeval tval;
     gettimeofday(&tval,NULL);
     if (localtime)
-    {
-	const uint hour = tval.tv_sec / 3600;
-	if ( last_hour != hour )
-	{
-	    last_hour = hour;
-	    SetupTimezone(true);
-	}
-	tval.tv_sec -= timezone_adjust_sec;
-    }
+	tval.tv_sec = AdjustLocalTime(tval.tv_sec);
     return tval;
+}
+
+//-----------------------------------------------------------------------------
+
+struct timespec GetClockTime ( bool localtime )
+{
+    struct timespec ts;
+
+ #if HAVE_CLOCK_GETTIME
+    if (!clock_gettime(CLOCK_REALTIME,&ts))
+    {
+	if (localtime)
+	    ts.tv_sec = AdjustLocalTime(ts.tv_sec);
+	return ts;
+    }
+ #endif
+
+    // fall back
+    struct timeval tval = GetTimeOfDay(localtime);
+    ts.tv_sec  = tval.tv_sec;
+    ts.tv_nsec = tval.tv_usec * NSEC_PER_USEC;
+    return ts;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 DayTime_t GetDayTime ( bool localtime )
 {
-    struct timeval tval = GetTimeOfDay(localtime);
     div_t d;
-
     DayTime_t dt;
-    dt.time	= tval.tv_sec;
-    d		= div(tval.tv_sec,86400);
+
+ #if HAVE_CLOCK_GETTIME
+    struct timespec tim	= GetClockTime(localtime);
+    dt.usec	= tim.tv_nsec / NSEC_PER_USEC;
+    dt.nsec	= tim.tv_nsec;
+ #else
+    struct timeval tim = GetTimeOfDay(localtime);
+    dt.usec	= tim.tv_usec;
+    dt.nsec	= tim.tv_usec * NSEC_PER_USEC;
+ #endif
+
+    dt.time	= tim.tv_sec;
+    d		= div(tim.tv_sec,86400);
     dt.day	= d.quot;
     d		= div(d.rem,3600);
     dt.hour	= d.quot;
     d		= div(d.rem,60);
     dt.min	= d.quot;
     dt.sec	= d.rem;
-    dt.usec	= tval.tv_usec;
 
     return dt;
 }
@@ -2000,7 +2307,7 @@ u_sec_t GetTimeSec ( bool localtime )
 u_msec_t GetTimeMSec ( bool localtime )
 {
     struct timeval tval = GetTimeOfDay(localtime);
-    return (u64)(tval.tv_sec) * 1000ll + tval.tv_usec/1000;
+    return (u_msec_t)(tval.tv_sec) * MSEC_PER_SEC + tval.tv_usec/USEC_PER_MSEC;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2008,7 +2315,15 @@ u_msec_t GetTimeMSec ( bool localtime )
 u_usec_t GetTimeUSec ( bool localtime )
 {
     struct timeval tval = GetTimeOfDay(localtime);
-    return (u64)(tval.tv_sec) * 1000000ll + tval.tv_usec;
+    return (u_usec_t)(tval.tv_sec) * USEC_PER_SEC + tval.tv_usec;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+u_nsec_t GetTimeNSec ( bool localtime )
+{
+    struct timespec ts = GetClockTime(localtime);
+    return (u_nsec_t)(ts.tv_sec) * NSEC_PER_SEC + ts.tv_nsec;
 }
 
 //
@@ -2022,24 +2337,36 @@ static time_t time_base = 0;
 
 u_msec_t GetTimerMSec()
 {
-    struct timeval tval;
-    gettimeofday(&tval,NULL);
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
     if (!time_base)
-	time_base = tval.tv_sec;
+	time_base = tv.tv_sec;
 
-    return (u_msec_t)( tval.tv_sec - time_base ) * 1000 + tval.tv_usec/1000;
+    return (u_msec_t)( tv.tv_sec - time_base ) * MSEC_PER_SEC
+		+ tv.tv_usec/USEC_PER_MSEC;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 u_usec_t GetTimerUSec()
 {
-    struct timeval tval;
-    gettimeofday(&tval,NULL);
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
     if (!time_base)
-	time_base = tval.tv_sec;
+	time_base = tv.tv_sec;
 
-    return (u_usec_t)( tval.tv_sec - time_base ) * 1000000 + tval.tv_usec;
+    return (u_usec_t)( tv.tv_sec - time_base ) * USEC_PER_SEC + tv.tv_usec;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+u_usec_t GetTimerNSec()
+{
+    struct timespec ts = GetClockTime(false);
+    if (!time_base)
+	time_base = ts.tv_sec;
+
+    return (u_usec_t)( ts.tv_sec - time_base ) * NSEC_PER_SEC + ts.tv_nsec;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2083,14 +2410,14 @@ ccp PrintTimeByFormatUTC
 
 ///////////////////////////////////////////////////////////////////////////////
 
-ccp PrintUsecByFormat
+ccp PrintNSecByFormat
 (
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-					// 1-6 '@' in row replaced by digits of 'usec'
+					// 1-9 '@' in row replaced by digits of 'nsec'
     time_t		tim,		// seconds since epoch
-    uint		usec		// micro second of second
+    uint		nsec		// nanosecond of second
 )
 {
     char buf[100];
@@ -2099,9 +2426,9 @@ ccp PrintUsecByFormat
     char *at = strchr(buf,'@');
     if (at)
     {
-	char ubuf[8];
-	snprintf(ubuf,sizeof(ubuf),"%06u",usec);
-	ccp src = ubuf;
+	char nbuf[10];
+	snprintf(nbuf,sizeof(nbuf),"%09u",nsec);
+	ccp src = nbuf;
 	while ( *at == '@' && *src )
 	    *at++ = *src++;
     }
@@ -2111,14 +2438,14 @@ ccp PrintUsecByFormat
 
 //-----------------------------------------------------------------------------
 
-ccp PrintUsecByFormatUTC
+ccp PrintNSecByFormatUTC
 (
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-					// 1-6 '@' in row replaced by digits of 'usec'
+					// 1-9 '@' in row replaced by digits of 'nsec'
     time_t		tim,		// seconds since epoch
-    uint		usec		// micro second of second
+    uint		nsec		// nanosecond of second
 )
 {
     char buf[100];
@@ -2127,9 +2454,9 @@ ccp PrintUsecByFormatUTC
     char *at = strchr(buf,'@');
     if (at)
     {
-	char ubuf[8];
-	snprintf(ubuf,sizeof(ubuf),"%06u",usec);
-	ccp src = ubuf;
+	char nbuf[10];
+	snprintf(nbuf,sizeof(nbuf),"%09u",nsec);
+	ccp src = nbuf;
 	while ( *at == '@' && *src )
 	    *at++ = *src++;
     }
@@ -2154,7 +2481,7 @@ ccp PrintTimevalByFormat
 	tv = &temp;
     }
 
-    return PrintUsecByFormat(format,tv->tv_sec,tv->tv_usec);
+    return PrintUSecByFormat(format,tv->tv_sec,tv->tv_usec);
 }
 
 //-----------------------------------------------------------------------------
@@ -2174,7 +2501,47 @@ ccp PrintTimevalByFormatUTC
 	tv = &temp;
     }
 
-    return PrintUsecByFormatUTC(format,tv->tv_sec,tv->tv_usec);
+    return PrintUSecByFormatUTC(format,tv->tv_sec,tv->tv_usec);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintTimespecByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    const struct timespec *ts		// time to print, if NULL use GetClockTime(false)
+)
+{
+    struct timespec temp;
+    if (!ts)
+    {
+	temp = GetClockTime(true);
+	ts = &temp;
+    }
+
+    return PrintNSecByFormat(format,ts->tv_sec,ts->tv_nsec);
+}
+
+//-----------------------------------------------------------------------------
+
+ccp PrintTimespecByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+    const struct timespec *ts		// time to print, if NULL use GetClockTime(false)
+)
+{
+    struct timespec temp;
+    if (!ts)
+    {
+	temp = GetClockTime(false);
+	ts = &temp;
+    }
+
+    return PrintNSecByFormatUTC(format,ts->tv_sec,ts->tv_nsec);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2211,13 +2578,13 @@ ccp PrintTimeMSec
     if (!buf)
 	buf = GetCircBuf( buf_size = 24 );
 
-    time_t time = msec / 1000;
+    time_t time = msec / MSEC_PER_SEC;
     struct tm *tm = localtime(&time);
     uint len = strftime(buf,buf_size,"%F %T",tm);
 
     if ( fraction && len + 4 < buf_size )
     {
-	len += snprintf(buf+len, buf_size-len, ".%03llu", msec % 1000 );
+	len += snprintf(buf+len, buf_size-len, ".%03llu", msec % MSEC_PER_SEC );
 	const uint pos = len - 3 + ( fraction < 3 ? fraction : 3 );
 	if ( pos < buf_size )
 	    buf[pos] = 0;
@@ -2240,14 +2607,43 @@ ccp PrintTimeUSec
     if (!buf)
 	buf = GetCircBuf( buf_size = 28 );
 
-    time_t time = usec / 1000000;
+    time_t time = usec / USEC_PER_SEC;
     struct tm *tm = localtime(&time);
     uint len = strftime(buf,buf_size,"%F %T",tm);
 
     if ( fraction && len + 7 < buf_size )
     {
-	len += snprintf(buf+len, buf_size-len, ".%06llu", usec % 1000000 );
+	len += snprintf(buf+len, buf_size-len, ".%06llu", usec % USEC_PER_SEC );
 	const uint pos = len - 6 + ( fraction < 6 ? fraction : 6 );
+	if ( pos < buf_size )
+	    buf[pos] = 0;
+    }
+
+    return buf;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintTimeNSec
+(
+    char		* buf,		// result buffer (>26 bytes are good)
+					// If NULL, a local circulary static buffer is used
+    size_t		buf_size,	// size of 'buf', ignored if buf==NULL
+    u_nsec_t		nsec,		// nanoseconds to print
+    uint		fraction	// number of digits (0-9) to print as fraction
+)
+{
+    if (!buf)
+	buf = GetCircBuf( buf_size = 32 );
+
+    time_t time = nsec / NSEC_PER_SEC;
+    struct tm *tm = localtime(&time);
+    uint len = strftime(buf,buf_size,"%F %T",tm);
+
+    if ( fraction && len + 10 < buf_size )
+    {
+	len += snprintf(buf+len, buf_size-len, ".%09llu", nsec % NSEC_PER_SEC );
+	const uint pos = len - 9 + ( fraction < 9 ? fraction : 9 );
 	if ( pos < buf_size )
 	    buf[pos] = 0;
     }
@@ -2300,7 +2696,7 @@ ccp PrintTimerUSec
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     s_usec_t		usec,		// microseconds to print
-    uint		fraction	// number of digits (0-3) to print as fraction
+    uint		fraction	// number of digits (0-6) to print as fraction
 )
 {
     if ( !buf || buf_size < 4 )
@@ -2310,12 +2706,12 @@ ccp PrintTimerUSec
     if (minus)
 	usec = -usec;
 
-    u32 sec = (u64)usec / 1000000;
+    u32 sec = usec / USEC_PER_SEC;
 
     if (fraction)
     {
 	const uint len = snprintf(buf+1,buf_size-1,"%02d:%02d:%02d.%06lld",
-	    sec/3600, sec/60%60, sec%60, (u64)usec%1000000 );
+	    sec/3600, sec/60%60, sec%60, (u64)usec%USEC_PER_SEC );
 	if ( len > 6 && fraction < 6 )
 	{
 	    const uint pos = len - 6 + fraction;
@@ -2338,7 +2734,54 @@ ccp PrintTimerUSec
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintTimerNSec
+(
+    char		* buf,		// result buffer (>16 bytes are good)
+					// If NULL, a local circulary static buffer is used
+    size_t		buf_size,	// size of 'buf', ignored if buf==NULL
+    s_nsec_t		nsec,		// nanoseconds to print
+    uint		fraction	// number of digits (0-9) to print as fraction
+)
+{
+    if ( !buf || buf_size < 4 )
+	buf = GetCircBuf( buf_size = 24 );
+
+    const bool minus = nsec < 0;
+    if (minus)
+	nsec = -nsec;
+
+    u32 sec = nsec / NSEC_PER_SEC;
+
+    if (fraction)
+    {
+	const uint len = snprintf(buf+1,buf_size-1,"%02d:%02d:%02d.%09lld",
+	    sec/3600, sec/60%60, sec%60, (u64)nsec%NSEC_PER_SEC );
+	if ( len > 9 && fraction < 9 )
+	{
+	    const uint pos = len - 9 + fraction;
+	    if ( pos < buf_size )
+		buf[pos] = 0;
+	}
+    }
+    else
+	snprintf(buf+1,buf_size-1,"%02d:%02d:%02d",
+	    sec/3600, sec/60%60, sec%60 );
+
+    char *ptr = buf+1;
+    while ( *ptr == '0' || *ptr == ':' )
+	ptr++;
+    if ( *ptr == '.' )
+	ptr--;
+    if (minus)
+	*--ptr = '-';
+    return ptr;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+// [[nsec]] -> PrintTimer3U(), PrintTimer3N()
 
 ccp PrintTimer3
 (
@@ -2395,6 +2838,8 @@ ccp PrintTimer3
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// [[nsec]] -> PrintTimer4U(), PrintTimer4N()
+
 ccp PrintTimer4
 (
     char		* buf,		// result buffer (>4 bytes)
@@ -2449,6 +2894,8 @@ ccp PrintTimer4
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+// [[nsec]] -> PrintTimer6U(), PrintTimer6N()
 
 ccp PrintTimer6
 (
@@ -2590,6 +3037,8 @@ ccp PrintTimer6
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// [[nsec]] -> PrintTimer4Us(), PrintTimer4Ns()
+
 ccp PrintTimerUSec4s
 (
     char		* buf,		// result buffer (>4 bytes)
@@ -2628,6 +3077,8 @@ ccp PrintTimerUSec4s
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// [[nsec]] -> PrintTimer7Us(), PrintTimer7Ns()
+
 ccp PrintTimerUSec7s
 (
     char		* buf,		// result buffer (>7 bytes)
@@ -2664,45 +3115,18 @@ ccp PrintTimerUSec7s
     return buf;
 }
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-#if 0
-u64 GetXTime ( xtime_t * xtime )
-{
-    struct timeval tval;
-    gettimeofday(&tval,0);
-    if (!time_base)
-	time_base = tval.tv_sec;
-    if (!rel_usec_base)
-	rel_usec_base = (u64)( tval.tv_sec - time_base ) * 1000000 + tval.tv_usec;
-
-    const ull total_usec = 1000000ull * tval.tv_sec + tval.tv_usec;
-
-    if (xtime)
-    {
-	xtime->time       = tval.tv_sec;
-	xtime->usec       = tval.tv_usec;
-	xtime->total_usec = total_usec;
-	xtime->rel_usec   = total_usec - rel_usec_base;
-    }
-    return total_usec;
-}
-#endif
-
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			scan date & time		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-char * ScanInterval
+char * ScanIntervalTS
 (
-    time_t	*res_time,	// not NULL: store seconds
-    u32		*res_usec,	// not NULL: store micro seconds of second
+    struct timespec *res_ts,	// not NULL: store result here
     ccp		source		// source text
 )
 {
-    uint days = 0, sec = 0, usec = 0;
+    uint days = 0, sec = 0, nsec = 0;
     bool day_possible = true;
     uint colon_count = 0;
     char *src = source ? (char*)source : "";
@@ -2712,7 +3136,7 @@ char * ScanInterval
 
     for(;;)
     {
-	if ( *src < '0' || *src >='9' )
+	if ( *src < '0' || *src >= '9' )
 	    break;
 	ulong num = strtoul(src,&src,10);
 	if ( *src == 'd' && day_possible )
@@ -2734,11 +3158,11 @@ char * ScanInterval
 	    {
 		src++;
 		uint i;
-		for ( i = 0; i < 6; i++ )
+		for ( i = 0; i < 9; i++ )
 		{
-		    usec *= 10;
+		    nsec *= 10;
 		    if ( *src >= '0' && *src <= '9' )
-			usec += *src++ - '0';
+			nsec += *src++ - '0';
 		}
 		while ( *src >= '0' && *src <= '9' )
 		    src++;
@@ -2748,31 +3172,86 @@ char * ScanInterval
 	}
     }
 
-    if (res_time)
-	*res_time = days * 86400 + sec;
-    if (res_usec)
-	*res_usec = usec;
+    if (res_ts)
+    {
+	res_ts->tv_sec  = days * SEC_PER_DAY + sec;
+	res_ts->tv_nsec = nsec;
+    }
+
     return src;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * ScanIntervalUSec
+(
+    u_usec_t	*res_usec,	// not NULL: store total microseconds
+    ccp		source		// source text
+)
+{
+    struct timespec ts;
+    char *res = ScanIntervalTS(&ts,source);
+    
+    if (res_usec)
+	*res_usec = ts.tv_sec * USEC_PER_SEC + ts.tv_nsec / NSEC_PER_USEC;
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * ScanIntervalNSec
+(
+    u_nsec_t	*res_nsec,	// not NULL: store total nanoseconds
+    ccp		source		// source text
+)
+{
+    struct timespec ts;
+    char *res = ScanIntervalTS(&ts,source);
+    
+    if (res_nsec)
+	*res_nsec = ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * ScanInterval
+(
+    time_t	*res_time,	// not NULL: store seconds
+    u32		*res_usec,	// not NULL: store microseconds of second
+    ccp		source		// source text
+)
+{
+    struct timespec ts;
+    char *res = ScanIntervalTS(&ts,source);
+
+    if (res_time)
+	*res_time = ts.tv_sec;
+    if (res_usec)
+	*res_usec = ts.tv_nsec / NSEC_PER_USEC;
+
+    return res;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 char * ScanInterval64
 (
-    u64		*res_usec,	// not NULL: store total micro seconds
+    u64		*res_usec,	// not NULL: store total microseconds
     ccp		source		// source text
 )
 {
-    time_t time;
-    u32 usec;
-    char *src = ScanInterval(&time,&usec,source);
+    u_usec_t usec;
+    char *res = ScanIntervalUSec(&usec,source);
     if (res_usec)
-	*res_usec = time * 1000000ull + usec;
-    return src;
+	*res_usec = usec;
+    return res;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
+
+// [[nsec]]
 
 char * ScanDateTime
 (
@@ -2893,9 +3372,11 @@ char * ScanDateTime
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// [[nsec]]
+
 char * ScanDateTime64
 (
-    u64		*res_usec,	// not NULL: store total micro seconds
+    u64		*res_usec,	// not NULL: store total microseconds
     ccp		source,		// source text
     bool	allow_delta	// true: allow +|- interval
 )

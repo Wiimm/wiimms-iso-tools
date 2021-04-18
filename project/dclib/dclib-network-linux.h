@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -41,7 +41,62 @@
 
 //
 ///////////////////////////////////////////////////////////////////////////////
-///////////////			IP interface			///////////////
+///////////////			    IP/UDP			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ssize_t ReceiveUDPv4
+(
+    int			sock,		// valid socket
+    void		*buf,		// buffer tostore incoming data
+    size_t		buf_size,	// size of buffer
+    int			flags,		// flags for recffrom() or recvmsg()
+    struct sockaddr_in	*src_addr,	// not NULL: stire source address
+    in_addr_t		*dest_addr	// not NULL: store destination IPv4 (NBO)
+);
+
+///////////////////////////////////////////////////////////////////////////////
+
+ssize_t SendUDPv4
+(
+    int			sock,		// valid socket
+    const void		*data,		// data to send
+    size_t		data_size,	// size of data
+    int			flags,		// flags for sendto() or sendmsg()
+    struct sockaddr_in	*dest_addr,	// destination address (NULL possible)
+    in_addr_t		src_addr	// not 0: source IPv4 (NBO)
+);
+
+///////////////////////////////////////////////////////////////////////////////
+
+ssize_t recvfrom2
+(
+    int			sock,
+    void		*buf,
+    size_t		buf_size,
+    int			flags,
+    struct sockaddr	*src_addr,
+    socklen_t		*src_addrlen,
+    struct sockaddr	*dest_addr,
+    socklen_t		*dest_addrlen
+);
+
+//-----------------------------------------------------------------------------
+
+ssize_t sendto2
+(
+    int			sock,
+    const void		*buf,
+    size_t		buf_size,
+    int			flags,
+    struct sockaddr	*dest_addr,
+    socklen_t		dest_addrlen,
+    struct sockaddr_in	*src_addr,
+    socklen_t		src_addrlen
+);
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			SendRawUDP()			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 enumError SendRawUDP

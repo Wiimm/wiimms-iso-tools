@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -1703,7 +1703,7 @@ void InitializeTCPStream ( TCPStream_t *ts, int sock )
 {
     DASSERT(ts);
     memset(ts,0,sizeof(*ts));
-    ts->unique_id = CreateUniqueId(1);
+    ts->unique_id = CreateUniqueId();
     ts->sock = sock;
     ts->poll_index = M1(ts->poll_index);
     LOG_TCP_STREAM(ts,0,"%s","INIT()");
@@ -2534,7 +2534,7 @@ void InitializeTCPHandler
 {
     DASSERT(th);
     memset(th,0,sizeof(*th));
-    th->unique_id	= CreateUniqueId(1);
+    th->unique_id	= CreateUniqueId();
     th->data_size	= data_size;
     th->OnAllowStream	= IsStreamAllowed;
 

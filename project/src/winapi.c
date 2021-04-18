@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -36,11 +36,12 @@
 
 #define _GNU_SOURCE 1
 
+#include <w32api/windows.h>
+//#include <w32api/winioctl.h>
+
 #include "winapi.h"
 #include "dclib/dclib-debug.h"
 #include "io.h"
-#include <w32api/windows.h>
-//#include <w32api/winioctl.h>
 
 //
 ///////////////////////////////////////////////////////////////////////////////

@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -38,8 +38,16 @@
 #ifndef WIIMM_CRYPT_H
 #define WIIMM_CRYPT_H 1
 
-#include "crypto/wiimm-sha.h"
-#define SHA1 WIIMM_SHA1
+#ifdef USE_SHA_LIB
+  #include <openssl/sha.h>
+#else
+  #include "crypto/wiimm-sha.h"
+  #define SHA1		WIIMM_SHA1
+  #define SHA1_Init	WIIMM_SHA1_Init
+  #define SHA1_Update	WIIMM_SHA1_Update
+  #define SHA1_Final	WIIMM_SHA1_Final
+  #define SHA_CTX	WIIMM_SHA_CTX
+#endif
 
 // random functions
 void MyRandomFill ( void * buf, size_t size );

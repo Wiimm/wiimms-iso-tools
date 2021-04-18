@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -59,7 +59,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #define TITLE WFUSE_SHORT ": " WFUSE_LONG " v" VERSION " r" REVISION \
-	" " SYSTEM " - " AUTHOR " - " DATE
+	" " SYSTEM2 " - " AUTHOR " - " DATE
 
 #ifndef ENOATTR
     #define ENOATTR ENOENT
@@ -160,7 +160,7 @@ static void version_exit()
     if ( brief_count > 1 )
 	fputs( VERSION "\n", stdout );
     else if (brief_count)
-	fputs( VERSION " r" REVISION " " SYSTEM "\n", stdout );
+	fputs( VERSION " r" REVISION " " SYSTEM2 "\n", stdout );
     else
     {
 	fputs( TITLE "\n", stdout );
@@ -2050,7 +2050,7 @@ int main ( int argc, char ** argv )
 		SlotInfo_t * si = slot_info + slot;
 		memcpy(si->id6,id_list[slot],6);
 		ccp title = GetTitle(si->id6,(ccp)d->header->dhead+WII_TITLE_OFF);
-		NormalizeFileName(buf,sizeof(buf)-1,title,false,use_utf8)[0] = 0;
+		NormalizeFileName(buf,sizeof(buf)-1,title,false,use_utf8,TRSL_NONE)[0] = 0;
 		si->fname = STRDUP(buf);
 
 		si->atime = main_sf.f.st.st_atime;

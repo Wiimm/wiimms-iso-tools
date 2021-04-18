@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -40,6 +40,47 @@
 ///////////////////////////////////////////////////////////////////////////////
 //   This file is included by wwt.c and wit.c and contains common commands.  //
 ///////////////////////////////////////////////////////////////////////////////
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			command version/section		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void cmd_version_section ( bool sect_header, ccp name_short, ccp name_long )
+{
+    if (sect_header)
+	fputs("[version]\n",stdout);
+
+    const u32 base = 0x04030201;
+    const u8 * e = (u8*)&base;
+    const u32 endian = be32(e);
+
+    printf(
+	"prog=%s\n"
+	"name=%s\n"
+	"version=" VERSION "\n"
+	"beta=%d\n"
+	"revision=" REVISION  "\n"
+	"system=" SYSTEM2 "\n"
+ #ifdef _POSIX_C_SOURCE
+	"posix_c_source=" CONVERT_TO_STRING(_POSIX_C_SOURCE) "\n"
+ #endif
+	"endian=%u%u%u%u %s\n"
+	"have_stattime_nsec=%d\n"
+	"author=" AUTHOR "\n"
+	"date=" DATE "\n"
+	"url=" URI_HOME "%s\n"
+	"\n"
+	, name_short
+	, name_long
+	, BETA_VERSION
+	, e[0], e[1], e[2], e[3]
+	, endian == 0x01020304 ? "little"
+	    : endian == 0x04030201 ? "big" : "mixed"
+	, HAVE_STATTIME_NSEC
+	, name_short
+	);
+}
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -656,10 +697,11 @@ enumError cmd_test_options()
     if (modify_wbfs_id)
 	printf("  modify wbfs id:   '%s'\n",modify_wbfs_id);
 
-    if ( opt_http || opt_domain )
+    if ( opt_http || opt_security_fix || opt_domain )
     {
 	printf("  http:             %s\n", opt_http ? "enabled" : "disabled" );
 	printf("  domain:           '%s'\n",opt_domain);
+	printf("  security-fix:     %s\n", opt_security_fix ? "enabled" : "disabled" );
     }
 
  #if IS_WWT

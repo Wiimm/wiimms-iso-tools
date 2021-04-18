@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -34,11 +34,6 @@
 
 #define _GNU_SOURCE 1
 
-#ifndef WIN_SZS_LIB
-  // needed for GetTermWidthFD()
-  #include <sys/ioctl.h>
-#endif
-
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
@@ -47,6 +42,7 @@
 #include <errno.h>
 #include <sys/time.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
 
 #include "dclib-basics.h"
 #include "dclib-debug.h"
@@ -302,6 +298,21 @@ int GetProgramPath
 {
     char path[PATH_MAX], path2[PATH_MAX];
 
+#ifdef __APPLE__
+
+    //--- read apple path of executable
+    
+    extern int _NSGetExecutablePath( char* buf, uint32_t * bufsize );
+     
+    uint32_t size = sizeof(path);
+    if (!_NSGetExecutablePath(path,&size))
+    {
+	if ( realpath(path,path2) && *path2 )
+	    return StringCopyS(buf,buf_size,path2) - buf;
+	return StringCopyS(buf,buf_size,path) - buf;
+    }
+
+#else // !__APPLE__  
 
     //--- read files of /proc/...
 
@@ -320,6 +331,8 @@ int GetProgramPath
 	    if ( realpath(*ptr,path) && *path )
 		return StringCopyS(buf,buf_size,path) - buf;
     }
+
+#endif // !__APPLE__  
 
 
     //--- analyze argv0
@@ -377,9 +390,9 @@ int GetProgramPath
 
 void FreeString ( ccp str )
 {
-    noTRACE("FreeString(%p) EmptyString=%p MinusString=%p\n",
-	    str, EmptyString, MinusString );
-    if ( str != EmptyString && str != EmptyQuote && str != MinusString )
+    noTRACE("FreeString(%p) EmptyString=%p MinusString=%p, IsCircBuf=%d\n",
+	    str, EmptyString, MinusString, IsCircBuf(str) );
+    if ( str != EmptyString && str != EmptyQuote && str != MinusString && !IsCircBuf(str) )
 	FREE((char*)str);
 }
 
@@ -448,8 +461,8 @@ char * StringCat2E ( char * buf, ccp buf_end, ccp src1, ccp src2 )
     // RESULT: end of copied string pointing to NULL
     // 'src*' may be a NULL pointer.
 
-    ASSERT(buf);
-    ASSERT(buf<buf_end);
+    DASSERT(buf);
+    DASSERT(buf<buf_end);
     buf_end--;
 
     if (src1)
@@ -478,8 +491,8 @@ char * StringCat3E ( char * buf, ccp buf_end, ccp src1, ccp src2, ccp src3 )
     // RESULT: end of copied string pointing to NULL
     // 'src*' may be a NULL pointer.
 
-    ASSERT(buf);
-    ASSERT(buf<buf_end);
+    DASSERT(buf);
+    DASSERT(buf<buf_end);
     buf_end--;
 
     if (src1)
@@ -506,19 +519,18 @@ char * StringCat3S ( char * buf, size_t buf_size, ccp src1, ccp src2, ccp src3 )
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// [[?]]
 
-char * StringCat2A  ( ccp src1, ccp src2 )
+char * StringCat2A ( ccp src1, ccp src2 )
 {
-    mem_t mem = MemCat2A( MemByString(src1), MemByString(src2) );
+    mem_t mem = MemCat2A( MemByString0(src1), MemByString0(src2) );
     return (char*)mem.ptr;
 }
 
 //-----------------------------------------------------------------------------
 
-char * StringCat3A  ( ccp src1, ccp src2, ccp src3 )
+char * StringCat3A ( ccp src1, ccp src2, ccp src3 )
 {
-    mem_t mem = MemCat3A( MemByString(src1), MemByString(src2), MemByString(src3) );
+    mem_t mem = MemCat3A( MemByString0(src1), MemByString0(src2), MemByString0(src3) );
     return (char*)mem.ptr;
 }
 
@@ -551,6 +563,38 @@ char * StringLowerS ( char * buf, size_t buf_size, ccp src )
     return StringLowerE(buf,buf+buf_size,src);
 }
 
+//-----------------------------------------------------------------------------
+
+char * MemLowerE ( char * buf, ccp buf_end, mem_t src )
+{
+    // RESULT: end of copied string pointing to NULL
+    // 'src.ptr' may be a NULL pointer.
+
+    if ( buf >= buf_end )
+	return (char*)buf_end - 1;
+
+    DASSERT(buf);
+    DASSERT(buf<buf_end);
+    buf_end--;
+
+    if ( src.ptr )
+    {
+	ccp src_end = src.ptr + src.len;
+	while( buf < buf_end && src.ptr < src_end )
+	    *buf++ = tolower((int)*src.ptr++);
+    }
+
+    *buf = 0;
+    return buf;
+}
+
+//-----------------------------------------------------------------------------
+
+char * MemLowerS ( char * buf, size_t buf_size, mem_t src )
+{
+    return MemLowerE(buf,buf+buf_size,src);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 char * StringUpperE ( char * buf, ccp buf_end, ccp src )
@@ -578,6 +622,38 @@ char * StringUpperE ( char * buf, ccp buf_end, ccp src )
 char * StringUpperS ( char * buf, size_t buf_size, ccp src )
 {
     return StringUpperE(buf,buf+buf_size,src);
+}
+
+//-----------------------------------------------------------------------------
+
+char * MemUpperE ( char * buf, ccp buf_end, mem_t src )
+{
+    // RESULT: end of copied string pointing to NULL
+    // 'src.ptr' may be a NULL pointer.
+
+    if ( buf >= buf_end )
+	return (char*)buf_end - 1;
+
+    DASSERT(buf);
+    DASSERT(buf<buf_end);
+    buf_end--;
+
+    if ( src.ptr )
+    {
+	ccp src_end = src.ptr + src.len;
+	while( buf < buf_end && src.ptr < src_end )
+	    *buf++ = toupper((int)*src.ptr++);
+    }
+
+    *buf = 0;
+    return buf;
+}
+
+//-----------------------------------------------------------------------------
+
+char * MemUpperS ( char * buf, size_t buf_size, mem_t src )
+{
+    return MemUpperE(buf,buf+buf_size,src);
 }
 
 //
@@ -1466,7 +1542,7 @@ char * PrintID
 )
 {
     if (!buf)
-	buf = GetCircBuf( id_len + 1);
+	buf = GetCircBuf( id_len + 1 );
 
     ccp src = id;
     char * dest = buf;
@@ -1490,9 +1566,16 @@ static char *circ_ptr = circ_buf;
 
 ///////////////////////////////////////////////////////////////////////////////
 
+bool IsCircBuf ( cvp ptr )
+{
+    return ptr && (ccp)ptr >= circ_buf && (ccp)ptr < circ_buf + sizeof(circ_buf);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 char * GetCircBuf
 (
-    // never returns NULL, but always ALIGN(4)
+    // Never returns NULL, but always ALIGN(4)
 
     u32		buf_size	// wanted buffer size, caller must add 1 for NULL-term
 				// if buf_size > CIRC_BUF_MAX_ALLOC:
@@ -1527,7 +1610,7 @@ char * GetCircBuf
 
 char * CopyCircBuf
 (
-    // never returns NULL, but always ALIGN(4)
+    // Never returns NULL, but always ALIGN(4)
 
     cvp		data,		// source to copy
     u32		data_size	// see GetCircBuf()
@@ -1542,8 +1625,8 @@ char * CopyCircBuf
 
 char * CopyCircBuf0
 (
-    // never returns NULL, but always ALIGN(4)
-    // an additional char is alloced and set to NULL
+    // Like CopyCircBuf(), but an additional char is alloced and set to NULL
+    // Never returns NULL, but always ALIGN(4).
 
     cvp		data,		// source to copy
     u32		data_size	// see GetCircBuf()
@@ -1559,6 +1642,8 @@ char * CopyCircBuf0
 
 char * PrintCircBuf
 (
+    // returns CopyCircBuf0() or EmptyString.
+
     ccp		format,		// format string for vsnprintf()
     ...				// arguments for 'format'
 )
@@ -1570,6 +1655,51 @@ char * PrintCircBuf
     va_end(arg);
 
     return len > 0 ? CopyCircBuf0(buf,len) : (char*)EmptyString;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * AllocCircBuf
+(
+    // Never returns NULL. Call FreeString(RESULT) to free possible alloced memory.
+
+    cvp		src,		// NULL or source
+    int		src_len,	// len of 'src'; if -1: use strlen(source)
+    bool	try_circ	// use circ-buffer, if result is small enough
+)
+{
+    if (!src)
+	return (char*)EmptyString;
+
+    if ( src_len < 0 )
+	src_len = strlen(src);
+
+    return try_circ && src_len <= CIRC_BUF_MAX_ALLOC
+	? CopyCircBuf(src,src_len)
+	: MEMDUP(src,src_len);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * AllocCircBuf0
+(
+    // Never returns NULL. Call FreeString(RESULT) to free possible alloced memory.
+    // Like AllocCircBuf(), but an additional char is alloced and set to NULL
+
+    cvp		src,		// NULL or source
+    int		src_len,	// len of 'src'; if -1: use strlen(source)
+    bool	try_circ	// use circ-buffer, if result is small enough
+)
+{
+    if (!src)
+	return (char*)EmptyString;
+
+    if ( src_len < 0 )
+	src_len = strlen(src);
+
+    return try_circ && src_len < CIRC_BUF_MAX_ALLOC
+	? CopyCircBuf0(src,src_len)
+	: MEMDUP(src,src_len); // MEMDUP() always add 0-term
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2344,26 +2474,186 @@ mem_t MemCat3A ( const mem_t m1, const mem_t m2, const mem_t m3 )
 
 //
 ///////////////////////////////////////////////////////////////////////////////
-///////////////			struct mem_list_t		///////////////
+///////////////			struct exmem_t			///////////////
+
+exmem_t EmptyExMem = {{EmptyString,0},0,false,false,false,false};
+exmem_t NullExMem  = {{0,0},0,false,false,false,false};
+
 ///////////////////////////////////////////////////////////////////////////////
 
-void InitializeMemList ( mem_list_t *ml )
+void FreeExMem ( const exmem_t *em )
 {
-    DASSERT(ml);
-    memset(ml,0,sizeof(*ml));
+    if (em)
+    {
+	if (em->is_alloced)
+	    FreeString(em->data.ptr);
+	memset((exmem_t*)em,0,sizeof(*em));
+    }
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
+void FreeExMemCM ( const exmem_t *em, CopyMode_t copy_mode )
+{
+    if ( em && copy_mode == CPM_MOVE )
+    {
+	if (em->is_alloced)
+	    FreeString(em->data.ptr);
+	memset((exmem_t*)em,0,sizeof(*em));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_t AllocExMemS
+(
+    cvp		src,		// NULL or source
+    int		src_len,	// len of 'src'; if -1: use strlen(source)
+    bool	try_circ,	// use circ-buffer, if result is small enough
+    cvp		orig,		// NULL or data to compare
+    int		orig_len	// len of 'orig'; if -1: use strlen(source)
+)
+{
+    exmem_t em = {{0}};
+    if (src)
+    {
+	if ( src_len < 0 )
+	    src_len = strlen(src);
+	if (!src_len)
+	    em.data.ptr = EmptyString;
+	else
+	{
+	    em.data.len = src_len;
+	    if ( orig
+		&& src_len == ( orig_len < 0 ? strlen(orig) : orig_len )
+		&& !memcmp(src,orig,src_len)
+		)
+	    {
+		em.data.ptr = orig;
+		em.is_original = true;
+	    }
+	    else if ( try_circ && src_len <= CIRC_BUF_MAX_ALLOC )
+	    {
+		em.data.ptr = CopyCircBuf(src,src_len);
+		em.is_circ_buf = true;
+	    }
+	    else
+	    {
+		em.data.ptr = MEMDUP(src,src_len);
+		em.is_alloced = true;
+	    }
+	}
+    }
+
+    return em;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void AssignExMem ( exmem_t *dest, const exmem_t *source, CopyMode_t copy_mode )
+{
+    if ( dest && dest != source )
+    {
+	if (dest->is_alloced)
+	    FreeString(dest->data.ptr);
+	const bool dest_key_alloced = dest->is_key_alloced;
+	if (source)
+	{
+	    switch (copy_mode)
+	    {
+		case CPM_COPY:
+		    memset(dest,0,sizeof(*dest));
+		    dest->data.len	= source->data.len;
+		    dest->data.ptr	= MEMDUP(source->data.ptr,source->data.len);
+		    dest->is_alloced	= true;
+		    dest->attrib	= source->attrib;
+		    break;
+
+		case CPM_MOVE:
+		    *dest = *source;
+		    memset((exmem_t*)source,0,sizeof(*source));
+		    break;
+
+		case CPM_LINK:
+		    *dest = *source;
+		    dest->is_original	= false;
+		    dest->is_alloced	= false;
+		    break;
+	    }
+	}
+	else
+	    memset(dest,0,sizeof(*dest));
+	dest->is_key_alloced = dest_key_alloced;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_t CopyExMemS ( ccp string, int slen, CopyMode_t copy_mode )
+{
+    exmem_t em = {{0}};
+
+    if (string)
+    {
+	em.data.len = slen < 0 ? strlen(string) : slen;
+
+	switch (copy_mode)
+	{
+	    case CPM_COPY:
+		em.data.ptr = MEMDUP(string,em.data.len);
+		em.is_alloced = true;
+		break;
+
+	    case CPM_MOVE:
+		em.is_alloced = true;
+		// fall through
+	    case CPM_LINK:
+		em.data.ptr = string;
+		break;
+	}
+    }
+
+    return  em;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintExMem ( const exmem_t * em ) // print to circ-buf
+{
+    if (!em)
+	return MinusString;
+
+    char ebuf[60];
+    uint len;
+    PrintEscapedString(ebuf,sizeof(ebuf),em->data.ptr,em->data.len,CHMD__MODERN,'"',&len);
+
+    return PrintCircBuf(
+	"[%c%c%c%c:%x] %u/%u %s",
+	em->is_key_alloced	? 'a' : '-',	// flags: same as in DumpEML()
+	em->is_alloced		? 'A' : '-',
+	em->is_circ_buf		? 'C' : '-',
+	em->is_original		? 'O' : '-',
+	em->attrib,
+	len, em->data.len, ebuf );
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct mem_list_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 void ResetMemList ( mem_list_t *ml )
 {
-    DASSERT(ml);
-    FREE(ml->list);
-    FREE(ml->buf);
-    memset(ml,0,sizeof(*ml));
+    if (ml)
+    {
+	FREE(ml->list);
+	FREE(ml->buf);
+	memset(ml,0,sizeof(*ml));
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 void MoveMemList ( mem_list_t *dest, mem_list_t *src )
 {
@@ -2384,6 +2674,7 @@ void MoveMemList ( mem_list_t *dest, mem_list_t *src )
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 void NeedBufMemList ( mem_list_t *ml, uint need_size, uint extra_size )
 {
@@ -2416,6 +2707,7 @@ void NeedBufMemList ( mem_list_t *ml, uint need_size, uint extra_size )
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 void NeedElemMemList ( mem_list_t *ml, uint need_elem, uint need_size )
 {
@@ -2433,6 +2725,7 @@ void NeedElemMemList ( mem_list_t *ml, uint need_elem, uint need_size )
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 void InsertMemListN
 (
@@ -2579,6 +2872,7 @@ void InsertMemListN
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 void CatMemListN
 (
@@ -2639,7 +2933,6 @@ void CatMemListN
 			? MALLOC(need_size) : dest->buf;
     mem_t *new_list = dest_is_source || need_elem > dest->size
 			? MALLOC(sizeof(*new_list)*need_elem) : dest->list;
-
 
 
     //--- assign values
@@ -2708,6 +3001,7 @@ void CatMemListN
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 uint LeftMemList ( mem_list_t *ml, int count )
 {
@@ -2716,6 +3010,7 @@ uint LeftMemList ( mem_list_t *ml, int count )
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 uint RightMemList ( mem_list_t *ml, int count )
 {
@@ -2731,6 +3026,7 @@ uint RightMemList ( mem_list_t *ml, int count )
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 uint MidMemList ( mem_list_t *ml, int begin, int count )
 {
@@ -2756,6 +3052,7 @@ uint MidMemList ( mem_list_t *ml, int begin, int count )
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 uint ExtractMemList ( mem_list_t *ml, int begin, int end )
 {
@@ -2766,6 +3063,7 @@ uint ExtractMemList ( mem_list_t *ml, int begin, int end )
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 uint ExtractEndMemList ( mem_list_t *ml, int begin, int end )
 {
@@ -2776,6 +3074,7 @@ uint ExtractEndMemList ( mem_list_t *ml, int begin, int end )
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 uint RemoveMemList ( mem_list_t *ml, int begin, int end )
 {
@@ -2786,6 +3085,7 @@ uint RemoveMemList ( mem_list_t *ml, int begin, int end )
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[?]]
 
 uint RemoveEndMemList ( mem_list_t *ml, int begin, int end )
 {
@@ -4672,12 +4972,7 @@ char * PrintKeywordList
     if (ret_length)
 	*ret_length = len;
 
-    if ( buf == temp )
-    {
-	buf = GetCircBuf(len+1);
-	memcpy(buf,temp,len+1);
-    }
-    return buf;
+    return buf == temp ? CopyCircBuf(temp,len+1) : buf;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -4738,10 +5033,11 @@ const KeywordTab_t KeyTab_OFF_AUTO_ON[] =
 
 //-----------------------------------------------------------------------------
 
-int ScanKeywordOffAutoOn
+int ScanKeywordOffAutoOnEx
 (
     // returns one of OFFON_*
 
+    const KeywordTab_t	*keytab,	// Keyword table. If NULL, then use KeyTab_OFF_AUTO_ON[]
     ccp			arg,		// argument to scan
     int			on_empty,	// return this value on empty
     uint		max_num,	// >0: additionally accept+return number <= max_num
@@ -4751,8 +5047,11 @@ int ScanKeywordOffAutoOn
     if ( !arg || !*arg )
 	return on_empty;
 
+    if (!keytab)
+	keytab = KeyTab_OFF_AUTO_ON;
+
     int status;
-    const KeywordTab_t *key = ScanKeyword(&status,arg,KeyTab_OFF_AUTO_ON);
+    const KeywordTab_t *key = ScanKeyword(&status,arg,keytab);
     if (key)
 	return key->id;
 
@@ -4765,7 +5064,7 @@ int ScanKeywordOffAutoOn
     }
 
     if (object)
-	PrintKeywordError(KeyTab_OFF_AUTO_ON,arg,status,0,object);
+	PrintKeywordError(keytab,arg,status,0,object);
 
     return OFFON_ERROR;
 }
@@ -4773,6 +5072,63 @@ int ScanKeywordOffAutoOn
 //-----------------------------------------------------------------------------
 
 ccp GetKeywordOffAutoOn ( OffOn_t value )
+{
+    const KeywordTab_t *key = GetKewordById(KeyTab_OFF_AUTO_ON,value);
+    return key ? key->name1 : "?";
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			LOWER/AUTO/UPPER		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+const KeywordTab_t KeyTab_LOWER_AUTO_UPPER[] =
+{
+  { LOUP_LOWER,		"LOWER",	"LOWERCASE",	0 },
+  { LOUP_LOWER,		"LOCASE",	"-1",		0 },
+  { LOUP_AUTO,		"AUTO",		"0",		0 },
+  { LOUP_UPPER,		"UPPER",	"UPPERCASE",	0 },
+  { LOUP_UPPER,		"UPCASE",	"1",		0 },
+  { 0,0,0,0 }
+};
+
+//-----------------------------------------------------------------------------
+
+int ScanKeywordLowerAutoUpper
+(
+    // returns one of LOUP_*
+
+    ccp			arg,		// argument to scan
+    int			on_empty,	// return this value on empty
+    uint		max_num,	// >0: additionally accept+return number <= max_num
+    ccp			object		// NULL (silent) or object for error messages
+)
+{
+    if ( !arg || !*arg )
+	return on_empty;
+
+    int status;
+    const KeywordTab_t *key = ScanKeyword(&status,arg,KeyTab_LOWER_AUTO_UPPER);
+    if (key)
+	return key->id;
+
+    if ( max_num > 0 )
+    {
+	char *end;
+	const int num = str2l(arg,&end,10);
+	if ( !*end && num >= LOUP_LOWER && num <= max_num )
+	    return num;
+    }
+
+    if (object)
+	PrintKeywordError(KeyTab_LOWER_AUTO_UPPER,arg,status,0,object);
+
+    return LOUP_ERROR;
+}
+
+//-----------------------------------------------------------------------------
+
+ccp GetKeywordLowerAutoUpper ( LowerUpper_t value )
 {
     const KeywordTab_t *key = GetKewordById(KeyTab_OFF_AUTO_ON,value);
     return key ? key->name1 : "?";
@@ -4874,7 +5230,7 @@ int ScanCommandList
 	//--- scan and copy command
 
 	ccp param = cmd;
-	while ( param < endcmd && ( isalnum(*param) || *param == '-' || *param == '_' ) )
+	while ( param < endcmd && ( isalnum((int)*param) || *param == '-' || *param == '_' ) )
 	    param++;
 	cli->cmd_len = param - cmd;
 	if ( cli->cmd_len > sizeof(cli->cmd)-1 )
@@ -5059,75 +5415,6 @@ int ScanCommandList
 	 cli->read_cmd_len = cli->command_len;
 
     return cli->fail_count ? -1 : cli->cmd_count;
-}
-
-//
-///////////////////////////////////////////////////////////////////////////////
-///////////////			global commands			///////////////
-///////////////////////////////////////////////////////////////////////////////
-
-enumError Command_ARGTEST ( int argc, char ** argv )
-{
-    printf("ARGUMENT TEST: %u arguments:\n",argc);
-
-    int idx;
-    for ( idx = 0; idx < argc; idx++ )
-	printf("%4u.: |%s|\n",idx,argv[idx]);
-    return ERR_OK;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-enumError Command_COLORS
-(
-    int		level,		// only used, if mode==NULL
-				//  <  0: status message (ignore mode)
-				//  >= 1: include names
-				//  >= 2: include alt names
-				//  >= 3: include color names incl bold
-				//  >= 4: include background color names
-    uint	mode,		// output mode => see PrintColorSetHelper()
-    uint	format		// output format => see PrintColorSetEx()
-)
-{
-    if (!colout)
-	SetupStdMsg();
-
-    if ( level < 0 )
-    {
-	printf("%s--color=%d [%s], colorize=%d [%s]\n"
-		"term=%s\n"
-		"stdout: tty=%d, mode=%d [%s], have-color=%d, n-colors=%u%s\n",
-		colout->status,
-		opt_colorize, GetColorModeName(opt_colorize,"?"),
-		colorize_stdout, GetColorModeName(colorize_stdout,"?"),
-		getenv("TERM"), isatty(fileno(stdout)),
-		colout->col_mode, GetColorModeName(colout->col_mode,"?"),
-		colout->colorize, colout->n_colors, colout->reset );
-	return ERR_OK;
-    }
-
-    if ( !mode && level > 0 )
-	switch (level)
-	{
-	    case 1:  mode = 0x08; break;
-	    case 2:  mode = 0x18; break;
-	    case 3:  mode = 0x1b; break;
-	    default: mode = 0x1f; break;
-	}
-
-    if (!format)
-    {
-	const ColorMode_t col_mode = colout ? colout->col_mode : COLMD_AUTO;
-	PrintTextModes( stdout, 4, col_mode );
-	PrintColorModes( stdout, 4, col_mode, GCM_ALT );
-     #ifdef TEST
-	PrintColorModes( stdout, 4, col_mode, GCM_ALT|GCM_SHORT );
-     #endif
-    }
-    if ( mode || format )
-	PrintColorSetEx(stdout,4,colout,mode,format);
-    return ERR_OK;
 }
 
 //
@@ -5418,6 +5705,27 @@ void AppendStringField ( StringField_t * sf, ccp key, bool move_key )
 
 ///////////////////////////////////////////////////////////////////////////////
 
+void AppendUniqueStringField ( StringField_t * sf, ccp key, bool move_key )
+{
+    DASSERT(sf);
+    if (!key)
+	return;
+
+    ccp * src = sf->field;
+    ccp * end = sf->field + sf->used;
+    while ( src < end )
+	if (!strcmp(*src++,key))
+	{
+	    if (move_key)
+		FreeString(key);
+	    return;
+	}
+
+    AppendStringField(sf,key,move_key);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 void SortStringField ( StringField_t * sf )
 {
     DASSERT(sf);
@@ -5672,11 +5980,8 @@ void RestoreStateStringField
 ///////////////			  ParamField_t			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void InitializeParamField ( ParamField_t * pf )
-{
-    DASSERT(pf);
-    memset(pf,0,sizeof(*pf));
-}
+#undef PARAM_FIELD_GROW
+#define PARAM_FIELD_GROW(s) (s)/4+100
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -5765,7 +6070,7 @@ static ParamFieldItem_t * InsertParamFieldHelper ( ParamField_t * pf, int idx )
     noPRINT("+SF: %u/%u/%u\n",idx,pf->used,pf->size);
     if ( pf->used == pf->size )
     {
-	pf->size += 0x100;
+	pf->size += PARAM_FIELD_GROW(pf->size);
 	pf->field = REALLOC(pf->field,pf->size*sizeof(*pf->field));
     }
     DASSERT( idx <= pf->used );
@@ -5778,12 +6083,10 @@ static ParamFieldItem_t * InsertParamFieldHelper ( ParamField_t * pf, int idx )
 ///////////////////////////////////////////////////////////////////////////////
 
 ParamFieldItem_t * FindInsertParamField
-	( ParamField_t * pf, ccp key, bool move_key, bool *old_found )
+	( ParamField_t * pf, ccp key, bool move_key, uint num, bool *old_found )
 {
     if (!key)
 	return 0;
-
-    noTRACE("InsertParamField(%s,%x)\n",key,num);
 
     bool found;
     int idx = FindParamFieldHelper(pf,&found,key);
@@ -5796,9 +6099,9 @@ ParamFieldItem_t * FindInsertParamField
     }
     else
     {
-	item = InsertParamFieldHelper(pf,idx);
+	item       = InsertParamFieldHelper(pf,idx);
 	item->key  = move_key ? key : STRDUP(key);
-	item->num  = 0;
+	item->num  = num;
 	item->data = 0;
     }
 
@@ -5809,9 +6112,9 @@ ParamFieldItem_t * FindInsertParamField
 
 ///////////////////////////////////////////////////////////////////////////////
 
-ParamFieldItem_t * CountParamField ( ParamField_t * pf, ccp key, bool move_key )
+ParamFieldItem_t * IncrementParamField ( ParamField_t * pf, ccp key, bool move_key )
 {
-    ParamFieldItem_t *item = FindInsertParamField(pf,key,move_key,0);
+    ParamFieldItem_t *item = FindInsertParamField(pf,key,move_key,0,0);
     if (item)
 	item->num++;
     return item;
@@ -5845,35 +6148,6 @@ bool InsertParamField
     }
 
     return !found;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-ParamFieldItem_t * InsertParamFieldEx
-	( ParamField_t * pf, ccp key, bool move_key, uint num, bool *p_found )
-{
-    if (!key)
-	return 0;
-
-    noTRACE("InsertParamField(%s,%x)\n",key,num);
-
-    bool found;
-    int idx = FindParamFieldHelper(pf,&found,key);
-    if (p_found)
-	*p_found = found;
-
-    if (found)
-    {
-	if (move_key)
-	    FreeString(key);
-	return pf->field + idx;
-    }
-
-    ParamFieldItem_t * dest = InsertParamFieldHelper(pf,idx);
-    dest->key  = move_key ? key : STRDUP(key);
-    dest->num  = num;
-    dest->data = 0;
-    return dest;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -5940,7 +6214,7 @@ ParamFieldItem_t * AppendParamField
 	noPRINT(">SF: %u/%u\n",pf->used,pf->size);
 	if ( pf->used == pf->size )
 	{
-	    pf->size += 0x100;
+	    pf->size += PARAM_FIELD_GROW(pf->size);
 	    pf->field = REALLOC(pf->field,pf->size*sizeof(*pf->field));
 	}
 	TRACE("AppendParamField(%s,%d) %d/%d\n",key,move_key,pf->used,pf->size);
@@ -5993,6 +6267,569 @@ uint FindParamFieldHelper ( const ParamField_t * pf, bool * p_found, ccp key )
     if (p_found)
 	*p_found = false;
     return beg;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			  exmem_list_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+#undef  EXMEM_LIST_GROW
+#define EXMEM_LIST_GROW(s) (s)/2+50
+
+//-----------------------------------------------------------------------------
+
+void ResetEML ( exmem_list_t * eml )
+{
+    if (eml)
+    {
+	if ( eml->used > 0 )
+	{
+	    DASSERT(eml->list);
+	    exmem_key_t *ptr = eml->list, *end;
+	    for ( end = ptr + eml->used; ptr < end; ptr++ )
+	    {
+		if (ptr->data.is_key_alloced)
+		    FreeString(ptr->key);
+		if (ptr->data.is_alloced)
+		    FreeString(ptr->data.data.ptr);
+	    }
+	}
+	FREE(eml->list);
+
+	int (*func_cmp)( ccp s1, ccp s2 ) = eml->func_cmp;
+	InitializeEML(eml);
+	eml->func_cmp = func_cmp;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void MoveEML ( exmem_list_t * dest, exmem_list_t * src )
+{
+    DASSERT(dest);
+    if ( src != dest )
+    {
+	ResetEML(dest);
+	if (src)
+	{
+	    *dest = *src;
+	    InitializeEML(src);
+	}
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint FindHelperEML ( const exmem_list_t * eml, ccp key, bool * p_found )
+{
+    DASSERT(eml);
+
+    int (*cmp)( ccp s1, ccp s2 ) = eml->func_cmp ? eml->func_cmp : strcmp;
+
+    if ( eml->is_unsorted )
+    {
+	uint i;
+	exmem_key_t *ptr = eml->list;
+	for ( i = 0; i < eml->used; i++, ptr++ )
+	    if (!cmp(key,ptr->key))
+	    {
+		if (p_found)
+		    *p_found = true;
+		return i;
+	    }
+
+	if (p_found)
+	    *p_found = false;
+	return eml->used;
+    }
+
+    int beg = 0;
+    if (key)
+    {
+	int end = eml->used - 1;
+	while ( beg <= end )
+	{
+	    const uint idx = (beg+end)/2;
+	    const int stat = cmp(key,eml->list[idx].key);
+	    if ( stat < 0 )
+		end = idx - 1 ;
+	    else if ( stat > 0 )
+		beg = idx + 1;
+	    else
+	    {
+		noTRACE("FindHelperEML(%s) FOUND=%d/%d/%d\n",
+			key, idx, eml->used, eml->size );
+		if (p_found)
+		    *p_found = true;
+		return idx;
+	    }
+	}
+    }
+
+    noTRACE("FindHelperEML(%s) failed=%d/%d/%d\n",
+		key, beg, eml->used, eml->size );
+
+    if (p_found)
+	*p_found = false;
+    return beg;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int FindIndexEML ( const exmem_list_t * eml, ccp key, int not_found_value )
+{
+    bool found;
+    const int idx = FindHelperEML(eml,key,&found);
+    return found ? idx : not_found_value;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_key_t * FindEML ( const exmem_list_t * eml, ccp key )
+{
+    bool found;
+    const int idx = FindHelperEML(eml,key,&found);
+    return found ? eml->list + idx : 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_key_t * FindAttribEML ( const exmem_list_t * eml, u32 attrib )
+{
+    DASSERT(eml);
+    noTRACE("FindAttribEML(%x)\n",attrib);
+
+    exmem_key_t *ptr = eml->list, *end;
+    for ( end = ptr + eml->used; ptr < end; ptr++ )
+	if ( ptr->data.attrib == attrib )
+	    return ptr;
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static exmem_key_t * InsertHelperEML
+	( exmem_list_t * eml, int idx,
+			ccp key, CopyMode_t cm_key,
+			const exmem_t *data, CopyMode_t cm_data )
+{
+    DASSERT(eml);
+    DASSERT( eml->used <= eml->size );
+    noPRINT("+SF: %u/%u/%u\n",idx,eml->used,eml->size);
+    if ( eml->used == eml->size )
+    {
+	eml->size += EXMEM_LIST_GROW(eml->size);
+	eml->list = REALLOC(eml->list,eml->size*sizeof(*eml->list));
+    }
+
+    DASSERT( idx <= eml->used );
+    exmem_key_t * dest = eml->list + idx;
+    memmove(dest+1,dest,(eml->used-idx)*sizeof(*dest));
+    eml->used++;
+
+    dest->data = CopyExMem(data,cm_data);
+    dest->key  = cm_key == CPM_COPY ? STRDUP(key) : key;
+    dest->data.is_key_alloced = cm_key != CPM_LINK;
+
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_key_t * FindInsertEML
+	( exmem_list_t * eml, ccp key, CopyMode_t cm_key, bool *old_found )
+{
+    if (!key)
+	return 0;
+
+    bool found;
+    int idx = FindHelperEML(eml,key,&found);
+    exmem_key_t *item;
+    if (found)
+    {
+	if ( cm_key == CPM_MOVE )
+	    FreeString(key);
+	item = eml->list + idx;
+    }
+    else
+	item = InsertHelperEML(eml,idx,key,cm_key,0,0);
+
+    if (old_found)
+	*old_found = found;
+    return item;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool InsertEML ( exmem_list_t * eml, ccp key, CopyMode_t cm_key,
+					const exmem_t *data, CopyMode_t cm_data )
+{
+    DASSERT(eml);
+
+    if (!key)
+    {
+	FreeExMemCM(data,cm_data);
+	return 0;
+    }
+
+    bool found;
+    int idx = FindHelperEML(eml,key,&found);
+    if (found)
+    {
+	if ( cm_key == CPM_MOVE )
+	    FreeString(key);
+	FreeExMemCM(data,cm_data);
+    }
+    else
+	InsertHelperEML(eml,idx,key,cm_key,data,cm_data);
+
+    return !found;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool ReplaceEML ( exmem_list_t * eml, ccp key, CopyMode_t cm_key,
+					const exmem_t *data, CopyMode_t cm_data )
+{
+    DASSERT(eml);
+
+    if (!key)
+    {
+	FreeExMemCM(data,cm_data);
+	return 0;
+    }
+
+    bool found;
+    int idx = FindHelperEML(eml,key,&found);
+    if (found)
+    {
+	if ( cm_key == CPM_MOVE )
+	    FreeString(key);
+
+	exmem_key_t * dest = eml->list + idx;
+	AssignExMem(&dest->data,data,cm_data);
+    }
+    else
+	InsertHelperEML(eml,idx,key,cm_key,data,cm_data);
+
+    return !found;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool OverwriteEML ( exmem_list_t * eml, ccp key, CopyMode_t cm_key,
+					const exmem_t *data, CopyMode_t cm_data )
+{
+    DASSERT(eml);
+
+    if (!key)
+    {
+	FreeExMemCM(data,cm_data);
+	return 0;
+    }
+
+    bool found;
+    int idx = FindHelperEML(eml,key,&found);
+    if (found)
+    {
+	if ( cm_key == CPM_MOVE )
+	    FreeString(key);
+
+	exmem_key_t * dest = eml->list + idx;
+	AssignExMem(&dest->data,data,cm_data);
+    }
+
+    return found;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_key_t * AppendEML ( exmem_list_t * eml, ccp key, CopyMode_t cm_key,
+					const exmem_t *data, CopyMode_t cm_data )
+{
+    DASSERT(eml);
+
+    if (!key)
+    {
+	FreeExMemCM(data,cm_data);
+	return 0;
+    }
+
+    if ( eml->used == eml->size )
+    {
+	eml->size += EXMEM_LIST_GROW(eml->size);
+	eml->list = REALLOC(eml->list,eml->size*sizeof(*eml->list));
+    }
+    TRACE("AppendEML(%s,%d) %d/%d\n",key,cm_key,eml->used,eml->size);
+
+    exmem_key_t * dest = eml->list + eml->used++;
+    dest->data = CopyExMem(data,cm_data);
+    dest->key  = cm_key == CPM_COPY ? STRDUP(key) : key;
+    dest->data.is_key_alloced = cm_key != CPM_LINK;
+
+    eml->is_unsorted = true;
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool RemoveEML ( exmem_list_t * eml, ccp key )
+{
+    bool found;
+    uint idx = FindHelperEML(eml,key,&found);
+    if (found)
+    {
+	DASSERT(eml->used);
+	eml->used--;
+	DASSERT( idx <= eml->used );
+	exmem_key_t * dest = eml->list + idx;
+	if (dest->data.is_key_alloced)
+	    FreeString(dest->key);
+	FreeExMem(&dest->data);
+	if (eml->used)
+	    memmove(dest,dest+1,(eml->used-idx)*sizeof(*dest));
+	else
+	    eml->is_unsorted = false;
+    }
+    return found;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_key_t * MatchEML ( const exmem_list_t * eml, ccp key )
+{
+    DASSERT(eml);
+    if (key)
+    {
+	exmem_key_t *ptr = eml->list, *end;
+	for ( end = ptr + eml->used; ptr < end; ptr++ )
+	    if (MatchPattern(ptr->key,key,'/'))
+		return ptr;
+    }
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void DumpEML ( FILE *f, int indent, const exmem_list_t * eml, ccp info )
+{
+    if ( f && eml && eml->used )
+    {
+	indent = NormalizeIndent(indent);
+	fprintf(f,"%*s%s%s" "exmem list %p, N=%u/%u%s\n",
+		indent,"", info ? info : "", info ? " : " : "",
+		eml, eml->used, eml->size, eml->is_unsorted ? ", not sorted" : "" );
+
+	char buf[20];
+	const int fw_idx = indent + snprintf(buf,sizeof(buf),"%d",eml->used-1) + 1;
+
+	exmem_key_t *ptr, *end = eml->list + eml->used;
+	int fw_key = 0;
+	for ( ptr = eml->list; ptr < end; ptr++ )
+	{
+	    if (ptr->key)
+	    {
+		const int klen = strlen(ptr->key);
+		if ( fw_key < klen )
+		     fw_key = klen;
+	    }
+	}
+	if ( fw_key > 30 )
+	     fw_key = 30;
+
+	uint idx = 0;
+	for (  ptr = eml->list; ptr < end; ptr++, idx++ )
+	    fprintf(f,"%*d [%c%c%c%c] %-*s = [%x] %s\n",
+		fw_idx, idx,
+		ptr->data.is_key_alloced? 'a' : '-',	// flags: same as in PrintExMem()
+		ptr->data.is_alloced	? 'A' : '-',
+		ptr->data.is_circ_buf	? 'C' : '-',
+		ptr->data.is_original	? 'O' : '-',
+		fw_key, ptr->key ? ptr->key : "",
+		ptr->data.attrib, ptr->data.data.ptr );
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_t ResolveSymbolsEML ( const exmem_list_t * eml, ccp source )
+{
+    exmem_t em = {{0}};
+
+    if (source)
+    {
+	char name[100];
+
+	int try;
+	for ( try = 0; try < 50; try++ )
+	{
+	    ccp p1 = strstr(source,"$(");
+	    if (!p1)
+		continue;
+	    ccp p2 = strchr(p1,')');
+	    if (!p2)
+		break;
+
+	    const int plen = p2 - p1 - 2;
+	    DASSERT(plen>=0);
+
+	    StringCopySM(name,sizeof(name),p1+2,plen);
+	    const exmem_key_t *ref = FindEML(eml,name);
+	    mem_t replace = ref ? ref->data.data : NullMem;
+
+	    char *temp = MEMDUP3(source, p1-source,
+				replace.ptr, replace.len,
+				p2+1, strlen(p2+1) );
+	    if (em.is_alloced)
+		FreeString(source);
+	    source = temp;
+	    em.is_alloced = true;
+	}
+    }
+
+    em.data.ptr = source;
+    em.data.len = strlen(source);
+    em.is_original = !em.is_alloced;
+    return em;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint ResolveAllSymbolsEML ( exmem_list_t * eml )
+{
+    ASSERT(eml);
+    int try, count = 0;
+    char name[100];
+    exmem_key_t *ptr, *end = eml->list + eml->used;
+
+    for ( try = 0; try < 20; try++ )
+    {
+	int try_again = 0;
+
+	for ( ptr = eml->list; ptr < end; ptr++ )
+	{
+	    for( int try2 = 0; try2 < 10; try2++ )
+	    {
+		ccp str = ptr->data.data.ptr;
+		if (!str)
+		    break;
+
+		ccp p1 = strstr(str,"$(");
+		if (!p1)
+		    break;
+		ccp p2 = strchr(p1,')');
+		if (!p2)
+		    break;
+		const int plen = p2 - p1 - 2;
+		ASSERT(plen>=0);
+
+		StringCopySM(name,sizeof(name),p1+2,plen);
+		const exmem_key_t *ref = FindEML(eml,name);
+		mem_t replace = ref && ref != ptr ? ref->data.data : NullMem;
+
+		char *temp = MEMDUP3( str, p1-str,
+				    replace.ptr, replace.len,
+				    p2+1, strlen(p2+1) );
+		if (ptr->data.is_alloced)
+		    FreeString(str);
+		ASSERT(temp);
+		ptr->data.data.ptr = temp;
+		ptr->data.data.len = strlen(temp);
+		ptr->data.is_alloced = true;
+		ptr->data.is_original = ptr->data.is_circ_buf = false;
+		try_again++;
+		count++;
+	    }
+	}
+
+	if (!try_again)
+	    break;
+    }
+    return count;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+// add symbols 'home', 'etc', 'install' = 'prog' and 'cwd'
+void AddStandardSymbolsEML ( exmem_list_t * eml, bool overwrite )
+{
+    DASSERT(eml);
+
+    char buf[PATH_MAX];
+    bool (*func)(exmem_list_t*,ccp,CopyMode_t,const exmem_t*,CopyMode_t)
+	= overwrite ? ReplaceEML : InsertEML;
+    PRINT0("overwrite=%d, func=%p, ins=%p, repl=%p\n",overwrite,func,InsertEML,ReplaceEML);
+
+    exmem_t temp = ExMemByString("/etc");
+    func(eml,"etc",CPM_LINK,&temp,CPM_LINK);
+
+    ccp home = getenv("HOME");
+    temp = ExMemByString0(home);
+    func(eml,"home",CPM_LINK,&temp,CPM_COPY);
+
+    // https://wiki.archlinux.org/index.php/XDG_Base_Directory
+    ccp xdg = getenv("XDG_CONFIG_HOME");
+    if ( xdg && *xdg )
+    {
+	temp = ExMemByString0(xdg);
+	ccp colon = strchr(xdg,':');
+	if (colon)
+	{
+	    if ( colon == xdg )
+		goto xdg_home;
+	    temp.data.len = colon - xdg;
+	}
+	func(eml,"xdg_home",CPM_LINK,&temp,CPM_COPY);
+    }
+    else if (home)
+    {
+     xdg_home:;
+	xdg = PathCatPP(buf,sizeof(buf),home,".config");
+	temp = ExMemByString0(xdg);
+	func(eml,"xdg_home",CPM_LINK,&temp,CPM_COPY);
+    }
+
+    xdg = getenv("XDG_CONFIG_DIRS");
+    if ( xdg && *xdg )
+    {
+	temp = ExMemByString0(xdg);
+	ccp colon = strchr(xdg,':');
+	if (colon)
+	{
+	    if ( colon == xdg )
+		goto xdg_etc;
+	    temp.data.len = colon - xdg;
+	}
+	func(eml,"xdg_etc",CPM_LINK,&temp,CPM_COPY);
+    }
+    else
+    {
+     xdg_etc:;
+	temp = ExMemByString("/etc/xdg");
+	func(eml,"xdg_etc",CPM_LINK,&temp,CPM_LINK);
+    }
+
+    ccp install = ProgramDirectory();
+    temp = ExMemByString0(install);
+    func(eml,"install",CPM_LINK,&temp,CPM_COPY);
+    func(eml,"prog",CPM_LINK,&temp,CPM_COPY);
+
+    if (getcwd(buf,sizeof(buf)))
+    {
+	temp = ExMemByString0(buf);
+	func(eml,"cwd",CPM_LINK,&temp,CPM_COPY);
+    }
+
+ #ifdef __CYGWIN__
+    ccp prog_files = getenv("PROGRAMFILES");
+    if ( !prog_files || !*prog_files )
+	prog_files = "C:/Program Files";
+    temp = GetNormalizeFilenameCygwin(prog_files,true);
+    func(eml,"programfiles",CPM_LINK,&temp,CPM_COPY);
+    FreeExMem(&temp);
+ #endif
 }
 
 //
@@ -7786,12 +8623,20 @@ int opt_new = 0;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-uint CreateUniqueId ( int range )
+uint CreateUniqueIdN ( int range )
 {
     static uint unique_id = 1;
-    const uint ret = unique_id;
-    if ( range > 0 )
-	unique_id += range;
+
+    if ( range <= 0 )
+	return unique_id;
+
+    uint ret = unique_id;
+    unique_id += range;
+    if ( unique_id < ret ) // overflow
+    {
+	ret = 1;
+	unique_id = ret + range;
+    }
     return ret;
 }
 
@@ -7841,6 +8686,17 @@ void * dc_memrchr ( cvp src, int ch, size_t size )
 	if ( *--ptr == ch )
 	    return (void*)ptr;
     return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool IsMemConst ( cvp mem, uint size, u8 val )
+{
+    if (!size)
+	return true;
+
+    const u8 *src = (u8*)mem;
+    return *src == val && !memcmp(src,src+1,size-1);
 }
 
 //

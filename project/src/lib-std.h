@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -394,7 +394,7 @@ char * AllocSplitFilename ( ccp path, enumOFT oft );
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			file support			///////////////
 ///////////////////////////////////////////////////////////////////////////////
-// [[2do]] [[ft-id]]
+// [[enumFileType]]  //  [[2do]] [[ft-id]]
 
 typedef enum enumFileType
 {
@@ -411,17 +411,18 @@ typedef enum enumFileType
 	//--- special files
 
 	FT_ID_DOL	= 0x0020,  // file is a DOL file
-	FT_ID_CERT_BIN	= 0x0040,  // 'cert.bin' like file
-	FT_ID_TIK_BIN	= 0x0080,  // 'ticket.bin' like file
-	FT_ID_TMD_BIN	= 0x0100,  // 'tmd.bin' like file
-	FT_ID_HEAD_BIN	= 0x0200,  // 'header.bin' like file
-	FT_ID_BOOT_BIN	= 0x0400,  // 'boot.bin' like file
-	FT_ID_FST_BIN	= 0x0800,  // 'fst.bin' like file
-	FT_ID_PATCH	= 0x1000,  // wit patch file
-	FT_ID_OTHER	= 0x2000,  // unknown file
+	FT_ID_SIG_BIN	= 0x0040,  // 'signature.bin' like file
+	FT_ID_CERT_BIN	= 0x0080,  // 'cert.bin' like file
+	FT_ID_TIK_BIN	= 0x0100,  // 'ticket.bin' like file
+	FT_ID_TMD_BIN	= 0x0200,  // 'tmd.bin' like file
+	FT_ID_HEAD_BIN	= 0x0400,  // 'header.bin' like file
+	FT_ID_BOOT_BIN	= 0x0800,  // 'boot.bin' like file
+	FT_ID_FST_BIN	= 0x1000,  // 'fst.bin' like file
+	FT_ID_PATCH	= 0x2000,  // wit patch file
+	FT_ID_OTHER	= 0x4000,  // unknown file
 
-	 FT__SPC_MASK	= 0x3fe0,  // mask of all special files
-	 FT__ID_MASK	= 0x3fff,  // mask of all 'FT_ID_' values
+	 FT__SPC_MASK	= 0x7fe0,  // mask of all special files
+	 FT__ID_MASK	= 0x7fff,  // mask of all 'FT_ID_' values
 
 	//--- attributes
 
@@ -435,18 +436,22 @@ typedef enum enumFileType
 	FT_A_WIA	= 0x00400000,  // flag: file is a packed WIA
 	FT_A_CISO	= 0x00800000,  // flag: file is a packed CISO
 	FT_A_GCZ	= 0x01000000,  // flag: file is a packed GCZ
-	FT_A_REGFILE	= 0x02000000,  // flag: file is a regular file
-	FT_A_BLOCKDEV	= 0x04000000,  // flag: file is a block device
-	FT_A_CHARDEV	= 0x08000000,  // flag: file is a block device
-	FT_A_SEEKABLE	= 0x10000000,  // flag: using of seek() is possible
-	FT_A_WRITING	= 0x20000000,  // is opened for writing
-	FT_A_PART_DIR	= 0x40000000,  // FST is a partition
+	FT_A_NKIT_ISO	= 0x02000000,  // flag: file is a packed NKIT/ISO
+	FT_A_NKIT_GCZ	= 0x04000000,  // flag: file is a packed NKIT/GCZ
+
+	FT_A_REGFILE	= 0x0100000000ull,  // flag: file is a regular file
+	FT_A_BLOCKDEV	= 0x0200000000ull,  // flag: file is a block device
+	FT_A_CHARDEV	= 0x0400000000ull,  // flag: file is a block device
+	FT_A_SEEKABLE	= 0x0800000000ull,  // flag: using of seek() is possible
+	FT_A_WRITING	= 0x1000000000ull,  // is opened for writing
+	FT_A_PART_DIR	= 0x2000000000ull,  // FST is a partition
 
 	//--- special combinations
 
-	FT_M_WDF	= FT_A_WDF1 | FT_A_WDF2
-
-} enumFileType;
+	FT_M_WDF	= FT_A_WDF1 | FT_A_WDF2,
+	FT_M_NKIT	= FT_A_NKIT_ISO | FT_A_NKIT_GCZ,
+}
+enumFileType;
 
 //-----------------------------------------------------------------------------
 // [[FileCache_t]]
@@ -457,8 +462,8 @@ typedef struct FileCache_t
 	size_t	count;			// size of cached data
 	ccp	data;			// pointer to cached data (alloced)
 	struct FileCache_t * next;	// NULL or pointer to next element
-
-} FileCache_t;
+}
+FileCache_t;
 
 //-----------------------------------------------------------------------------
 
@@ -511,6 +516,7 @@ typedef struct WFile_t
 
     int		open_flags;		// proposed open flags; if zero then ignore
     bool	disable_errors;		// don't print error messages
+    bool	disable_nkit_errors;	// don't print error messages for NKIT
     bool	create_directory;	// create direcotries automatically
     int		already_created_mode;	// 0:ignore, 1:warn, 2:error+abort
 
@@ -574,8 +580,8 @@ typedef struct WFile_t
     u32		write_count;		// number of successfull write operations
     u64		bytes_read;		// number of bytes read
     u64		bytes_written;		// number of bytes written
-
-} WFile_t;
+}
+WFile_t;
 
 //-----------------------------------------------------------------------------
 
@@ -590,9 +596,9 @@ enumError XSetWFileTime	( XPARM WFile_t * f, FileAttrib_t * set_time );
 enumError XOpenWFile       ( XPARM WFile_t * f, ccp fname, enumIOMode iomode );
 enumError XOpenWFileModify ( XPARM WFile_t * f, ccp fname, enumIOMode iomode );
 enumError XCreateWFile     ( XPARM WFile_t * f, ccp fname, enumIOMode iomode, int overwrite );
-enumError XCheckCreated   ( XPARM             ccp fname, bool disable_errors, enumError err_code );
+enumError XCheckCreated    ( XPARM             ccp fname, bool disable_errors, enumError err_code );
 enumError XOpenStreamWFile ( XPARM WFile_t * f );
-enumError XSetupAutoSplit ( XPARM WFile_t *f, enumOFT oft );
+enumError XSetupAutoSplit  ( XPARM WFile_t *f, enumOFT oft );
 enumError XSetupSplitWFile ( XPARM WFile_t *f, enumOFT oft, off_t split_size );
 enumError XCreateSplitWFile( XPARM WFile_t *f, uint split_idx );
 enumError XFindSplitWFile  ( XPARM WFile_t *f, uint * index, off_t * off );
@@ -1418,7 +1424,10 @@ RepairMode ScanRepairMode ( ccp arg );
 
 size_t AllocTempBuffer ( size_t needed_size );
 int AddCertFile ( ccp fname, int unused );
+void SortGlobalCert ( uint smode );
 char * AllocRealPath ( ccp source );
+
+void cmd_version_section ( bool sect_header, ccp name_short, ccp name_long );
 
 //
 ///////////////////////////////////////////////////////////////////////////////

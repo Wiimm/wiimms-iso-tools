@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -44,6 +44,7 @@
 
 #include "dclib/dclib-debug.h"
 #include "dclib/dclib-file.h"
+#include "dclib/dclib-xdump.h"
 
 #include "iso-interface.h"
 #include "wbfs-interface.h"
@@ -959,6 +960,10 @@ void Dump_CERT_Item
     const cert_chain_t	* cc		// not NULL: verify signature
 )
 {
+    XDump_t xd;
+    InitializeXDumpEx(&xd,f,indent+4,0,4,16);
+    xd.print_text = false;
+
     if ( cert_index >= 0)
     {
 	fprintf(f,"%*sCertificate #%u, size=0x%x=%u\n",
@@ -981,13 +986,18 @@ void Dump_CERT_Item
 	const u32 pub_exp = be32(item->data->public_key+item->key_size);
 	fprintf(f,"%*sPublic exponent: %11x/hex =%11u\n",indent,"",pub_exp,pub_exp);
 
-	if (print_ext>1)
+	if ( print_ext > 1 )
 	{
-	    fprintf(f,"%*sPublic key:\n",indent,"");
 	    if ( print_ext > 2 )
+	    {
+		fprintf(f,"%*sPublic key (base64):\n",indent,"");
 		PrintEncode64(f,item->data->public_key,item->key_size,indent+5,70);
+	    }
 	    else
-		HexDump(f,indent+4,0,4,-16,item->data->public_key,item->key_size);
+	    {
+		fprintf(f,"%*sPublic key (hex):\n",indent,"");
+		XDump(&xd,item->data->public_key,item->key_size,true);
+	    }
 	}
 	else
 	{
@@ -997,29 +1007,36 @@ void Dump_CERT_Item
 
 	if (item->head)
 	{
-	    if (print_ext>1)
+	    if ( print_ext > 1 )
 	    {
-		fprintf(f,"%*sSignature:\n",indent,"");
 		if ( print_ext > 2 )
-		    PrintEncode64(f,item->head->sig_data,item->sig_size,indent+5,70);
+		{
+		    fprintf(f,"%*sSignature (base64):\n",indent,"");
+		    PrintEncode64(f,item->head->cert_data,item->sig_size,indent+5,70);
+		}
 		else
-		    HexDump(f,indent+4,0,4,-16,item->head->sig_data,item->sig_size);
+		{
+		    fprintf(f,"%*sSignature (hex):\n",indent,"");
+		    XDump(&xd,item->head->cert_data,item->sig_size,true);
+		}
 	    }
 	    else
 	    {
 		fprintf(f,"%*sSignature:         ",indent,"");
-		dump_hex(f,item->head->sig_data,16,0," ...\n");
+		dump_hex(f,item->head->cert_data,16,0," ...\n");
 	    }
 	}
     }
 
     if (item->head)
     {
-	u8 hash[WII_HASH_SIZE];
+	sha1_hash_t hash;
 	SHA1((u8*)item->data,item->data_size,hash);
 	fprintf(f,"%*sRelevant SHA1:     ",indent,"");
-	dump_hex(f,hash,20,0,"\n");
+	dump_hex(f,hash,sizeof(hash),0,"\n");
     }
+
+    ResetXDump(&xd);
 }
 
 //
@@ -1614,15 +1631,41 @@ int RenameISOHeader ( void * data, ccp fname,
 ///////////////			global options			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-bool allow_fst		= false;  // FST diabled by default
-bool ignore_setup	= false;  // ignore file 'setup.txt' while composing
-bool opt_links		= false;  // find linked files and create hard links
-bool opt_user_bin	= false;  // enable management of "sys/user.bin"
+OffOn_t opt_allow_fst	= OFFON_AUTO;	// disable or enable usage of FST images
+OffOn_t opt_allow_nkit	= OFFON_AUTO;	// disable or enable detection of NKIT images
+
+bool ignore_setup	= false;	// ignore file 'setup.txt' while composing
+bool opt_links		= false;	// find linked files and create hard links
+bool opt_user_bin	= false;	// enable management of "sys/user.bin"
 
 wd_select_t part_selector = {0};
 
 u8 wdisc_usage_tab [WII_MAX_SECTORS];
 u8 wdisc_usage_tab2[WII_MAX_SECTORS];
+
+///////////////////////////////////////////////////////////////////////////////
+
+int ScanOptAllowFST ( ccp arg )
+{
+    const int stat = ScanKeywordOffAutoOn(arg,OFFON_ON,OFFON_FORCE,"Option --allow-fst");
+    if ( stat == OFFON_ERROR )
+	return 1;
+
+    opt_allow_fst = stat;
+    return 0;
+}
+
+//-----------------------------------------------------------------------------
+
+int ScanOptAllowNKIT ( ccp arg )
+{
+    const int stat = ScanKeywordOffAutoOn(arg,OFFON_ON,OFFON_FORCE,"Option --allow-nkit");
+    if ( stat == OFFON_ERROR )
+	return 1;
+
+    opt_allow_nkit = stat;
+    return 0;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -3275,7 +3318,8 @@ SortMode SortFST ( WiiFst_t * fst, SortMode sort_mode, SortMode default_sort_mod
 
 ///////////////////////////////////////////////////////////////////////////////
 
-SortMode SortPartFST ( WiiFstPart_t * part, SortMode sort_mode, SortMode default_sort_mode )
+SortMode SortPartFST
+	( WiiFstPart_t * part, SortMode sort_mode, SortMode default_sort_mode )
 {
     TRACE("SortPartFST(%p,%d,%d=\n",part,sort_mode,default_sort_mode);
     if (!part)
@@ -4313,7 +4357,7 @@ enumError SetupReadFST ( SuperFile_t * sf )
 {
     ASSERT(sf);
     ASSERT(!sf->fst);
-    PRINT("SetupReadFST() -> %x %s\n",sf->f.ftype,sf->f.fname);
+    PRINT("SetupReadFST() -> %llx %s\n",(u64)sf->f.ftype,sf->f.fname);
 
     SetupIOD(sf,OFT_FST,OFT_FST);
     WiiFst_t * fst = MALLOC(sizeof(*fst));
@@ -5811,8 +5855,8 @@ enumError Skeletonize
     const enumOFT oft = CalcOFT(output_file_type,0,0,OFT__WDF_DEF);
 
     {
-	WIIMM_SHA_CTX ctx;
-	if (!WIIMM_SHA1_Init(&ctx))
+	SHA_CTX ctx;
+	if (!SHA1_Init(&ctx))
 	{
 	    ASSERT(0);
 	    exit(0);
@@ -5823,10 +5867,10 @@ enumError Skeletonize
 	{
 	    wd_memmap_item_t * mi = mm.item + i;
 	    noPRINT("### %p %9llx %6llx\n",mi->data,mi->offset,mi->size);
-	    WIIMM_SHA1_Update(&ctx,mi->data,mi->size);
+	    SHA1_Update(&ctx,mi->data,mi->size);
 	}
 	u8 h[WII_HASH_SIZE];
-	WIIMM_SHA1_Final(h,&ctx);
+	SHA1_Final(h,&ctx);
 
 	snprintf(fname,sizeof(fname),
 		"%s/%.6s-%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x"

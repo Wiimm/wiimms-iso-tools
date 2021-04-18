@@ -16,7 +16,7 @@
  *   This file is part of the WIT project.                                 *
  *   Visit https://wit.wiimm.de/ for project details and sources.          *
  *                                                                         *
- *   Copyright (c) 2009-2020 by Dirk Clemens <wiimm@wiimm.de>              *
+ *   Copyright (c) 2009-2021 by Dirk Clemens <wiimm@wiimm.de>              *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -97,6 +97,7 @@ typedef enum enumOptions
 	OPT_IOS,
 	OPT_HTTP,
 	OPT_DOMAIN,
+	OPT_SECURITY_FIX,
 	OPT_WIIMMFI,
 	OPT_TWIIMMFI,
 	OPT_RM_FILES,
@@ -156,11 +157,12 @@ typedef enum enumOptions
 	OPT_OLD_STYLE,
 	OPT_SECTIONS,
 	OPT_SORT,
+	OPT_NO_SORT,
 	OPT_LIMIT,
 	OPT_FILE_LIMIT,
 	OPT_PATCH_FILE,
 
-	OPT__N_SPECIFIC, // == 104
+	OPT__N_SPECIFIC, // == 106
 
 	//----- global options -----
 
@@ -192,8 +194,18 @@ typedef enum enumOptions
 	OPT_ALIGN_WDF,
 	OPT_GCZ_ZIP,
 	OPT_GCZ_BLOCK,
+	OPT_ALLOW_FST,
+	OPT_ALLOW_NKIT,
+	OPT_SH,
+	OPT_BASH,
+	OPT_JSON,
+	OPT_PHP,
+	OPT_MAKEDOC,
+	OPT_VAR,
+	OPT_ARRAY,
+	OPT_AVAR,
 
-	OPT__N_TOTAL // == 132
+	OPT__N_TOTAL // == 144
 
 } enumOptions;
 
@@ -249,6 +261,7 @@ typedef enum enumOptions
 //	OB_IOS			= 1llu << OPT_IOS,
 //	OB_HTTP			= 1llu << OPT_HTTP,
 //	OB_DOMAIN		= 1llu << OPT_DOMAIN,
+//	OB_SECURITY_FIX		= 1llu << OPT_SECURITY_FIX,
 //	OB_WIIMMFI		= 1llu << OPT_WIIMMFI,
 //	OB_TWIIMMFI		= 1llu << OPT_TWIIMMFI,
 //	OB_RM_FILES		= 1llu << OPT_RM_FILES,
@@ -308,6 +321,7 @@ typedef enum enumOptions
 //	OB_OLD_STYLE		= 1llu << OPT_OLD_STYLE,
 //	OB_SECTIONS		= 1llu << OPT_SECTIONS,
 //	OB_SORT			= 1llu << OPT_SORT,
+//	OB_NO_SORT		= 1llu << OPT_NO_SORT,
 //	OB_LIMIT		= 1llu << OPT_LIMIT,
 //	OB_FILE_LIMIT		= 1llu << OPT_FILE_LIMIT,
 //	OB_PATCH_FILE		= 1llu << OPT_PATCH_FILE,
@@ -341,13 +355,16 @@ typedef enum enumOptions
 //				| OB_ONE_JOB
 //				| OB_JOB_LIMIT,
 //
+//	OB_GRP_ALLOW_SRC	= 0,
+//
 //	OB_GRP_XSOURCE		= OB_GRP_SOURCE
 //				| OB_GRP_EXCLUDE,
 //
 //	OB_GRP_XXSOURCE		= OB_GRP_SOURCE
 //				| OB_GRP_EXCLUDE
 //				| OB_IGNORE
-//				| OB_GRP_FST_OPTIONS,
+//				| OB_GRP_FST_OPTIONS
+//				| OB_GRP_ALLOW_SRC,
 //
 //	OB_GRP_OUTMODE_EDIT	= OB_WDF
 //				| OB_WDF1
@@ -398,6 +415,7 @@ typedef enum enumOptions
 //				| OB_IOS
 //				| OB_HTTP
 //				| OB_DOMAIN
+//				| OB_SECURITY_FIX
 //				| OB_WIIMMFI
 //				| OB_TWIIMMFI
 //				| OB_RM_FILES
@@ -424,6 +442,8 @@ typedef enum enumOptions
 //				| OB_COMPRESSION
 //				| OB_MEM,
 //
+//	OB_GRP_SCRIPT		= 0,
+//
 //	OB_CMD_VERSION		= OB_BRIEF
 //				| OB_SECTIONS
 //				| OB_LONG,
@@ -447,6 +467,12 @@ typedef enum enumOptions
 //
 //	OB_CMD_FEATURES		= 0,
 //
+//	OB_CMD_ANALYZE		= OB_IGNORE
+//				| OB_GRP_SCRIPT
+//				| OB_GRP_ALLOW_SRC
+//				| OB_DEST
+//				| OB_DEST2,
+//
 //	OB_CMD_ANAID		= OB_NO_HEADER,
 //
 //	OB_CMD_EXCLUDE		= OB_EXCLUDE
@@ -460,7 +486,9 @@ typedef enum enumOptions
 //				| OB_FAKE_SIGN
 //				| OB_DEST
 //				| OB_DEST2
-//				| OB_LONG,
+//				| OB_LONG
+//				| OB_SORT
+//				| OB_NO_SORT,
 //
 //	OB_CMD_FILELIST		= OB_AUTO
 //				| OB_GRP_XXSOURCE
@@ -528,6 +556,7 @@ typedef enum enumOptions
 //				| OB_GRP_FST_OPTIONS
 //				| OB_UNIQUE
 //				| OB_SORT
+//				| OB_NO_SORT
 //				| OB_SECTIONS
 //				| OB_NO_HEADER
 //				| OB_LONG
@@ -549,7 +578,8 @@ typedef enum enumOptions
 //				| OB_LONG
 //				| OB_NO_HEADER
 //				| OB_SHOW
-//				| OB_SORT,
+//				| OB_SORT
+//				| OB_NO_SORT,
 //
 //	OB_CMD_FILES_L		= OB_CMD_FILES,
 //
@@ -580,6 +610,7 @@ typedef enum enumOptions
 //				| OB_GRP_FST_SELECT
 //				| OB_PREALLOC
 //				| OB_SORT
+//				| OB_NO_SORT
 //				| OB_LONG
 //				| OB_SECTIONS
 //				| OB_GRP_PATCH
@@ -691,6 +722,7 @@ typedef enum enumCommands
 	CMD_ERROR,
 	CMD_COMPR,
 	CMD_FEATURES,
+	CMD_ANALYZE,
 	CMD_ANAID,
 	CMD_EXCLUDE,
 	CMD_TITLES,
@@ -733,7 +765,7 @@ typedef enum enumCommands
 	CMD_SKELETON,
 	CMD_MIX,
 
-	CMD__N // == 44
+	CMD__N // == 45
 
 } enumCommands;
 
@@ -836,6 +868,7 @@ typedef enum enumGetOpt
 	GO_IOS,
 	GO_HTTP,
 	GO_DOMAIN,
+	GO_SECURITY_FIX,
 	GO_WIIMMFI,
 	GO_TWIIMMFI,
 	GO_RM_FILES,
@@ -867,6 +900,16 @@ typedef enum enumGetOpt
 	GO_GCZ_ZIP,
 	GO_GCZ_BLOCK,
 	GO_FST,
+	GO_ALLOW_FST,
+	GO_ALLOW_NKIT,
+	GO_SH,
+	GO_BASH,
+	GO_JSON,
+	GO_PHP,
+	GO_MAKEDOC,
+	GO_VAR,
+	GO_ARRAY,
+	GO_AVAR,
 	GO_ITIME,
 	GO_MTIME,
 	GO_CTIME,
@@ -878,6 +921,7 @@ typedef enum enumGetOpt
 	GO_UNIT,
 	GO_OLD_STYLE,
 	GO_SECTIONS,
+	GO_NO_SORT,
 	GO_LIMIT,
 	GO_FILE_LIMIT,
 	GO_PATCH_FILE,

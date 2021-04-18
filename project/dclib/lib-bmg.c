@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -89,6 +89,7 @@ bool		opt_bmg_use_raw_sections= 0;	// true: use raw sections
 
 //-----------------------------------------------------------------------------
 
+int		opt_bmg_endian		= BMG_AUTO_ENDIAN;
 int		opt_bmg_encoding	= BMG_ENC__UNDEFINED;
 uint		opt_bmg_inf_size	= 0;
 OffOn_t		opt_bmg_mid		= OFFON_AUTO;
@@ -147,6 +148,42 @@ const KeywordTab_t PatchKeysBMG[] =
 
 	{ 0,0,0,0 }
 };
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////		       endian helpers			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static const endian_func_t * get_bmg_endian ( const bmg_t * bmg )
+{
+    return opt_bmg_endian == BMG_LITTLE_ENDIAN
+	 ? &le_func
+	 : opt_bmg_endian == BMG_BIG_ENDIAN || !bmg
+	 ? &be_func
+	 : bmg->endian;
+}
+
+//-----------------------------------------------------------------------------
+
+static const endian_func_t * get_endian_by_bh ( const bmg_header_t * bh, uint size )
+{
+    DASSERT(bh);
+    if	(  be_func.n2hl(bh->size) <= size
+	&& be_func.n2hl(bh->n_sections) <= BMG_MAX_SECTIONS
+	)
+    {
+	return &be_func;
+    }
+
+    if	(  le_func.n2hl(bh->size) <= size
+	&& le_func.n2hl(bh->n_sections) <= BMG_MAX_SECTIONS
+	)
+    {
+	return &le_func;
+    }
+
+    return 0;
+}
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -1069,18 +1106,27 @@ static u16 * ScanRange16U32
 ///////////////			ScanSectionsBMG()		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-bmg_sect_list_t * ScanSectionsBMG ( cvp data, uint size )
+bmg_sect_list_t * ScanSectionsBMG
+	( cvp data, uint size, const endian_func_t *endian )
 {
     //--- initialize
 
     if ( !data || size < sizeof(bmg_header_t) || memcmp(data,BMG_MAGIC,8) )
 	return 0;
 
-    bmg_sect_list_t sl;
-    memset(&sl,0,sizeof(sl));
-    sl.header		= (bmg_header_t*)data;
-    sl.source_size	= ntohl(sl.header->size);
-    sl.n_sections	= ntohl(sl.header->n_sections);
+    bmg_sect_list_t sl = {0};
+    sl.header = (bmg_header_t*)data;
+
+    if (!endian)
+    {
+	endian = get_endian_by_bh(sl.header,size);
+	if (!endian)
+	    return 0;
+    }
+
+    sl.endian		= endian;
+    sl.source_size	= endian->n2hl(sl.header->size);
+    sl.n_sections	= endian->n2hl(sl.header->n_sections);
 
     FastBuf_t fb;
     InitializeFastBufAlloc(&fb,10*sizeof(bmg_sect_info_t));
@@ -1099,7 +1145,7 @@ bmg_sect_list_t * ScanSectionsBMG ( cvp data, uint size )
 
 	memset(&si,0,sizeof(si));
 	si.offset = (u8*)sect - (u8*)data;
-	si.sect_size = si.real_size = ntohl(sect->size);
+	si.sect_size = si.real_size = endian->n2hl(sect->size);
 	if ( (u8*)sect + si.real_size > data_end )
 	    si.real_size = data_end - (u8*)sect;
 
@@ -1110,8 +1156,8 @@ bmg_sect_list_t * ScanSectionsBMG ( cvp data, uint size )
 	{
 	    sl.pinf		= (bmg_inf_t*)sect;
 	    si.head_size	= sizeof(bmg_inf_t);
-	    si.elem_size	= ntohs(sl.pinf->inf_size);
-	    si.n_elem_head	= ntohs(sl.pinf->n_msg);
+	    si.elem_size	= endian->n2hs(sl.pinf->inf_size);
+	    si.n_elem_head	= endian->n2hs(sl.pinf->n_msg);
 	    si.known		= true;
 	    si.supported	= true;
 	    si.info		= "offset & attributes";
@@ -1137,7 +1183,7 @@ bmg_sect_list_t * ScanSectionsBMG ( cvp data, uint size )
 	    sl.pmid		= (bmg_mid_t*)sect;
 	    si.head_size	= sizeof(bmg_mid_t);
 	    si.elem_size	= sizeof(u32);
-	    si.n_elem_head	= ntohs(sl.pinf->n_msg);
+	    si.n_elem_head	= endian->n2hs(sl.pinf->n_msg);
 	    si.known		= true;
 	    si.supported	= true;
 	    si.info		= "message ids";
@@ -1821,6 +1867,32 @@ int (*GetArenaIndexBMG) ( uint idx, int result_on_invalid ) = GetArenaIndexBMG0;
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			bmg endian support		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+const KeywordTab_t TabEndianBMG[] =
+{
+	{ BMG_AUTO_ENDIAN,	"AUTO",		"UNDEFINED",	0 },
+	{ BMG_BIG_ENDIAN,	"BIG",		"BE",		0 },
+	{ BMG_LITTLE_ENDIAN,	"LITTLE",	"LE",		0 },
+	{ 0,0,0,0 }
+};
+
+//-----------------------------------------------------------------------------
+
+ccp GetEndianNameBMG ( int endian, ccp return_if_invalid )
+{
+    switch (endian)
+    {
+	case BMG_AUTO_ENDIAN:	return "AUTO";
+	case BMG_BIG_ENDIAN:	return "BIG";
+	case BMG_LITTLE_ENDIAN:	return "LITTLE";
+    }
+    return return_if_invalid;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			bmg encoding support		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1922,6 +1994,8 @@ void InitializeBMG ( bmg_t * bmg )
 
     DASSERT(bmg);
     memset(bmg,0,sizeof(*bmg));
+
+    bmg->endian			= &be_func;
     bmg->have_mid		= 1;
     bmg->encoding		= BMG_ENC__DEFAULT;
     bmg->use_slots		= opt_bmg_use_slots;
@@ -2168,11 +2242,12 @@ enumError ScanRawBMG ( bmg_t * bmg )
 {
     DASSERT(bmg);
     DASSERT(bmg->data);
+    DASSERT(bmg->endian);
 
     const bmg_header_t * bh = (bmg_header_t*)bmg->data;
     DASSERT(!memcmp(bh->magic,BMG_MAGIC,sizeof(bh->magic)));
 
-    u32 data_size = ntohl(bh->size);
+    u32 data_size = bmg->endian->n2hl(bh->size);
     bmg->encoding = bh->encoding;
     if ( !bmg->encoding && data_size*BMG_LEGACY_BLOCK_SIZE <= bmg->data_size )
     {
@@ -2189,7 +2264,7 @@ enumError ScanRawBMG ( bmg_t * bmg )
 	data_size = bmg->data_size;
     }
 
-    const bmg_sect_list_t *sl = ScanSectionsBMG(bmg->data,data_size);
+    const bmg_sect_list_t *sl = ScanSectionsBMG(bmg->data,data_size,bmg->endian);
     if ( !sl || !sl->header )
 	return ERROR0(ERR_INVALID_DATA,"Invalid BMG data: %s",bmg->fname);
 
@@ -2251,33 +2326,33 @@ enumError ScanRawBMG ( bmg_t * bmg )
     if ( !sl->pinf || !sl->pdat )
 	return ERROR0(ERR_INVALID_DATA,"Corrupted BMG file: %s\n",bmg->fname);
 
-    bmg->unknown_inf_0c = ntohl(pinf->unknown_0c);
+    bmg->unknown_inf_0c = bmg->endian->n2hl(pinf->unknown_0c);
 
     uint max_item;
     bmg->have_mid = pmid != 0;
     if (bmg->have_mid)
     {
-	bmg->unknown_mid_0a = ntohs(pmid->unknown_0a);
-	bmg->unknown_mid_0c = ntohl(pmid->unknown_0c);
+	bmg->unknown_mid_0a = bmg->endian->n2hs(pmid->unknown_0a);
+	bmg->unknown_mid_0c = bmg->endian->n2hl(pmid->unknown_0c);
 
-	max_item = ( ntohl(pmid->size) - sizeof(*pmid) ) / sizeof(*pmid->mid);
-	if ( max_item > ntohs(pmid->n_msg) )
-	     max_item = ntohs(pmid->n_msg);
+	max_item = ( bmg->endian->n2hl(pmid->size) - sizeof(*pmid) ) / sizeof(*pmid->mid);
+	if ( max_item > bmg->endian->n2hs(pmid->n_msg) )
+	     max_item = bmg->endian->n2hs(pmid->n_msg);
 	PRINT("BMG with MID1: N=%u [inf=%u,mid=%u], %s\n",
-		max_item, ntohs(pinf->n_msg), ntohs(pmid->n_msg), bmg->fname );
+		max_item, bmg->endian->n2hs(pinf->n_msg), bmg->endian->n2hs(pmid->n_msg), bmg->fname );
     }
     else
     {
-	max_item = ntohs(pinf->n_msg);
+	max_item = bmg->endian->n2hs(pinf->n_msg);
 	PRINT("BMG without MID1: N=%u, %s\n",max_item,bmg->fname);
     }
 
-    const uint max_offset = ( ntohl(pdat->size) - sizeof(*pdat) )
+    const uint max_offset = ( bmg->endian->n2hl(pdat->size) - sizeof(*pdat) )
 			  / sizeof(*pdat->text_pool);
     const u8 *text_end = pdat->text_pool + max_offset;
 
     const u8 *raw_inf = (u8*)pinf->list;
-    const uint src_inf_size = ntohs(pinf->inf_size);
+    const uint src_inf_size = bmg->endian->n2hs(pinf->inf_size);
     AssignInfSizeBMG(bmg,src_inf_size);
 
 
@@ -2289,7 +2364,7 @@ enumError ScanRawBMG ( bmg_t * bmg )
 	for ( idx = 0; idx < bmg->attrib_used; idx += 4 )
 	{
 	    const u32 major = FindMajority32(raw_inf+idx+4,max_item,src_inf_size);
-	    noPRINT("-> IDX: %2u -> %8x\n",idx,ntohl(major));
+	    noPRINT("-> IDX: %2u -> %8x\n",idx,bmg->endian->n2hl(major));
 	    memcpy(bmg->attrib+idx,&major,4);
 	}
 	//HexDump16(stderr,8,0x10,bmg->attrib,bmg->attrib_used);
@@ -2309,9 +2384,9 @@ enumError ScanRawBMG ( bmg_t * bmg )
     for ( slot = 0; slot < max_item; slot++, raw_inf += src_inf_size )
     {
 	bmg_inf_item_t *item = (bmg_inf_item_t*)raw_inf;
-	const u32 offset = ntohl(item->offset);
+	const u32 offset = bmg->endian->n2hl(item->offset);
 
-	u32 mid = pmid ? ntohl(pmid->mid[slot]) : slot;
+	u32 mid = pmid ? bmg->endian->n2hl(pmid->mid[slot]) : slot;
 	if ( mid == 0xffff && !offset )
 	    ffff_count++;
 	if ( mid < prev_mid )
@@ -2677,7 +2752,9 @@ enumError ScanTextBMG ( bmg_t * bmg )
 		continue;
 
 	    noPRINT("PARAM: %s = |%.*s|\n",namebuf,(int)(ptr-start),start);
-	    if (!strcmp(namebuf,"LEGACY"))
+	    if (!strcmp(namebuf,"ENDIAN"))
+		bmg->endian = str2l(start,0,10) > 0 ? &le_func : &be_func;
+	    else if (!strcmp(namebuf,"LEGACY"))
 		bmg->legacy = str2l(start,0,10) > 0;
 	    else if (!strcmp(namebuf,"ENCODING"))
 		AssignEncodingBMG(bmg,str2l(start,0,10));
@@ -2975,9 +3052,13 @@ enumError ScanBMG
 	bmg->fname = STRDUP(fname);
 
     const bmg_header_t * bh = (bmg_header_t*)bmg->data;
-    if ( !memcmp(bh->magic,BMG_MAGIC,sizeof(bh->magic))
-		&& ntohl(bh->size) <= bmg->data_size )
-	return ScanRawBMG(bmg);
+
+    if (!memcmp(bh->magic,BMG_MAGIC,sizeof(bh->magic)))
+    {
+	bmg->endian = get_endian_by_bh(bh,bmg->data_size);
+	if (bmg->endian)
+	    return ScanRawBMG(bmg);
+    }
 
     ccp ptr = (ccp)bmg->data + GetTextBOMLen(bmg->data,bmg->data_size);
     if ( !memcmp(ptr,BMG_TEXT_MAGIC,4) )
@@ -3072,6 +3153,7 @@ void InitializeCreateBMG ( bmg_create_t *bc, bmg_t *bmg )
 
     memset(bc,0,sizeof(*bc));
     bc->bmg	 = bmg;
+    bc->endian	 = get_bmg_endian(bmg);
     bc->have_mid = opt_bmg_mid == OFFON_AUTO
 		 ? bmg->have_mid : opt_bmg_mid >= OFFON_ON;
 
@@ -3157,6 +3239,7 @@ bmg_item_t * GetNextBI ( bmg_create_t *bc )
 {
     DASSERT(bc);
     DASSERT(bc->bmg);
+    DASSERT(bc->bmg->endian);
 
     bmg_t *bmg = bc->bmg;
 
@@ -3191,14 +3274,14 @@ bmg_item_t * GetNextBI ( bmg_create_t *bc )
     u32 *pmid = (u32*)WriteFastBuf( &bc->mid, bc->slot*sizeof(u32),
 				    0, sizeof(u32) );
     DASSERT(pmid);
-    *pmid = htonl(bi->mid);
+    *pmid = bc->endian->h2nl(bi->mid);
 
     const uint inf_size = bmg->inf_size;
     bmg_inf_item_t *ii = (bmg_inf_item_t*)WriteFastBuf
 		    ( &bc->inf, bc->slot * inf_size, 0, inf_size );
     DASSERT(ii);
     if ( !isSpecialEntryBMG(bi->text) )
-	ii->offset = htonl(GetFastBufLen(&bc->dat));
+	ii->offset = bc->endian->h2nl(GetFastBufLen(&bc->dat));
     memcpy(ii->attrib,bi->attrib,bmg->attrib_used);
 
     if ( bc->n_msg <= bc->slot )
@@ -3366,11 +3449,13 @@ enumError CreateRawBMG
 )
 {
     DASSERT(bmg);
+    DASSERT(bmg->endian);
     TRACE("CreateRawBMG()\n");
 
 
     //--- setup bmg_create_t
 
+// [[opt-endian]]
     bmg_create_t bc;
     InitializeCreateBMG(&bc,bmg);
     PRINT("fb:inf: %s\n", GetFastBufStatus(&bc.inf) );
@@ -3457,8 +3542,8 @@ enumError CreateRawBMG
     //---- setup bmg header
 
     bmg_header_t *bh	= (bmg_header_t*)bmg->raw_data;
-    bh->size		= htonl( bmg->legacy ? total_size/BMG_LEGACY_BLOCK_SIZE: total_size );
-    bh->n_sections	= htonl( ( bc.have_mid ? 3 : 2 ) + raw_count );
+    bh->size		= bc.endian->h2nl( bmg->legacy ? total_size/BMG_LEGACY_BLOCK_SIZE: total_size );
+    bh->n_sections	= bc.endian->h2nl( ( bc.have_mid ? 3 : 2 ) + raw_count );
     bh->encoding	= bmg->legacy ? 0 : encoding;
     memcpy(bh->magic,BMG_MAGIC,sizeof(bh->magic));
 
@@ -3469,10 +3554,10 @@ enumError CreateRawBMG
     //---- setup inf section
 
     bmg_inf_t *pinf	= (bmg_inf_t*)dest;
-    pinf->size		= htonl(inf_size);
-    pinf->n_msg		= htons(bc.n_msg);
-    pinf->inf_size	= htons(bmg->inf_size);
-    pinf->unknown_0c	= htonl(bmg->unknown_inf_0c);
+    pinf->size		= bc.endian->h2nl(inf_size);
+    pinf->n_msg		= bc.endian->h2ns(bc.n_msg);
+    pinf->inf_size	= bc.endian->h2ns(bmg->inf_size);
+    pinf->unknown_0c	= bc.endian->h2nl(bmg->unknown_inf_0c);
     memcpy(pinf->magic,BMG_INF_MAGIC,sizeof(pinf->magic));
     memcpy(pinf->list,inf.ptr,inf.len);
 
@@ -3483,7 +3568,7 @@ enumError CreateRawBMG
     //---- setup dat section
 
     bmg_dat_t	* pdat	= (bmg_dat_t*)dest;
-    pdat->size		= htonl(dat_size);
+    pdat->size		= bc.endian->h2nl(dat_size);
     memcpy(pdat->magic,BMG_DAT_MAGIC,sizeof(pdat->magic));
     memcpy(pdat->text_pool,dat.ptr,dat.len);
 
@@ -3496,10 +3581,10 @@ enumError CreateRawBMG
     if (bc.have_mid)
     {
 	bmg_mid_t *pmid		= (bmg_mid_t*)dest;
-	pmid->size		= htonl(mid_size);
-	pmid->n_msg		= htons(bc.n_msg);
-	pmid->unknown_0a	= htons(bmg->unknown_mid_0a);
-	pmid->unknown_0c	= htonl(bmg->unknown_mid_0c);
+	pmid->size		= bc.endian->h2nl(mid_size);
+	pmid->n_msg		= bc.endian->h2ns(bc.n_msg);
+	pmid->unknown_0a	= bc.endian->h2ns(bmg->unknown_mid_0a);
+	pmid->unknown_0c	= bc.endian->h2nl(bmg->unknown_mid_0c);
 	memcpy(pmid->magic,BMG_MID_MAGIC,sizeof(pmid->magic));
 	memcpy(pmid->mid,mid.ptr,mid.len);
 
@@ -3522,7 +3607,7 @@ enumError CreateRawBMG
 
 	    bmg_section_t *sect = (bmg_section_t*)dest;
 	    memcpy(sect->magic,raw->magic,sizeof(sect->magic));
-	    sect->size = htonl(raw->total_size);
+	    sect->size = bc.endian->h2nl(raw->total_size);
 	    const mem_t mem = GetFastBufMem(&raw->data);
 	    memcpy(sect->data,mem.ptr,mem.len);
 
@@ -3840,6 +3925,10 @@ enumError SaveTextBMG
     {
       "%s"
       "\r\n"
+      "# The endianness of binary files: 0=big endian (default), 1=little endian.\r\n"
+      "# Little endian is only tested for encoding UTF-8 (need examples of analysis).\r\n"
+      "@ENDIAN = %u\r\n"
+      "\r\n"
       "# If 1, then enable legacy (GameCube) mode for old binary BMG files.\r\n"
       "# If enabled, ENCODING is always CP1252.\r\n"
       "@LEGACY = %u\r\n"
@@ -3847,7 +3936,7 @@ enumError SaveTextBMG
       "# Define encoding of BMG: 1=CP1252, 2=UTF-16/be, 3=Shift-JIS, 4=UTF-8\r\n"
       "@ENCODING = %u\r\n"
       "\r\n"
-      "# Create »MID1« section: 0:off, 1=on\r\n"
+      "# Create »MID1« section: 0=off, 1=on\r\n"
       "@BMG-MID = %u\r\n"
       "\r\n"
       "# Size of each element of section 'INF1' (MKW=8).\r\n"
@@ -3871,7 +3960,7 @@ enumError SaveTextBMG
     {
       "%s"
       "\r\n"
-      "# This part define values for unknown parameters of section headers.\r\n"
+      "# This part defines values for unknown parameters of section headers.\r\n"
       "@UNKNOWN-INF32-0C = %#10x	# 32 bit value of section INF1 offset 0x0c\r\n"
       "@UNKNOWN-MID16-0A = %#10x	# 16 bit value of section MID1 offset 0x0a\r\n"
       "@UNKNOWN-MID32-0C = %#10x	# 32 bit value of section MID1 offset 0x0c\r\n"
@@ -3897,12 +3986,14 @@ enumError SaveTextBMG
 
     HavePredifinedSlots(bmg);
     bmg->legacy = bmg->legacy != 0;
+    const endian_func_t *endian = get_bmg_endian(bmg);
     const int encoding = bmg->legacy
 		? BMG_ENC_CP1252
 		: CheckEncodingBMG(opt_bmg_encoding,bmg->encoding);
 
     const bool print_settings // print only, if unusual
-		=  encoding != BMG_ENC__DEFAULT
+		=  endian->is_le
+		|| encoding != BMG_ENC__DEFAULT
 		|| bmg->attrib_used != 4
 		|| be32(bmg->attrib) != BMG_INF_STD_ATTRIB
 		|| !bmg->have_mid
@@ -3917,12 +4008,14 @@ enumError SaveTextBMG
 	{
 	    fprintf(F.f,text_param,
 			param_announce,
-			bmg->legacy, encoding, bmg->have_mid, bmg->inf_size, abuf,
+			endian->is_le, bmg->legacy,
+			encoding, bmg->have_mid, bmg->inf_size, abuf,
 			bmg->use_color_names, bmg->use_mkw_messages );
 	    param_announce = "";
 	}
 	else if ( brief_count < BRIEF_NO_MAGIC )
-	    fprintf(F.f,"@LEGACY          = %u\r\n"
+	    fprintf(F.f,"@ENDIAN          = %u\r\n"
+			"@LEGACY          = %u\r\n"
 			"@ENCODING        = %u\r\n"
 			"@BMG-MID         = %u\r\n"
 			"@INF-SIZE        = 0x%02x\r\n"
@@ -3930,7 +4023,8 @@ enumError SaveTextBMG
 			"@COLOR-NAMES     = %u\r\n"
 			"@MKW-MESSAGES    = %u\r\n"
 			"\r\n",
-			bmg->legacy, encoding, bmg->have_mid, bmg->inf_size, abuf,
+			endian->is_le, bmg->legacy,
+			encoding, bmg->have_mid, bmg->inf_size, abuf,
 			bmg->use_color_names, bmg->use_mkw_messages );
     }
 

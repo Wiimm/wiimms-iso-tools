@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -178,7 +178,7 @@ void PutLines
     int		first_line,	// length without prefix of already printed first line
     ccp		prefix,		// NULL or prefix for each line
     ccp		text,		// text to print
-    ccp		eol		// End Of Line test. If NULL -> LF
+    ccp		eol		// End-Of-Line text. If NULL -> LF
 )
 {
     DASSERT(f);
@@ -339,7 +339,7 @@ uint PutColoredLines
     int			indent,		// indent of output
     int			fw,		// field width; indent+prefix+eol don't count
     ccp			prefix,		// NULL or prefix for each line
-    ccp			eol,		// End Of Line test. If NULL -> LF
+    ccp			eol,		// End-Of-Line text. If NULL -> LF
     ccp			text		// text to print
 )
 {
@@ -629,7 +629,7 @@ uint PrintArgColoredLines
     int			indent,		// indent of output
     int			fw,		// field width; indent+prefix+eol don't count
     ccp			prefix,		// NULL or prefix for each line
-    ccp			eol,		// End Of Line test. If NULL -> LF
+    ccp			eol,		// End-Of-Line text. If NULL -> LF
     ccp			format,		// format string for vsnprintf()
     va_list		arg		// parameters for 'format'
 )
@@ -670,7 +670,7 @@ uint PrintColoredLines
     int			indent,		// indent of output
     int			fw,		// field width; indent+prefix+eol don't count
     ccp			prefix,		// NULL or prefix for each line
-    ccp			eol,		// End Of Line test. If NULL -> LF
+    ccp			eol,		// End-Of-Line text. If NULL -> LF
     ccp			format,		// format string for vsnprintf()
     ...					// arguments for 'vsnprintf(format,...)'
 )
@@ -1003,7 +1003,11 @@ uint stdout_seq_count = 0;
 ///////////////////////////////////////////////////////////////////////////////
 
 uint opt_width = 0;
+uint opt_max_width = 0;
 uint opt_height = 0;
+uint opt_max_height = 0;
+
+//-----------------------------------------------------------------------------
 
 int ScanOptWidth ( ccp arg )
 {
@@ -1021,6 +1025,24 @@ int ScanOptWidth ( ccp arg )
 			);
 }
 
+int ScanOptMaxWidth ( ccp arg )
+{
+    return ERR_OK != ScanSizeOptU32(
+			&opt_max_width,		// u32 * num
+			arg,			// ccp source
+			1,			// default_factor1
+			0,			// int force_base
+			"max-width",		// ccp opt_name
+			40,			// u64 min
+			10000,			// u64 max
+			1,			// u32 multiple
+			0,			// u32 pow2
+			true			// bool print_err
+			);
+}
+
+//-----------------------------------------------------------------------------
+
 int ScanOptHeight ( ccp arg )
 {
     return ERR_OK != ScanSizeOptU32(
@@ -1037,13 +1059,30 @@ int ScanOptHeight ( ccp arg )
 			);
 }
 
+int ScanOptMaxHeight ( ccp arg )
+{
+    return ERR_OK != ScanSizeOptU32(
+			&opt_max_height,	// u32 * num
+			arg,			// ccp source
+			1,			// default_factor1
+			0,			// int force_base
+			"max-height",		// ccp opt_name
+			40,			// u64 min
+			10000,			// u64 max
+			1,			// u32 multiple
+			0,			// u32 pow2
+			true			// bool print_err
+			);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 term_size_t GetTermSize ( int default_width, int default_height )
 {
-    TRACE("GetTermWidth(%d,%d) opt=%d,%d\n",
-	default_width, default_height, opt_width, opt_height );
+    PRINT0("GetTermWidth(%d,%d) opt=%d,%d, max=%d,%d\n",
+	default_width, default_height,
+	opt_width, opt_height, opt_max_width, opt_max_height );
 
     term_size_t ts;
     if ( opt_width > 0 && opt_height > 0 )
@@ -1054,10 +1093,16 @@ term_size_t GetTermSize ( int default_width, int default_height )
     else
     {
 	ts = GetTermSizeFD(STDOUT_FILENO,default_width,default_height);
-	if (  opt_width > 0 )
+
+	if ( opt_width > 0 )
 	    ts.width = opt_width;
-	if (  opt_height > 0 )
+	else if ( opt_max_width > 0 && ts.width > opt_max_width )
+	    ts.width = opt_max_width;
+
+	if ( opt_height > 0 )
 	    ts.height = opt_height;
+	else if ( opt_max_height > 0 && ts.height > opt_max_height )
+	    ts.height = opt_max_height;
     }
 
     return ts;
@@ -1125,11 +1170,8 @@ int GetTermWidth ( int default_value, int min_value )
 {
     TRACE("GetTermWidth(%d,%d) opt=%d\n",default_value,min_value,opt_width);
 
-    int term_width = opt_width > 0
-			? opt_width
-			: GetTermWidthFD(STDOUT_FILENO,-1,min_value);
-
-    return term_width > 0 ? term_width : default_value;
+    const term_size_t ts = GetTermSize(default_value,25);
+    return ts.width > min_value ? ts.width : min_value;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1138,7 +1180,7 @@ int GetTermWidthFD ( int fd, int default_value, int min_value )
 {
     TRACE("GetTermWidthFD(%d,%d,%d)\n",fd,default_value,min_value);
 
-    term_size_t ts = GetTermSizeFD(fd,default_value,25);
+    const term_size_t ts = GetTermSizeFD(fd,default_value,25);
     return ts.width > min_value ? ts.width : min_value;
 }
 
@@ -1149,11 +1191,8 @@ int GetTermHeight ( int default_value, int min_value )
 {
     TRACE("GetTermHeight(%d,%d) opt=%d\n",default_value,min_value,opt_height);
 
-    int term_height = opt_height > 0
-			? opt_height
-			: GetTermHeightFD(STDOUT_FILENO,-1,min_value);
-
-    return term_height > 0 ? term_height : default_value;
+    const term_size_t ts = GetTermSize(80,default_value);
+    return ts.width > min_value ? ts.width : min_value;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1162,7 +1201,7 @@ int GetTermHeightFD ( int fd, int default_value, int min_value )
 {
     TRACE("GetTermHeightFD(%d,%d,%d)\n",fd,default_value,min_value);
 
-    term_size_t ts = GetTermSizeFD(fd,default_value,25);
+    const term_size_t ts = GetTermSizeFD(fd,80,default_value);
     return ts.height > min_value ? ts.height : min_value;
 }
 
@@ -1284,6 +1323,7 @@ static uint grayscale_tab[4] = {0,8,7,15};
 	"b_magenta",
 	"b_magenta_red",
  };
+
 #else // !SUPPORT_36_COLORS
 
  const char ColorIndexName[TCI__N][11] =
@@ -3051,6 +3091,8 @@ const ColorSet_t * GetColorSet0()
 
 const ColorSet_t * GetColorSet8()
 {
+    // [[new-color]]
+
     static ColorSet_t col = {0};
     if (!col.col_mode)
     {
@@ -3078,6 +3120,7 @@ const ColorSet_t * GetColorSet8()
 	 col.debug		= STRDUP(GetTextMode(1,TTM_COL_DEBUG));
 	 col.log		= STRDUP(GetTextMode(1,TTM_COL_LOG));
 	col.name		= STRDUP(GetTextMode(1,TTM_COL_NAME));
+	col.op			= STRDUP(GetTextMode(1,TTM_COL_OP));
 	col.value		= STRDUP(GetTextMode(1,TTM_COL_VALUE));
 	col.success		= STRDUP(GetTextMode(1,TTM_COL_SUCCESS));
 	col.error		= STRDUP(GetTextMode(1,TTM_COL_ERROR));
@@ -3110,35 +3153,49 @@ const ColorSet_t * GetColorSet8()
 	col.white		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_WHITE));
 	col.b_white		= STRDUP(GetTextMode(1,TTM_BOLD|TTM_WHITE));
 
-	col.red			= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_RED));
-	col.red_orange		= col.red;
-	col.orange		= col.red;
-	col.yellow		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_YELLOW));
-	col.orange_yellow	= col.yellow;
-	col.yellow_green	= col.yellow;
-	col.green		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_GREEN));
-	col.green_cyan		= col.green;
-	col.cyan		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_CYAN));
-	col.cyan_blue		= col.cyan;
-	col.blue		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_BLUE));
-	col.blue_magenta	= col.blue;
-	col.magenta		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_MAGENTA));
-	col.magenta_red		= col.magenta;
+	col.red_magenta		=
+	col.red			=
+	col.red_orange		=
+	col.orange_red		=
+	col.orange		=
+	col.orange_yellow	= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_RED));
+	col.yellow_orange	=
+	col.yellow		=
+	col.yellow_green	= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_YELLOW));
+	col.green_yellow	=
+	col.green		=
+	col.green_cyan		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_GREEN));
+	col.cyan_green		=
+	col.cyan		=
+	col.cyan_blue		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_CYAN));
+	col.blue_cyan		=
+	col.blue		=
+	col.blue_magenta	= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_BLUE));
+	col.magenta_blue	=
+	col.magenta		=
+	col.magenta_red		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_MAGENTA));
 
-	col.b_red		= STRDUP(GetTextMode(1,TTM_BOLD|TTM_RED));
-	col.b_red_orange	= col.b_red;
-	col.b_orange		= col.b_red;
-	col.b_yellow		= STRDUP(GetTextMode(1,TTM_BOLD|TTM_YELLOW));
-	col.b_orange_yellow	= col.b_yellow;
-	col.b_yellow_green	= col.b_yellow;
-	col.b_green		= STRDUP(GetTextMode(1,TTM_BOLD|TTM_GREEN));
-	col.b_green_cyan	= col.b_green;
-	col.b_cyan		= STRDUP(GetTextMode(1,TTM_BOLD|TTM_CYAN));
-	col.b_cyan_blue		= col.b_cyan;
-	col.b_blue		= STRDUP(GetTextMode(1,TTM_BOLD|TTM_BLUE));
-	col.b_blue_magenta	= col.b_blue;
-	col.b_magenta		= STRDUP(GetTextMode(1,TTM_BOLD|TTM_MAGENTA));
-	col.b_magenta_red	= col.b_magenta;
+	col.b_red_magenta	=
+	col.b_red		=
+	col.b_red_orange	=
+	col.b_orange_red	=
+	col.b_orange		=
+	col.b_orange_yellow	= STRDUP(GetTextMode(1,TTM_BOLD|TTM_RED));
+	col.b_yellow_orange	=
+	col.b_yellow		=
+	col.b_yellow_green	= STRDUP(GetTextMode(1,TTM_BOLD|TTM_YELLOW));
+	col.b_green_yellow	=
+	col.b_green		=
+	col.b_green_cyan	= STRDUP(GetTextMode(1,TTM_BOLD|TTM_GREEN));
+	col.b_cyan_green	=
+	col.b_cyan		=
+	col.b_cyan_blue		= STRDUP(GetTextMode(1,TTM_BOLD|TTM_CYAN));
+	col.b_blue_cyan		=
+	col.b_blue		=
+	col.b_blue_magenta	= STRDUP(GetTextMode(1,TTM_BOLD|TTM_BLUE));
+	col.b_magenta_blue	=
+	col.b_magenta		=
+	col.b_magenta_red	= STRDUP(GetTextMode(1,TTM_BOLD|TTM_MAGENTA));
 
 	TermColorIndex_t font, bg;
 	for ( font = 0; font < TCI__N_FONT; font++ )
@@ -3154,6 +3211,8 @@ const ColorSet_t * GetColorSet8()
 
 const ColorSet_t * GetColorSet256()
 {
+    // [[new-color]]
+
     static ColorSet_t col = {0};
     if (!col.col_mode)
     {
@@ -3194,18 +3253,25 @@ const ColorSet_t * GetColorSet256()
 	// ./mkw-ana testcol 400-420  420-330  330-030  030-033  033-005  005-404  404-400
 	// ./mkw-ana testcol 400 410 420 320 330 230 030 032 033 024 005 204 404 402 400
 
+	col.red_magenta		= "\e[38;5;161m";
 	col.red			= "\e[38;5;160m";
-	col.red_orange		= "\e[38;5;166m";
+	col.red_orange		=
+	col.orange_red		= "\e[38;5;166m";
 	col.orange		= "\e[38;5;172m";
-	col.orange_yellow	= "\e[38;5;136m";
+	col.orange_yellow	=
+	col.yellow_orange	= "\e[38;5;136m";
 	col.yellow		= "\e[38;5;142m";
-	col.yellow_green	= "\e[38;5;106m";
+	col.yellow_green	=
+	col.green_yellow	= "\e[38;5;106m";
 	col.green		= "\e[38;5;34m";
-	col.green_cyan		= "\e[38;5;36m";
+	col.green_cyan		=
+	col.cyan_green		= "\e[38;5;36m";
 	col.cyan		= "\e[38;5;37m";
-	col.cyan_blue		= "\e[38;5;32m";
+	col.cyan_blue		=
+	col.blue_cyan		= "\e[38;5;32m";
 	col.blue		= "\e[38;5;21m";
-	col.blue_magenta	= "\e[38;5;92m";
+	col.blue_magenta	=
+	col.magenta_blue	= "\e[38;5;92m";
 	col.magenta		= "\e[38;5;164m";
 	col.magenta_red		= "\e[38;5;162m";
 
@@ -3213,18 +3279,25 @@ const ColorSet_t * GetColorSet256()
 	// ./mkw-ana testcol 500-520  520-550  550-050  050-055  055-225  225-515  515-500
 	// ./mkw-ana testcol 500 510 520 530 550 350 050 053 055 135 225 425 515 512 500
 
+	col.b_red_magenta	= "\e[38;5;198m";
 	col.b_red		= "\e[38;5;196m";
-	col.b_red_orange	= "\e[38;5;202m";
+	col.b_red_orange	=
+	col.b_orange_red	= "\e[38;5;202m";
 	col.b_orange		= "\e[38;5;208m";
-	col.b_orange_yellow	= "\e[38;5;214m";
+	col.b_orange_yellow	=
+	col.b_yellow_orange	= "\e[38;5;214m";
 	col.b_yellow		= "\e[38;5;226m";
-	col.b_yellow_green	= "\e[38;5;154m";
+	col.b_yellow_green	=
+	col.b_green_yellow	= "\e[38;5;154m";
 	col.b_green		= "\e[38;5;46m";
-	col.b_green_cyan	= "\e[38;5;49m";
+	col.b_green_cyan	=
+	col.b_cyan_green	= "\e[38;5;50m";
 	col.b_cyan		= "\e[38;5;51m";
-	col.b_cyan_blue		= "\e[38;5;75m";
+	col.b_cyan_blue		=
+	col.b_blue_cyan		= "\e[38;5;75m";
 	col.b_blue		= "\e[38;5;105m";
-	col.b_blue_magenta	= "\e[38;5;177m";
+	col.b_blue_magenta	=
+	col.b_magenta_blue	= "\e[38;5;177m";
 	col.b_magenta		= "\e[38;5;207m";
 	col.b_magenta_red	= "\e[38;5;204m";
 
@@ -3272,19 +3345,29 @@ const ColorSet_t * GetColorSetAuto ( bool force_on )
 
     if ( auto_mode == COLMD_AUTO )
     {
+	char *term = getenv("TERM");
+
+     #ifdef __CYGWIN__
+	if (!term)
+	    term = "cygwin";
+     #else
+	if (!term)
+	    term = "vt100";
+     #endif
+
 	int error;
-	setupterm(getenv("TERM"),1,&error);
+	setupterm(term,1,&error);
 	const int ncol = tigetnum("colors");
 
 	auto_mode = ncol >= 256 ? COLMD_256_COLORS
 		  : ncol >=   8 ? COLMD_8_COLORS
 				: COLMD_OFF;
-	if ( auto_mode == COLMD_OFF && !strcmp(getenv("TERM"),"cygwin") )
+	if ( auto_mode == COLMD_OFF && !strcmp(term,"cygwin") )
 	    auto_mode = COLMD_8_COLORS;
 
      #ifdef TEST
 	fprintf(stderr,">>> GetColorSetAuto(%d) => \"%s\" n=%d => %d [%s]\n",
-		force_on, getenv("TERM"), ncol,
+		force_on, term, ncol,
 		auto_mode, GetColorModeName(auto_mode,0) );
      #endif
     }
@@ -3358,26 +3441,35 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
 
     static const struct cdef_t tab[] =
     {
+	// [[new-color]]
 	DEF1(abort)
 	DEF1(b_black)
 	DEF1(b_blue)
+	DEF1(b_blue_cyan)
 	DEF1(b_blue_magenta)
 	DEF1(b_cyan)
 	DEF1(b_cyan_blue)
+	DEF1(b_cyan_green)
 	DEF1(b_green)
 	DEF1(b_green_cyan)
+	DEF1(b_green_yellow)
 	DEF1(b_magenta)
+	DEF1(b_magenta_blue)
 	DEF1(b_magenta_red)
 	DEF1(b_orange)
+	DEF1(b_orange_red)
 	DEF1(b_orange_yellow)
 	DEF1(b_red)
+	DEF1(b_red_magenta)
 	DEF1(b_red_orange)
 	DEF1(b_white)
 	DEF1(b_yellow)
 	DEF1(b_yellow_green)
+	DEF1(b_yellow_orange)
 	DEF1(bad)
 	DEF1(black)
 	DEF1(blue)
+	DEF1(blue_cyan)
 	DEF1(blue_magenta)
 	DEF1(caption)
 	DEF1(cite)
@@ -3385,6 +3477,7 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
 	DEF1(cmd)
 	DEF1(cyan)
 	DEF1(cyan_blue)
+	DEF1(cyan_green)
 	DEF1(debug)
 	DEF1(differ)
 	DEF1(error)
@@ -3395,6 +3488,7 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
 	DEF1(finish)
 	DEF1(green)
 	DEF1(green_cyan)
+	DEF1(green_yellow)
 	DEF2(head,heading)
 	DEF1(heading)
 	DEF1(hide)
@@ -3405,20 +3499,24 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
 	DEF1(job)
 	DEF1(log)
 	DEF1(magenta)
+	DEF1(magenta_blue)
 	DEF1(magenta_red)
 	DEF1(mark)
 	DEF1(name)
 	DEF1(off)
 	DEF1(on)
+	DEF1(op)
 	DEF1(open)
 	DEF2(opt,option)
 	DEF1(option)
 	DEF1(orange)
+	DEF1(orange_red)
 	DEF1(orange_yellow)
 	DEF2(par,param)
 	DEF1(param)
 	DEF1(proc_line)
 	DEF1(red)
+	DEF1(red_magenta)
 	DEF1(red_orange)
 	DEF1(reset)
 	DEF1(run)
@@ -3437,6 +3535,7 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
 	DEF1(white)
 	DEF1(yellow)
 	DEF1(yellow_green)
+	DEF1(yellow_orange)
     };
 
  #if HAVE_PRINT
@@ -3490,6 +3589,229 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[color_helper_t]]
+
+typedef struct color_helper_t
+{
+    FILE		*f;		// valid output file
+    int			indent;		// indention of output
+    const ColorSet_t	*cs;		// valid color set; if NULL: use std colors
+    PrintColorFunc	func;		// output function, never NULL
+    uint		mode;		// output mode (bit field, NULL=default):
+					//   1: print normal colors (e.g. RED)
+					//   2: print bold colors (e.g. B_RED)
+					//   4: print background (e.g. BLUE_RED)
+					//   8: print color names (e.g. HIGHLIGHT)
+					//  16: include alternative names too (e.g. HL)
+    bool		multi_assign;	// TRUE: Allow A=B="...";
+    bool		print_alt;	// print alternative names
+}
+color_helper_t;
+
+//-----------------------------------------------------------------------------
+// [[color_helper_tab_t]]
+
+typedef struct color_helper_tab_t
+{
+    ccp  name;
+    uint offset;
+    bool is_alt;
+}
+color_helper_tab_t;
+
+//-----------------------------------------------------------------------------
+
+static void print_by_helper_tab
+(
+    const color_helper_t	*ch,	// valid param
+    const color_helper_tab_t	*tab	// valid color list
+)
+{
+    const ColorSet_t *col = ch->cs;
+    ch->func(ch->f,ch->indent,col,0,0);
+
+    if (!ch->multi_assign)
+    {
+	for ( ; tab->name; tab++ )
+	    if ( !tab->is_alt || ch->print_alt )
+		ch->func( ch->f, ch->indent, col,
+			tab->name, *(ccp*)((u8*)col+tab->offset) );
+	return;
+    }
+
+    while (tab->name)
+    {
+	const color_helper_tab_t *next = tab+1;
+	while ( next->name && next->is_alt && !ch->print_alt )
+	    next++;
+
+	ccp val = *(ccp*)((u8*)col+tab->offset);
+	if ( next->name && !strcmp(val,*(ccp*)((u8*)col+next->offset)) )
+	    val = 0;
+	ch->func( ch->f, ch->indent, col, tab->name, val );
+	tab = next;
+    }
+};
+
+//-----------------------------------------------------------------------------
+
+void PrintColorSetHelper2
+(
+    color_helper_t	*ch	// valid params
+)
+{
+    // [[new-color]]
+
+    DASSERT(ch);
+    DASSERT(ch->f);
+    DASSERT(ch->func);
+
+    if (!ch->cs)
+	ch->cs = GetColorSet(COLMD_ON);
+    ch->indent = NormalizeIndent(ch->indent) + 15; // 15 is max name width
+    if (!ch->mode)
+	ch->mode = 15;
+
+    #undef JOB0
+    #undef JOB1
+    #undef JOB2
+    #define JOB0	{0,0,0}
+    #define JOB1(n)	{ #n, offsetof(ColorSet_t,n), 0 },
+    #define JOB2(t,n)	{ #t, offsetof(ColorSet_t,n), 1 },
+
+    static const color_helper_tab_t tab_m1[] =
+    {
+	JOB1(black)
+	JOB1(red_magenta)
+	JOB1(red)
+	JOB1(red_orange)
+	JOB1(orange_red)
+	JOB1(orange)
+	JOB1(orange_yellow)
+	JOB1(yellow_orange)
+	JOB1(yellow)
+	JOB1(yellow_green)
+	JOB1(green_yellow)
+	JOB1(green)
+	JOB1(green_cyan)
+	JOB1(cyan_green)
+	JOB1(cyan)
+	JOB1(cyan_blue)
+	JOB1(blue_cyan)
+	JOB1(blue)
+	JOB1(blue_magenta)
+	JOB1(magenta_blue)
+	JOB1(magenta)
+	JOB1(magenta_red)
+	JOB1(white)
+	JOB0
+    };
+
+    static const color_helper_tab_t tab_m2[] =
+    {
+	JOB1(b_black)
+	JOB1(b_red_magenta)
+	JOB1(b_red)
+	JOB1(b_red_orange)
+	JOB1(b_orange_red)
+	JOB1(b_orange)
+	JOB1(b_orange_yellow)
+	JOB1(b_yellow_orange)
+	JOB1(b_yellow)
+	JOB1(b_yellow_green)
+	JOB1(b_green_yellow)
+	JOB1(b_green)
+	JOB1(b_green_cyan)
+	JOB1(b_cyan_green)
+	JOB1(b_cyan)
+	JOB1(b_cyan_blue)
+	JOB1(b_blue_cyan)
+	JOB1(b_blue)
+	JOB1(b_blue_magenta)
+	JOB1(b_magenta_blue)
+	JOB1(b_magenta)
+	JOB1(b_magenta_red)
+	JOB1(b_white)
+	JOB0
+    };
+
+    static const color_helper_tab_t tab_m8[] =
+    {
+	JOB1(setup)
+	JOB1(run)
+	JOB1(abort)
+	JOB1(finish)
+	JOB1(script)
+	JOB1(open)
+	JOB1(close)
+	JOB1(file)
+	JOB1(job)
+
+	JOB1(info)
+	JOB1(hint)
+	JOB1(warn)
+	JOB1(debug)
+	JOB1(log)
+
+	JOB1(name)
+	JOB1(op)
+	JOB1(value)
+	 JOB2(val,value)
+	JOB1(success)
+	JOB1(error)
+	JOB1(fail)
+	JOB1(fail2)
+	JOB1(fatal)
+	JOB1(mark)
+	JOB1(bad)
+
+	JOB1(select)
+	JOB1(differ)
+	JOB1(stat_line)
+	JOB1(warn_line)
+	JOB1(proc_line)
+	JOB1(cite)
+	JOB1(status)
+	JOB1(highlight)
+	 JOB2(hl,highlight)
+	JOB1(hide)
+
+	JOB1(heading)
+	 JOB2(head,heading)
+	JOB1(caption)
+	JOB1(section)
+	JOB1(syntax)
+	JOB1(cmd)
+	JOB1(option)
+	 JOB2(opt,option)
+	JOB1(param)
+	 JOB2(par,param)
+
+	JOB1(off)
+	JOB1(on)
+
+	JOB0
+    };
+
+    if ( ch->mode & 1 )
+	print_by_helper_tab(ch,tab_m1);
+
+    if ( ch->mode & 2 )
+	print_by_helper_tab(ch,tab_m2);
+
+    if ( ch->mode & 8 )
+    {
+	ch->print_alt = ( ch->mode & 16 ) != 0;
+	print_by_helper_tab(ch,tab_m8);
+    }
+
+    #undef JOB0
+    #undef JOB1
+    #undef JOB2
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 void PrintColorSetHelper
 (
@@ -3497,125 +3819,25 @@ void PrintColorSetHelper
     int			indent,		// indention of output
     const ColorSet_t	*cs,		// valid color set; if NULL: use std colors
     PrintColorFunc	func,		// output function, never NULL
-    uint		mode		// output mode (bit field, NULL=default):
+    uint		mode,		// output mode (bit field, NULL=default):
 					//   1: print normal colors (e.g. RED)
 					//   2: print bold colors (e.g. B_RED)
 					//   4: print background (e.g. BLUE_RED)
 					//   8: print color names (e.g. HIGHLIGHT)
 					//  16: include alternative names too (e.g. HL)
+    bool		multi_assign	// TRUE: Allow A=B="...";
 )
 {
-    DASSERT(f);
-    DASSERT(func);
-
-    if (!cs)
-	cs = GetColorSet(COLMD_ON);
-    indent = NormalizeIndent(indent) + 10; // +10 is max name width
-    if (!mode)
-	mode = 15;
-
-    #undef JOB1
-    #undef JOB2
-    #define JOB1(m,n)	func(f,indent,cs,m,#n,cs->n)
-    #define JOB2(m,t,n)	func(f,indent,cs,m,#t,cs->n)
-
-    if ( mode & 1 )
+    color_helper_t ch =
     {
-	func(f,indent,cs,1,0,0);
-	JOB1(1,black);
-	JOB1(1,red);
-	JOB1(1,red_orange);
-	JOB1(1,orange);
-	JOB1(1,orange_yellow);
-	JOB1(1,yellow);
-	JOB1(1,yellow_green);
-	JOB1(1,green);
-	JOB1(1,green_cyan);
-	JOB1(1,cyan);
-	JOB1(1,cyan_blue);
-	JOB1(1,blue);
-	JOB1(1,blue_magenta);
-	JOB1(1,magenta);
-	JOB1(1,magenta_red);
-	JOB1(1,white);
-    }
-
-    if ( mode & 2 )
-    {
-	func(f,indent,cs,2,0,0);
-	JOB1(2,b_black);
-	JOB1(2,b_red);
-	JOB1(2,b_red_orange);
-	JOB1(2,b_orange);
-	JOB1(2,b_orange_yellow);
-	JOB1(2,b_yellow);
-	JOB1(2,b_yellow_green);
-	JOB1(2,b_green);
-	JOB1(2,b_green_cyan);
-	JOB1(2,b_cyan);
-	JOB1(2,b_cyan_blue);
-	JOB1(2,b_blue);
-	JOB1(2,b_blue_magenta);
-	JOB1(2,b_magenta);
-	JOB1(2,b_magenta_red);
-	JOB1(2,b_white);
-    }
-
-    if ( mode & 8 )
-    {
-	const bool alt = ( mode & 16 ) != 0;
-	func(f,indent,cs,8,0,0);
-
-	JOB1(4,setup);
-	JOB1(4,run);
-	JOB1(4,abort);
-	JOB1(4,finish);
-	JOB1(4,script);
-	JOB1(4,open);
-	JOB1(4,close);
-	JOB1(4,file);
-	JOB1(4,job);
-
-	JOB1(4,info);
-	JOB1(4,hint);
-	JOB1(4,warn);
-	JOB1(4,debug);
-	JOB1(4,log);
-
-	JOB1(4,name);
-	JOB1(4,value);		if (alt) JOB2(12,val,value);
-	JOB1(4,success);
-	JOB1(4,error);
-	JOB1(4,fail);
-	JOB1(4,fail2);
-	JOB1(4,fatal);
-	JOB1(4,mark);
-	JOB1(4,bad);
-
-	JOB1(4,select);
-	JOB1(4,differ);
-	JOB1(4,stat_line);
-	JOB1(4,warn_line);
-	JOB1(4,proc_line);
-	JOB1(4,cite);
-	JOB1(4,status);
-	JOB1(4,highlight);	if (alt) JOB2(12,hl,highlight);
-	JOB1(4,hide);
-
-	JOB1(4,heading);	if (alt) JOB2(12,head,heading);
-	JOB1(4,caption);
-	JOB1(4,section);
-	JOB1(4,syntax);
-	JOB1(4,cmd);
-	JOB1(4,option);		if (alt) JOB2(12,opt,option);
-	JOB1(4,param);		if (alt) JOB2(12,par,param);
-
-	JOB1(4,off);
-	JOB1(4,on);
-    }
-
-    #undef JOB1
-    #undef JOB2
+	.f		= f,
+	.indent		= indent,
+	.cs		= cs,
+	.func		= func,
+	.mode		= mode,
+	.multi_assign	= multi_assign,
+    };
+    PrintColorSetHelper2(&ch);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3627,7 +3849,6 @@ static void PrintColorSetCOL
     FILE		*f,		// valid output file
     int			indent,		// normalized indention of output
     const ColorSet_t	*cs,		// valid color set, never NULL
-    uint		mode,		// output mode of PrintColorSetHelper()
     ccp			col_name,	// name of color
     ccp			col_string	// escape string for the color
 )
@@ -3657,7 +3878,6 @@ static void PrintColorSetSH
     FILE		*f,		// valid output file
     int			indent,		// normalized indention of output
     const ColorSet_t	*cs,		// valid color set, never NULL
-    uint		mode,		// output mode of PrintColorSetHelper()
     ccp			col_name,	// name of color
     ccp			col_string	// escape string for the color
 )
@@ -3689,21 +3909,25 @@ static void PrintColorSetPHP
     FILE		*f,		// valid output file
     int			indent,		// normalized indention of output
     const ColorSet_t	*cs,		// valid color set, never NULL
-    uint		mode,		// output mode of PrintColorSetHelper()
     ccp			col_name,	// name of color
     ccp			col_string	// escape string for the color
 )
 {
     if (col_name)
     {
-	DASSERT(col_string);
+	fprintf(f,"    $COL->%s%.*s=", col_name, (29-(int)strlen(col_name))/8, Tabs20 );
 
-	char buf[50];
-	PrintEscapedString(buf,sizeof(buf),col_string,-1,CHMD_ESC,0,0);
-	if (memcmp(buf,"\\x1B",4))
-	    fprintf(f,"$COL->%-15s = \"%s\";\n",col_name,buf);
+	if (col_string)
+	{
+	    char buf[50];
+	    PrintEscapedString(buf,sizeof(buf),col_string,-1,CHMD_ESC,0,0);
+	    if (memcmp(buf,"\\x1B",4))
+		fprintf(f," \"%s\";\n",buf);
+	    else
+		fprintf(f," \"\\033%s\";\n",buf+4);
+	}
 	else
-	    fprintf(f,"$COL->%-15s = \"\\033%s\";\n",col_name,buf+4);
+	    fputc('\n',f);
     }
 }
 
@@ -3717,7 +3941,7 @@ void PrintColorSet
 )
 {
     DASSERT(f);
-    PrintColorSetHelper(f,indent,cs,PrintColorSetCOL,4);
+    PrintColorSetHelper(f,indent,cs,PrintColorSetCOL,4,false);
     fputc('\n',f);
 }
 
@@ -3743,7 +3967,7 @@ void PrintColorSetEx
 	case 1:
 	    if (!cs)
 		cs = GetColorSet(COLMD_ON);
-	    PrintColorSetHelper(f,indent,cs,PrintColorSetSH,mode);
+	    PrintColorSetHelper(f,indent,cs,PrintColorSetSH,mode,false);
 	    PrintEscapedString(buf,sizeof(buf),cs->reset,-1,CHMD_ESC,0,0);
 	    if (memcmp(buf,"\\x1B",4))
 		fprintf(f,"COL0=$'%s'\n",buf);
@@ -3754,11 +3978,11 @@ void PrintColorSetEx
 	case 2:
 	    if (!cs)
 		cs = GetColorSet(COLMD_ON);
-	    PrintColorSetHelper(f,indent,cs,PrintColorSetPHP,mode);
+	    PrintColorSetHelper(f,indent,cs,PrintColorSetPHP,mode,true);
 	    break;
 
 	default:
-	    PrintColorSetHelper(f,indent,cs,PrintColorSetCOL,mode);
+	    PrintColorSetHelper(f,indent,cs,PrintColorSetCOL,mode,false);
 	    fputc('\n',f);
 	    break;
     }
@@ -4181,6 +4405,8 @@ static void ViewColorsPredef_helper
 
 void ViewColorsPredef ( ColorView_t *cv, uint mode )
 {
+    // [[new-color]]
+
     DASSERT(cv);
     SetupColorView(cv);
     DASSERT(cv->colset);
@@ -4226,6 +4452,7 @@ void ViewColorsPredef ( ColorView_t *cv, uint mode )
 	JOB1(log);
 
 	JOB1(name);
+	JOB1(op);
 	JOB1(value);	if (alt) JOB2(val,value);
 	JOB1(success);
 	JOB1(error);
@@ -4268,39 +4495,55 @@ void ViewColorsPredef ( ColorView_t *cv, uint mode )
 
 	if ( !(mode & 1) )
 	    fputc('\n',cv->f);
+
+	JOB1(red_magenta);
 	JOB1(red);
 	JOB1(red_orange);
+	JOB1(orange_red);
 	JOB1(orange);
 	JOB1(orange_yellow);
+	JOB1(yellow_orange);
 	JOB1(yellow);
 	JOB1(yellow_green);
+	JOB1(green_yellow);
 	JOB1(green);
 	JOB1(green_cyan);
+	JOB1(cyan_green);
 	JOB1(cyan);
 	JOB1(cyan_blue);
+	JOB1(blue_cyan);
 	JOB1(blue);
 	JOB1(blue_magenta);
+	JOB1(magenta_blue);
 	JOB1(magenta);
 	JOB1(magenta_red);
-	JOB1(red);
+	JOB1(red_magenta);
 
 	if ( !(mode & 1) )
 	    fputc('\n',cv->f);
+
+	JOB1(b_red_magenta);
 	JOB1(b_red);
 	JOB1(b_red_orange);
+	JOB1(b_orange_red);
 	JOB1(b_orange);
 	JOB1(b_orange_yellow);
+	JOB1(b_yellow_orange);
 	JOB1(b_yellow);
 	JOB1(b_yellow_green);
+	JOB1(b_green_yellow);
 	JOB1(b_green);
 	JOB1(b_green_cyan);
+	JOB1(b_cyan_green);
 	JOB1(b_cyan);
 	JOB1(b_cyan_blue);
+	JOB1(b_blue_cyan);
 	JOB1(b_blue);
 	JOB1(b_blue_magenta);
+	JOB1(b_magenta_blue);
 	JOB1(b_magenta);
 	JOB1(b_magenta_red);
-	JOB1(b_red);
+	JOB1(b_red_magenta);
     }
 
     #undef JOB1

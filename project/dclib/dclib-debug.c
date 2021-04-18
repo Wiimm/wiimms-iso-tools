@@ -14,7 +14,7 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2020 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
@@ -45,10 +45,7 @@
 
 #include "dclib-basics.h"
 #include "dclib-file.h"
-
-#if ENABLE_HEXDUMP_WRAPPER > 0
-  #include "dclib-xdump.h"
-#endif
+#include "dclib-xdump.h"
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -592,55 +589,6 @@ bool mark_used ( ccp name, ... )
 ///////////////			    hexdump			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-#if ENABLE_HEXDUMP_WRAPPER > 1
- int enable_xdump_wrapper = 1;
-#elif ENABLE_HEXDUMP_WRAPPER
- int enable_xdump_wrapper = 0;
-#endif
-
-ccp  hexdump_prefix = "";
-ccp  hexdump_eol    = "\n";
-bool hexdump_align  = false;
-
-//-----------------------------------------------------------------------------
-
-#if ENABLE_HEXDUMP_WRAPPER > 0
-
-static void SetupXDumpWrapper
-(
-    XDump_t	*xd,
-    FILE	*f,
-    int		indent,
-    u64		addr,
-    int		addr_fw,
-    int		row_len
-)
-{
-    DASSERT(xd);
-    InitializeXDump(xd);
-
-    xd->f		= f;
-    xd->prefix		= hexdump_prefix;
-    xd->eol		= hexdump_eol;
-    xd->mode_align	= hexdump_align;
-    xd->indent		= indent;
-    xd->start_addr	= addr;
-    xd->min_addr_fw	= addr_fw;
-    xd->min_width	= row_len;
-    xd->format		= XDUMPF_INT_1;
-    xd->print_format	= false;
-    xd->print_summary	= false;
-    xd->print_diff_sep	= false;
-
-    hexdump_prefix	= EmptyString;
-    hexdump_eol		= "\n";
-    hexdump_align	= false;
-}
-
-#endif
-
-//-----------------------------------------------------------------------------
-
 uint HexDump16 ( FILE * f, int indent, u64 addr,
 		 const void * data, size_t count )
 {
@@ -666,101 +614,10 @@ uint HexDump ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
     if ( !f || !p_data || !count )
 	return 0;
 
- #if ENABLE_HEXDUMP_WRAPPER == 1 || ENABLE_HEXDUMP_WRAPPER == 2
-  if (enable_xdump_wrapper)
- #endif
-
- #if ENABLE_HEXDUMP_WRAPPER > 0
-  {
     XDump_t xd;
-    SetupXDumpWrapper(&xd,f,indent,addr,addr_fw,row_len);
+    InitializeXDumpEx(&xd,f,indent,addr,addr_fw,row_len);
     const int stat = XDump(&xd,p_data,count,true);
     return stat < 0 ? 0 : stat;
-  }
- #endif
-
- #if ENABLE_HEXDUMP_WRAPPER < 3
-
-    const int MAX_LEN = 256;
-    char buf[MAX_LEN+2];
-
-    const u8 * data = (const u8 *)p_data;
-
-    indent = NormalizeIndent(indent);
-    addr_fw = NormalizeIndent(addr_fw);
-
-    const bool show_ascii = row_len >= 0;
-    if ( row_len < 0 )
-	row_len = -row_len;
-    else if ( row_len < 1 )
-	row_len = 16;
-    else if ( row_len > MAX_LEN )
-	row_len = MAX_LEN;
-
-    uint skip = 0;
-    if ( (s64)addr != -1 )
-    {
-	const int fw = snprintf(buf,sizeof(buf),"%llx",addr+count-1);
-	if ( addr_fw < fw )
-	     addr_fw = fw;
-
-	if (hexdump_align)
-	{
-	    skip   = addr % row_len;
-	    addr  -= skip;
-	}
-    }
-
-    uint line_count = 0;
-    while ( count > 0 )
-    {
-	if ( (s64)addr == -1 )
-	    fprintf(f,"%s%*s", hexdump_prefix, indent,"" );
-	else
-	{
-	    fprintf(f,"%s%*s%*llx:", hexdump_prefix, indent,"", addr_fw, addr );
-	    addr += row_len;
-	}
-	char * dest = buf;
-	if (!skip)
-	    *dest++ = ':';
-
-	int i;
-	for ( i = 0; i < row_len; i++ )
-	{
-	    if ( skip > 0 )
-	    {
-		fprintf(f,"%s   ", i&3 ? "" : " " );
-		*dest++ = ' ';
-		if (!--skip)
-		    *dest++ = ':';
-	    }
-	    else
-	    {
-		u8 ch = *data++;
-		if ( count > 0 )
-		{
-		    count--;
-		    fprintf(f,"%s%02x ", i&3 ? "" : " ", ch );
-		    *dest++ = ch < ' ' || ch >= 0x7f ? '.' : ch;
-		}
-		else
-		    fprintf(f,"%s   ", i&3 ? "" : " " );
-	    }
-	}
-	*dest = 0;
-	if (show_ascii)
-	    fprintf(f,"%s:%s",buf,hexdump_eol);
-	else
-	    fputs(hexdump_eol,f);
-	line_count++;
-    }
-
-    hexdump_prefix = "";
-    hexdump_eol    = "\n";
-    hexdump_align  = false;
-    return line_count;
- #endif
 }
 
 //-----------------------------------------------------------------------------
@@ -781,23 +638,11 @@ uint HexDump0 ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
     if ( !f || !p_data || !count )
 	return 0;
 
- #if ENABLE_HEXDUMP_WRAPPER == 1 || ENABLE_HEXDUMP_WRAPPER == 2
-  if (enable_xdump_wrapper)
- #endif
-
- #if ENABLE_HEXDUMP_WRAPPER > 0
-  {
     XDump_t xd;
-    SetupXDumpWrapper(&xd,f,indent,addr,addr_fw,row_len);
+    InitializeXDumpEx(&xd,f,indent,addr,addr_fw,row_len);
     xd.mode_ignore = true;
     const int stat = XDump(&xd,p_data,count,true);
     return stat < 0 ? 0 : stat;
-  }
- #endif
-
- #if ENABLE_HEXDUMP_WRAPPER < 3
-    return HexDump( f, indent, addr, addr_fw, row_len, p_data, count );
- #endif
 }
 
 //-----------------------------------------------------------------------------
@@ -818,158 +663,10 @@ void HexDiff ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
     if (!f)
 	return;
 
- #if ENABLE_HEXDUMP_WRAPPER == 1 || ENABLE_HEXDUMP_WRAPPER == 2
-  if (enable_xdump_wrapper)
- #endif
-
- #if ENABLE_HEXDUMP_WRAPPER > 0
-  {
     XDump_t xd;
-    SetupXDumpWrapper(&xd,f,indent,addr,addr_fw,row_len);
+    InitializeXDumpEx(&xd,f,indent,addr,addr_fw,row_len);
     XDiff(&xd, p_data1,count1,true, p_data2,count2,true, 0,false );
     return;
-  }
- #endif
-
- #if ENABLE_HEXDUMP_WRAPPER < 3
-
-    const int MAX_LEN = 256;
-    char buf[MAX_LEN+2];
-
-    const u8 * data1 = p_data1 ? (const u8 *)p_data1 : (u8*)EmptyString;
-    const u8 * data2 = p_data2 ? (const u8 *)p_data2 : (u8*)EmptyString;
-
-    indent  = NormalizeIndent(indent);
-    addr_fw = NormalizeIndent(addr_fw);
-
-    const bool show_ascii = row_len >= 0;
-    if ( row_len < 0 )
-	row_len = -row_len;
-    else if ( row_len < 1 )
-	row_len = 16;
-    else if ( row_len > MAX_LEN )
-	row_len = MAX_LEN;
-
-    uint skip = 0;
-
-    if ( (s64)addr != -1 )
-    {
-	const size_t count = count1 > count2 ? count1 : count2;
-	const int fw = snprintf(buf,sizeof(buf),"%llx",addr+count-1);
-	if ( addr_fw < fw )
-	     addr_fw = fw;
-
-	if (hexdump_align)
-	{
-	    skip   = addr % row_len;
-	    addr  -= skip;
-	}
-    }
-
-    while ( count1 > 0 && count2 > 0 )
-    {
-	size_t count = count1 < count2 ? count1 : count2;
-	if ( count > row_len )
-	    count = row_len;
-	noPRINT(" cnt=%zd,%zd -> %zd;  cmp=%d\n",
-		count1, count2, count, memcmp(data1,data2,count) );
-
-	if (memcmp(data1,data2,count))
-	{
-	    //--- print first line
-
-	    if (IS_M1(addr))
-		fprintf(f,"%s%*s<", hexdump_prefix, indent,"" );
-	    else
-		fprintf(f,"%s%*s<%*llx:", hexdump_prefix, indent,"", addr_fw, addr );
-
-	    char * dest = buf;
-	    if (!skip)
-		*dest++ = ':';
-
-	    int i;
-	    for ( i = 0; i < row_len; i++ )
-	    {
-		if ( skip > 0 )
-		{
-		    fprintf(f,"%s   ", i&3 ? "" : " " );
-		    *dest++ = ' ';
-		    if (!--skip)
-			*dest++ = ':';
-		}
-		else
-		{
-		    u8 ch = data1[i];
-		    if ( i < count1 )
-		    {
-			fprintf(f,"%s%02x ", i&3 ? "" : " ", ch );
-			*dest++ = ch < ' ' || ch >= 0x7f ? '.' : ch;
-		    }
-		    else
-			fprintf(f,"%s   ", i&3 ? "" : " " );
-		}
-	    }
-	    *dest = 0;
-	    if (show_ascii)
-		fprintf(f,"%s:%s",buf,hexdump_eol);
-	    else
-		fputs(hexdump_eol,f);
-
-
-	    //--- print second line
-
-	    if (IS_M1(addr))
-		fprintf(f,"%s%*s>", hexdump_prefix, indent,"" );
-	    else
-		fprintf(f,"%s%*s>%*llx:", hexdump_prefix, indent,"", addr_fw, addr );
-
-	    dest = buf;
-	    if (!skip)
-		*dest++ = ':';
-
-	    for ( i = 0; i < row_len; i++ )
-	    {
-		if ( skip > 0 )
-		{
-		    fprintf(f,"%s   ", i&3 ? "" : " " );
-		    *dest++ = ' ';
-		    if (!--skip)
-			*dest++ = ':';
-		}
-		else
-		{
-		    u8 ch = data2[i];
-		    if ( i < count2 )
-		    {
-			if ( ch == data1[i] )
-			    fprintf(f,"%s . ", i&3 ? "" : " " );
-			else
-			    fprintf(f,"%s%02x ", i&3 ? "" : " ", ch );
-			*dest++ = ch < ' ' || ch >= 0x7f ? '.' : ch;
-		    }
-		    else
-			fprintf(f,"%s   ", i&3 ? "" : " " );
-		}
-	    }
-	    *dest = 0;
-	    if (show_ascii)
-		fprintf(f,"%s:%s",buf,hexdump_eol);
-	    else
-		fputs(hexdump_eol,f);
-	}
-	data1 += count;
-	data2 += count;
-	count1 -= count;
-	count2 -= count;
-	if (!IS_M1(addr))
-	    addr += count;
-
-    }
-    hexdump_prefix = "";
-    hexdump_eol    = "\n";
-    hexdump_align  = false;
-
- #endif
 }
 
 //
@@ -1322,10 +1019,79 @@ void * dclib_memdup ( MPARAM const void * src, size_t copylen )
 
 ///////////////////////////////////////////////////////////////////////////////
 
+void * dclib_memdup2 ( MPARAM cvp src1, size_t len1, cvp src2, size_t len2 )
+{
+    char *res = dclib_malloc( MCALL len1+len2+1);
+    char *dest = res;
+    if (len1)
+    {
+	memcpy(dest,src1,len1);
+	dest += len1;
+    }
+    if (len2)
+    {
+	memcpy(dest,src2,len2);
+	dest += len2;
+    }
+    *dest = 0;
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void * dclib_memdup3
+	( MPARAM cvp src1, size_t len1, cvp src2, size_t len2, cvp src3, size_t len3  )
+{
+    char *res = dclib_malloc( MCALL len1+len2+len3+1);
+    char *dest = res;
+    if (len1)
+    {
+	memcpy(dest,src1,len1);
+	dest += len1;
+    }
+    if (len2)
+    {
+	memcpy(dest,src2,len2);
+	dest += len2;
+    }
+    if (len3)
+    {
+	memcpy(dest,src3,len3);
+	dest += len3;
+    }
+    *dest = 0;
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 void * dclib_allocdup ( MPARAM const void * src, size_t copylen )
 {
     char * dest = dclib_malloc( MCALL copylen);
     memcpy(dest,src,copylen);
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * dclib_printdup ( MPARAM ccp format, ... )
+{
+    char buf[2000];
+
+    va_list arg;
+    va_start(arg,format);
+    const int stat = vsnprintf(buf,sizeof(buf),format,arg) + 1;
+    va_end(arg);
+
+    char * dest = dclib_malloc( MCALL stat );
+    if ( stat <= sizeof(buf) )
+	memcpy(dest,buf,stat);
+    else
+    {
+	va_start(arg,format);
+	vsnprintf(dest,stat,format,arg);
+	va_end(arg);
+    }
     return dest;
 }
 
@@ -1814,11 +1580,83 @@ void * trace_memdup
 
 ///////////////////////////////////////////////////////////////////////////////
 
+void * trace_memdup2 ( ccp func, ccp file, uint line,
+	cvp src1, size_t len1, cvp src2, size_t len2  )
+{
+    char *res = trace_malloc(func,file,line,len1+len2+1);
+    char *dest = res;
+
+    if (len1)
+    {
+	memcpy(dest,src1,len1);
+	dest += len1;
+    }
+    if (len2)
+    {
+	memcpy(dest,src2,len2);
+	dest += len2;
+    }
+    *dest = 0;
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void * trace_memdup3 ( ccp func, ccp file, uint line,
+	cvp src1, size_t len1, cvp src2, size_t len2, cvp src3, size_t len3 )
+{
+    char *res = trace_malloc(func,file,line,len1+len2+len3+1);
+    char *dest = res;
+    if (len1)
+    {
+	memcpy(dest,src1,len1);
+	dest += len1;
+    }
+    if (len2)
+    {
+	memcpy(dest,src2,len2);
+	dest += len2;
+    }
+    if (len3)
+    {
+	memcpy(dest,src3,len3);
+	dest += len3;
+    }
+    *dest = 0;
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 void * trace_allocdup
 	( ccp func, ccp file, uint line, const void * src, size_t copylen )
 {
     char * dest = trace_malloc(func,file,line,copylen);
     memcpy(dest,src,copylen);
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * trace_printdup
+	( ccp func, ccp file, uint line, ccp format, ... )
+{
+    char buf[2000];
+
+    va_list arg;
+    va_start(arg,format);
+    const int stat = vsnprintf(buf,sizeof(buf),format,arg) + 1;
+    va_end(arg);
+
+    char * dest = trace_malloc(func,file,line,stat);
+    if ( stat <= sizeof(buf) )
+	memcpy(dest,buf,stat);
+    else
+    {
+	va_start(arg,format);
+	vsnprintf(dest,stat,format,arg);
+	va_end(arg);
+    }
     return dest;
 }
 
