@@ -50,8 +50,7 @@ else
     xflags=
 fi
 
-[[ -r /usr/include/bits/fcntl.h ]] \
-	&& grep -qw fallocate /usr/include/bits/fcntl.h \
+echo '#include <fcntl.h>' | gcc -E -D_GNU_SOURCE - | grep -qw 'fallocate' \
 	&& defines="$defines -DHAVE_FALLOCATE=1"
 
 [[ -r /usr/include/fcntl.h ]] \
