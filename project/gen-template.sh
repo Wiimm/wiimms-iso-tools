@@ -45,9 +45,9 @@ do
 
 	if ((CRLF)) && [[ $ext = bat || $ext = txt ]]
 	then
-	    awk "$awkprog" $src | sed -f templates.sed | sed 's/$/\r/' >$dest
+		awk "$awkprog" $src | sed -f templates.sed | sed 's/$/\r/' >$dest
 	else
-	    awk "$awkprog" $src | sed -f templates.sed  >$dest
+		awk "$awkprog" $src | sed -f templates.sed  >$dest
 	fi
 	[[ $ext = "sh" ]] && chmod a+x "$fname"
     fi
