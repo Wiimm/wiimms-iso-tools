@@ -3599,7 +3599,7 @@ int ScanPreallocMode ( ccp arg )
     if ( !arg || !*arg )
     {
      #ifdef NO_PREALLOC
-	ERROR0(ERR_WARNING,errmsg);
+	ERROR0(ERR_WARNING,"%s",errmsg);
      #else
 	prealloc_mode = PREALLOC_OPT_DEFAULT;
      #endif
@@ -3620,7 +3620,7 @@ int ScanPreallocMode ( ccp arg )
     {
      #ifdef NO_PREALLOC
 	if ( cmd->id != PREALLOC_OFF )
-	    ERROR0(ERR_WARNING,errmsg);
+	    ERROR0(ERR_WARNING,"%s",errmsg);
      #else
 	prealloc_mode = cmd->id;
      #endif
