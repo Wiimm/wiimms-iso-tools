@@ -1,0 +1,39 @@
+---
+name: Lint YAML
+
+on:  # yamllint disable-line rule:truthy
+  # Allow manual runs.
+  workflow_dispatch:
+  # Also run on updates to this repo.
+  push:
+    paths:
+      - '**/*.yml'
+      - '**/*.yaml'
+  pull_request:
+    paths:
+      - '**/*.yml'
+      - '**/*.yaml'
+
+jobs:
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Set reviewdog reporter type
+        run: |
+          if [ ${{ github.event_name }} != "pull_request" ]; then
+            echo "REVIEWDOG_REPORTER=local" >> $GITHUB_ENV
+          else
+            echo "REVIEWDOG_REPORTER=github-pr-review" >> $GITHUB_ENV
+          fi
+
+      - name: Lint YAML files
+        uses: reviewdog/action-yamllint@v1
+        with:
+          github_token: ${{ secrets.REVIEWDOG_GITHUB_API_TOKEN }}
+          reporter: ${{ env.REVIEWDOG_REPORTER }}
+          level: info
+          filter_mode: nofilter
+          fail_on_error: true

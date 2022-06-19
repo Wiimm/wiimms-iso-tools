@@ -1,0 +1,54 @@
+---
+name: Build wit
+
+on:  # yamllint disable-line rule:truthy
+  # Allow manual runs.
+  workflow_dispatch:
+  # Also run on updates to this repo.
+  push:
+    branches:
+      - main
+    paths:
+      - 'project/**'
+      - 'Dockerfile'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'project/**'
+      - 'Dockerfile'
+  release:
+    types:
+      - published
+
+env:
+  PLATFORMS: linux/arm/v6,linux/arm/v7,linux/arm64/v8,linux/amd64
+  RELEASE: ${{ github.event.action }} == "release" || startsWith(github.ref, 'refs/tags/')
+
+
+jobs:
+  build-wit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up QEMU for Docker
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Build wit
+        uses: docker/build-push-action@v2
+        with:
+          file: Dockerfile
+          push: false
+          outputs: type=tar,dest=artifacts
+          platforms: ${{ env.PLATFORMS }}
+
+      - name: Attach build artifacts to release
+        if: ${{ env.RELEASE }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*
