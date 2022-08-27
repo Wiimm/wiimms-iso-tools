@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -92,6 +92,380 @@ bool EnableSingleCharInput()
     tios.c_lflag &= ~(ICANON|ECHO);
     tcsetattr(0,TCSANOW,&tios);
     return true;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			    log helpers			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+LogFile_t GlobalLogFile = {0};
+
+///////////////////////////////////////////////////////////////////////////////
+
+FILE * TryOpenFile ( FILE *f, ccp fname, ccp mode )
+{
+    if ( f == TRY_OPEN_FILE )
+	f = fopen(fname,mode);
+    else if (f)
+    {
+	rewind(f);
+	fflush(f);
+    }
+    return f;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int GetLogTimestamp ( char *buf, uint buf_size, TimestampMode_t ts_mode )
+{
+    DASSERT(buf);
+    DASSERT(buf_size>2);
+
+    uint len;
+    if ( ts_mode >= TSM_USEC )
+    {
+	const u64 usec = GetTimeUSec(false);
+	const uint sec = usec/1000000 % SEC_PER_DAY;
+	len = snprintf(buf,buf_size,
+		"%02u:%02u:%02u.%06llu ",
+		sec / 3600,
+		sec / 60 % 60,
+		sec % 60,
+		usec % 1000000 );
+    }
+    else if ( ts_mode >= TSM_MSEC )
+    {
+	const u64 msec = GetTimeMSec(false);
+	const uint sec = msec/USEC_PER_MSEC % SEC_PER_DAY;
+	len = snprintf(buf,buf_size,
+		"%02u:%02u:%02u.%03llu ",
+		sec / 3600,
+		sec / 60 % 60,
+		sec % 60,
+		msec % 1000 );
+    }
+    else if ( ts_mode >= TSM_SEC )
+    {
+	const uint sec = GetTimeSec(false) % SEC_PER_DAY;
+	len = snprintf(buf,buf_size,
+		"%02u:%02u:%02u ",
+		sec / 3600,
+		sec / 60 % 60,
+		sec % 60 );
+    }
+    else
+    {
+	*buf = 0;
+	len = 0;
+    }
+
+    if ( len >= buf_size )
+    {
+	len = buf_size - 1;
+	buf[len] = 0;
+    }
+    return len;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int PrintLogTimestamp ( LogFile_t *lf )
+{
+    DASSERT(lf);
+    DASSERT(lf->log);
+
+    int stat = 0;
+    if ( lf && lf->log )
+    {
+	char buf[50];
+	stat = GetLogTimestamp(buf,sizeof(buf),lf->ts_mode);
+	if ( stat > 0 )
+	    fwrite(buf,stat,1,lf->log);
+    }
+    return stat;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+int PutLogFile ( LogFile_t *lf, ccp text, int text_len )
+{
+    if (!lf)
+	lf = &GlobalLogFile;
+
+    if ( !lf->log || !text )
+	return 0;
+
+    //--- collect data first to have a single print
+
+    char buf[2000];
+    char *dest = buf + GetLogTimestamp( buf, sizeof(buf), lf->ts_mode );
+    dest = StringCopyEMem( dest, buf+sizeof(buf), lf->tag );
+    dest = StringCopyEM( dest, buf+sizeof(buf), text,
+				text_len < 0 ? strlen(text) : text_len );
+
+    const int len = dest - buf;
+    fwrite(buf,len,1,lf->log);
+    if (lf->flush)
+	fflush(lf->log);
+    if ( lf->log == stdout )
+	stdout_seq_count++;
+    return len;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int PrintArgLogFile ( LogFile_t *lf, ccp format, va_list arg )
+{
+    int stat = 0;
+    if (format)
+    {
+	char buf[2000];
+	int len = vsnprintf(buf,sizeof(buf),format,arg);
+	if ( len >= 0 )
+	{
+	    if ( len >= sizeof(buf)-1 )
+	    {
+		len = sizeof(buf)-1;
+		buf[sizeof(buf)-1] = 0;
+	    }
+	    stat = PutLogFile(lf,buf,len);
+	}
+    }
+    return stat;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int PrintLogFile ( LogFile_t *lf, ccp format, ... )
+{
+    va_list arg;
+    va_start(arg,format);
+    const int stat = PrintArgLogFile(lf,format,arg);
+    va_end(arg);
+    return stat;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			search tool			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_t SearchToolByPATH ( ccp tool )
+{
+    exmem_t dest = {};
+    if ( tool && *tool )
+    {
+	char fname[PATH_MAX];
+	if (strchr(tool,'/'))
+	{
+//PRINT1("SEARCH ABS: %s\n",tool);
+	    struct stat st;
+	    if ( !stat(tool,&st) && st.st_mode & (S_IXUSR|S_IXGRP|S_IXOTH) )
+	    {
+//PRINT1("FOUND ABS: %s\n",tool);
+		AssignExMemS(&dest,tool,-1,CPM_COPY);
+	    }
+	}
+	else
+	{
+	 #ifdef __CYGWINxxx__
+	    if ( ProgInfo.progpath && *ProgInfo.progpath )
+	    {
+		PathCatPP(fname,sizeof(fname),ProgInfo.progpath,tool);
+//PRINT1("SEARCH+: %s\n",fname);
+		struct stat st;
+		if ( !stat(fname,&st) && st.st_mode & (S_IXUSR|S_IXGRP|S_IXOTH) )
+		{
+//PRINT1("FOUND+: %s\n",fname);
+		    AssignExMemS(&dest,fname,-1,CPM_COPY);
+		    return dest;
+		}
+	    }
+	 #endif
+
+	    ccp path = getenv("PATH");
+	    for(;;)
+	    {
+		while ( *path == ':' )
+		    path++;
+		ccp start = path;
+		while ( *path && *path != ':' )
+		    path++;
+		const int len = path - start;
+		if (!len)
+		    break;
+
+		const int flen = snprintf(fname,sizeof(fname),"%.*s/%s",len,start,tool);
+//PRINT1("SEARCH: %s\n",fname);
+		struct stat st;
+		if ( !stat(fname,&st) && st.st_mode & (S_IXUSR|S_IXGRP|S_IXOTH) )
+		{
+//PRINT1("FOUND: %s\n",fname);
+		    AssignExMemS(&dest,fname,flen,CPM_COPY);
+		    break;
+		}
+	    }
+	}
+    }
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_t SearchToolByList ( ccp * list, int max )
+{
+    exmem_t dest = {};
+
+    if (list)
+    {
+	if ( max < 0 )
+	{
+	    max = 0;
+	    for ( ccp *ptr = list; *ptr; ptr++ )
+		max++;
+	}
+
+	while ( max-- > 0 )
+	{
+	    ccp arg = *list++;
+	    if (arg)
+	    {
+//PRINT1("SEARCH: %s\n",arg);
+		if ( *arg == '>' )
+		{
+		    ccp env = getenv(arg+1);
+		    if ( env && *env )
+		    {
+			AssignExMemS(&dest,env,-1,CPM_LINK);
+			break;
+		    }
+		}
+		else
+		{
+		    dest = SearchToolByPATH(arg);
+		    if (dest.data.len)
+		    {
+			//AssignExMemS(&dest,arg,-1,CPM_LINK);
+			break;
+		    }
+		}
+	    }
+	}
+    }
+    return dest;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			pipe to pager			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static FILE *pager_file = 0;
+
+///////////////////////////////////////////////////////////////////////////////
+
+FILE * OpenPipeToPager()
+{
+    static bool done = false;
+    if (!done)
+    {
+	done = true;
+
+	// first: set less option -R to enable colors
+	ccp less = getenv("LESS");
+	if ( less && *less )
+	{
+	    char buf[200];
+	    snprintf(buf,sizeof(buf),"%s -R",less);
+	    setenv("LESS",buf,1);
+	}
+	else
+	    setenv("LESS","-R",1);
+
+	static ccp search_tab[] =
+	{
+	    ">DC_PAGER",
+	    ">DC_PAGER1",
+	    ">DC_PAGER2",
+	    ">PAGER",
+	 #ifdef __CYGWINxxx__
+	    "/usr/bin/less",
+	    "/cygdrive/c/Program Files/Wiimm/SZS/less",
+	    "/usr/bin/more",
+	    "/cygdrive/c/Program Files/Wiimm/SZS/more",
+	 #endif
+	    "less",
+	    "more",
+	    0
+	};
+
+	exmem_t pager = SearchToolByList(search_tab,-1);
+	if (pager.data.ptr)
+	{
+	 #ifdef __CYGWINxxx__
+PRINT1("popen(%s)\n",pager.data.ptr);
+	    char buf[500];
+	    StringCat3S(buf,sizeof(buf),"'",pager.data.ptr,"'");
+PRINT1("popen(%s)\n",buf);
+	    pager_file = popen(buf,"we");
+PRINT_IF1(!pager_file,"popen(%s) FAILED\n",buf);
+	 #else
+	    pager_file = popen(pager.data.ptr,"we");
+	 #endif
+	}
+	FreeExMem(&pager);
+    }
+
+    return pager_file;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ClosePagerFile()
+{
+    if (pager_file)
+    {
+	if ( stdout == pager_file ) stdout = 0;
+	if ( stderr == pager_file ) stderr = 0;
+	if ( stdwrn == pager_file ) stdwrn = 0;
+	if ( stdlog == pager_file ) stdlog = 0;
+	pclose(pager_file);
+	pager_file = 0;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool StdoutToPager()
+{
+    FILE *f = OpenPipeToPager();
+    if (f)
+    {
+	fflush(stdout);
+	stdout = f;
+
+	if ( stderr && isatty(fileno(stderr)) )
+	    stderr = f;
+
+	if ( stdwrn && isatty(fileno(stdwrn)) )
+	    stdwrn = f;
+
+	if ( stdlog && isatty(fileno(stdlog)) )
+	    stdlog = f;
+
+	return true;
+    }
+    return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void CloseStdoutToPager()
+{
+    if ( pager_file && pager_file == stdout )
+	ClosePagerFile();
 }
 
 //
@@ -205,7 +579,7 @@ FileAttrib_t * ClearFileAttrib
 	dest->mtime.tv_nsec =
 	dest->ctime.tv_nsec =
 	dest->itime.tv_nsec =
-     #ifdef UTIME_OMIT
+     #if SUPPORT_UTIMENSAT
 		UTIME_OMIT;
      #else
 		-2;
@@ -401,7 +775,7 @@ int CompareTimeSpec0 ( const struct timespec *a, const struct timespec *b )
 
 void SetAMTimes ( ccp fname, const struct timespec times[2] )
 {
- #ifdef UTIME_OMIT
+ #if SUPPORT_UTIMENSAT
     utimensat(AT_FDCWD,fname,times,0);
  #else
     struct timeval tv[2];
@@ -1497,7 +1871,7 @@ enumError LoadFile
     bool		fatt_max	// true: store *max* values to 'fatt'
 )
 {
-    ASSERT(data);
+    DASSERT(data);
     if (!size)
 	return ERR_OK;
 
@@ -1584,8 +1958,8 @@ enumError LoadFileAlloc
     if ( size == -1 )
     {
 	if ( silent < 2 )
-	    ERROR0(ERR_SYNTAX,"File not found: %s\n",path);
-	return ERR_SYNTAX;
+	    ERROR0(ERR_CANT_OPEN,"File not found: %s\n",path);
+	return ERR_CANT_OPEN;
     }
 
     if ( max_size && size > max_size )
@@ -1911,57 +2285,100 @@ enumError CopyFileTemp
 
 enumError TransferFile
 (
-    ccp			src,		// source path
+    LogFile_t		*log,		// not NULL: log activities
     ccp			dest,		// destination path
+    ccp			src,		// source path
     TransferMode_t	tfer_mode,	// transfer mode
     mode_t		open_mode	// mode for CopyFile*() -> open()
 )
 {
-    if ( !dest || !src || !*dest || !*src )
+    if ( !dest || !*dest || !src || !*src )
 	return ERR_MISSING_PARAM;
 
     if (IsSameFile(src,dest))
 	return ERR_NOTHING_TO_DO;
 
+    const bool testmode = ( tfer_mode & TFMD_F_TEST ) != 0;
+ 
     if ( tfer_mode & TFMD_J_MOVE1 )
     {
 	LOGPRINT("TransferFile(MOVE1) %s -> %s\n",src,dest);
 	struct stat st;
-	if ( !stat(src,&st) && st.st_nlink == 1 && !rename(src,dest) )
+	if ( !stat(src,&st) && st.st_nlink == 1
+		&& ( testmode || !rename(src,dest) ))
+	{
+	    if (log)
+		PrintLogFile(log, "%s:\n\t< %s\n\t> %s\n",
+				testmode ? "Would MOVE" : "MOVED", src, dest );
 	    return ERR_OK;
+	}
     }
     else if ( tfer_mode & TFMD_J_MOVE )
     {
 	LOGPRINT("TransferFile(MOVE) %s -> %s\n",src,dest);
-	if (!rename(src,dest))
+	if ( testmode || !rename(src,dest) )
+	{
+	    if (log)
+		PrintLogFile(log, "%s:\n\t< %s\n\t> %s\n",
+				testmode ? "Would MOVE" : "MOVED", src, dest );
 	    return ERR_OK;
+	}
     }
 
     if ( tfer_mode & TFMD_J_LINK )
     {
 	LOGPRINT("TransferFile(RM_DEST) %s\n",dest);
-	if ( tfer_mode & TFMD_J_RM_DEST )
+	if ( tfer_mode & TFMD_J_RM_DEST && !testmode )
 	    unlink(dest);
 
 	LOGPRINT("TransferFile(LINK) %s -> %s\n",src,dest);
-	if (!link(src,dest))
+	if ( testmode || !link(src,dest) )
+	{
+	    if (log)
+		PrintLogFile(log, "%s:\n\t< %s\n\t> %s\n",
+				testmode ? "Would LINK" : "LINKED", src, dest );
 	    return ERR_OK;
+	}
     }
 
     if ( tfer_mode & TFMD_J_COPY )
     {
 	LOGPRINT("TransferFile(COPY) %s -> %s\n",src,dest);
-	enumError err = tfer_mode & TFMD_J_RM_DEST
-			? CopyFileTemp(src,dest,open_mode)
-			: CopyFile(src,dest,open_mode);
-	if ( err == ERR_OK )
+	if (testmode)
 	{
-	    if ( tfer_mode & TFMD_J_RM_SRC )
+	    if (log)
 	    {
-		PRINT("TransferFile(RM_SRC) %s",src);
-		unlink(src);
+		if ( tfer_mode & TFMD_J_RM_DEST )
+		    PrintLogFile(log, "Would REMOVE DEST: %s\n",dest);
+		PrintLogFile(log, "Would COPY:\n\t< %s\n\t> %s\n",src,dest);
+		if ( tfer_mode & TFMD_J_RM_SRC )
+		    PrintLogFile(log, "Would REMOVE SRC: %s\n",src);
 	    }
 	    return ERR_OK;
+	}
+	else
+	{
+	    enumError err = tfer_mode & TFMD_J_RM_DEST
+				? CopyFileTemp(src,dest,open_mode)
+				: CopyFile(src,dest,open_mode);
+	    if ( err == ERR_OK )
+	    {
+		if (log)
+		{
+		    if ( tfer_mode & TFMD_J_RM_DEST )
+			PrintLogFile(log, "REMOVE DEST: %s\n",dest);
+		    PrintLogFile(log, "COPY:\n\t< %s\n\t> %s\n",src,dest);
+		}
+
+		if ( tfer_mode & TFMD_J_RM_SRC )
+		{
+		    PRINT("TransferFile(RM_SRC) %s",src);
+		    unlink(src);
+		    if (log)
+			PrintLogFile(log, "REMOVE SRC: %s\n",src);
+		}
+		return ERR_OK;
+	    }
 	}
     }
 
@@ -2788,6 +3205,24 @@ bool IsSameFilename ( ccp fn1, ccp fn2 )
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+// convert type get by readdir() to of struct stat.st_mode
+uint ConvertDType2STMode ( uint d_type )
+{
+    switch (d_type)
+    {
+	case DT_BLK:	return S_IFBLK;
+	case DT_CHR:	return S_IFCHR;
+	case DT_DIR:	return S_IFDIR;
+	case DT_FIFO:	return S_IFIFO;
+	case DT_LNK:	return S_IFLNK;
+	case DT_REG:	return S_IFREG;
+	case DT_SOCK:	return S_IFSOCK;
+    }
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 bool enable_config_search_log = false;
@@ -3246,6 +3681,526 @@ uint NumberedFilename
     return index;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static char * GetBlockDeviceHolderHelper
+	( char *buf, char *endbuf, ccp name, ccp sep, int *level )
+{
+    DASSERT(buf);
+    DASSERT(endbuf);
+    DASSERT(level);
+
+    char path[200];
+    snprintf(path,sizeof(path),"/sys/class/block/%s/holders",name);
+    if (IsDirectory(path,0))
+    {
+	DIR *fdir = opendir(path);
+	if (fdir)
+	{
+	    for(;;)
+	    {
+		struct dirent *dent = readdir(fdir);
+		if (!dent)
+		    break;
+		if ( dent->d_name[0] != '.' )
+		{
+		    buf = GetBlockDeviceHolderHelper(buf,endbuf,dent->d_name,sep,level);
+		    (*level)++;
+		    break;
+		}
+	    }
+	    closedir(fdir);
+	}
+    }
+
+    return StringCat2E(buf,endbuf,sep,name);
+}
+
+//-----------------------------------------------------------------------------
+
+ccp GetBlockDeviceHolder ( ccp name, ccp sep, int *ret_level )
+{
+    static ParamField_t db = { .free_data = true };
+
+    bool old_found;
+    ParamFieldItem_t *item = FindInsertParamField(&db,name,false,0,&old_found);
+    DASSERT(item);
+    if (!old_found)
+    {
+	int level = 0;
+	char buf[1000];
+	ccp end = GetBlockDeviceHolderHelper(buf,buf+sizeof(buf)-strlen(sep)-1,name,sep,&level);
+	ccp beg = buf + strlen(sep);
+	if ( beg < end )
+	{
+	    item->num  = level;
+	    item->data = MEMDUP(beg,end-beg+1);
+	}
+    }
+
+    if (ret_level)
+	*ret_level = item->num;
+    return item->data;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			SearchPaths()			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[search_paths_t]]
+
+typedef struct search_paths_t
+{
+    mem_t		source;		// path to analyse, any string outside
+    bool		allow_hidden;	// true: allow hidden dirs and files
+
+    char		*path_buf;	// pointer to complete path, work buffer
+    char		*path_star;	// begin of '**' for search_paths_dir()
+    char		*path_ptr;	// current end of path
+    char		*path_end;	// end of 'path_buf' -1
+
+    SearchPathsFunc	func;		// function to call, never NULL
+    void		*param;		// last param for func()
+
+    search_paths_stat_t	status;		// search status
+}
+search_paths_t;
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void search_paths_hit ( search_paths_t *sp, mem_t path, uint d_type )
+{
+    DASSERT(sp);
+    enumError err = sp->func(path,d_type,sp->param);
+    if ( err < 0 )
+    {
+	err = -err;
+	sp->status.abort = true;
+    }
+
+    if ( err != ERR_JOB_IGNORED )
+    {
+	sp->status.hit_count++;
+	if ( sp->status.max_err < err )
+	     sp->status.max_err = err;
+    }
+
+    sp->status.func_count++;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void search_paths_dir ( search_paths_t *sp, ParamField_t *collect, int min, int max )
+{
+    DASSERT(sp);
+    DASSERT(collect);
+    PRINT0("%s%s** %d - %d%s\n",colerr->debug,sp->path_buf,min,max,colerr->reset);
+
+    search_paths_t local = *sp;
+    char *path_ptr = local.path_ptr;
+
+    DIR *fdir = opendir( *local.path_buf ? local.path_buf: "." );
+    local.status.dir_count++;
+    if (fdir)
+    {
+	for(;;)
+	{
+	    struct dirent *dent = readdir(fdir);
+	    if (!dent)
+		break;
+
+	    if ( dent->d_name[0] == '.'
+		&& (  !local.allow_hidden
+		   || !dent->d_name[1]
+		   || dent->d_name[1] == '.' && !dent->d_name[2] ))
+	    {
+		continue;
+	    }
+
+	    local.path_ptr = StringCopyE(path_ptr,sp->path_end,dent->d_name);
+
+	    uint st_mode = ConvertDType2STMode(dent->d_type);
+	    if (!st_mode)
+	    {
+		struct stat st;
+		if (stat(local.path_buf,&st))
+		    continue;
+		st_mode = st.st_mode;
+	    }
+	    if (!S_ISDIR(st_mode))
+		continue;
+
+	    DASSERT(local.path_star);
+	    DASSERT( local.path_star >= local.path_buf );
+	    DASSERT( local.path_star <= local.path_ptr );
+
+	    PRINT0("FOUND: [t=%d,m:%x,add=%d,r=%d] %s\n",
+			dent->d_type, st_mode, min<=0, max>0, local.path_star );
+	    if ( min <= 0 )
+		InsertParamField(collect,local.path_star,false,st_mode,0);
+	    if ( max > 0 )
+	    {
+		*local.path_ptr++ = '/';
+		*local.path_ptr = 0;
+		search_paths_dir(&local,collect,min-1,max-1);
+	    }
+	}
+	closedir(fdir);
+    }
+
+    sp->status = local.status;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void search_paths_helper ( search_paths_t *sp )
+{
+    ccp wc = FindFirstWildcard(sp->source);
+    if (!wc)
+    {
+	char *end = StringCopyEM(sp->path_ptr,sp->path_end,sp->source.ptr,sp->source.len);
+	struct stat st;
+	if (!stat(sp->path_buf,&st))
+	{
+	    mem_t path = { .ptr = sp->path_buf, .len = end - sp->path_buf };
+	    search_paths_hit(sp,path,st.st_mode);
+	}
+	return;
+    }
+
+    search_paths_t local = *sp;
+
+    ccp pat = memrchr(local.source.ptr,'/',wc-local.source.ptr);
+    pat = pat ? pat+1 : local.source.ptr;
+
+    ccp source_end = local.source.ptr + local.source.len;
+    ccp next = memchr(wc,'/',source_end-wc);
+    if (!next)
+	next = source_end;
+
+    mem_t pattern;
+    pattern.len = next - pat;
+    pattern.ptr = MEMDUP(pat,pattern.len);
+    const bool allow_hidden = local.allow_hidden || pattern.ptr[0] == '.';
+
+    char *path_ptr = StringCopyEM(local.path_ptr,local.path_end,local.source.ptr,pat-local.source.ptr);
+    local.path_ptr = path_ptr;
+
+    local.source.ptr = next;
+    local.source.len = source_end - next;
+    const bool want_dir = local.source.len && local.source.ptr[0] == '/';
+
+    PRINT0("SPLIT: %s  %s%s%s  %.*s  [want_dir=%d]\n",
+		 local.path_buf,
+		 colerr->highlight, pattern.ptr, colerr->reset,
+		 local.source.len, local.source.ptr, want_dir );
+
+    ParamField_t collect;
+    InitializeParamField(&collect);
+    collect.func_cmp = strcasecmp;
+
+
+    //--- check for **...
+
+    if ( pattern.ptr[0] == '*' && pattern.ptr[1] == '*' )
+    {
+	u32 n1 = 0, n2 = 100;
+	char *ptr = (char*)pattern.ptr+2;
+	if (*ptr)
+	{
+	    if (isdigit(*ptr))
+		n1 = str2ul(ptr,&ptr,10);
+	    if (*ptr)
+	    {
+		if ( *ptr != '-' )
+		    goto terminate;
+		if ( *++ptr )
+		{
+		    n2 = str2ul(ptr,&ptr,10);
+		    if (*ptr)
+			goto terminate;
+		}
+	    }
+	    else
+		n2 = n1;
+	    if ( n2 > 100 )
+		n2 = 100;
+	    if ( n1 > n2 )
+		goto terminate;
+	}
+
+	local.path_star = path_ptr;
+	search_paths_dir(&local,&collect,n1,n2);
+	PRINT0("%sDIR: %d records for **%s\n",colerr->highlight,collect.used,colerr->reset);
+
+	ParamFieldItem_t *end = collect.field + collect.used;
+	for ( ParamFieldItem_t *ptr = collect.field; !local.status.abort && ptr < end; ptr++ )
+	{
+	    local.path_ptr = StringCopyE(path_ptr,sp->path_end,ptr->key);
+	    PRINT0("%sDIR: %s%s\n",colerr->highlight,local.path_buf,colerr->reset);
+	    search_paths_helper(&local);
+	    if (local.status.abort)
+	        break;
+	}
+	goto terminate;
+    }
+
+
+    //--- scan directory
+
+    DIR *fdir = opendir( *local.path_buf ? local.path_buf: "." );
+    local.status.dir_count++;
+    if (fdir)
+    {
+	for(;;)
+	{
+	    struct dirent *dent = readdir(fdir);
+	    if (!dent)
+		break;
+
+	    if ( dent->d_name[0] == '.'
+		&& (  !allow_hidden
+		   || !dent->d_name[1]
+		   || dent->d_name[1] == '.' && !dent->d_name[2] ))
+	    {
+		continue;
+	    }
+
+	    uint st_mode = ConvertDType2STMode(dent->d_type);
+	    if ( st_mode && want_dir && !S_ISDIR(st_mode) && !S_ISLNK(st_mode) )
+		continue;
+
+	    if ( MatchPatternFull(pattern.ptr,dent->d_name) )
+	    {
+		if (!st_mode)
+		{
+		    local.path_ptr = StringCopyE(path_ptr,sp->path_end,dent->d_name);
+		    struct stat st;
+		    if (stat(local.path_buf,&st))
+			continue;
+		    if ( want_dir && !S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode) )
+			continue;
+		    st_mode = st.st_mode;
+		}
+		PRINT0("BINGO: [%d,%x] %s\n",dent->d_type,st_mode,dent->d_name);
+		InsertParamField(&collect,dent->d_name,false,st_mode,0);
+	    }
+	}
+	closedir(fdir);
+    }
+
+    if (!local.status.abort)
+    {
+	ParamFieldItem_t *end = collect.field + collect.used;
+	for ( ParamFieldItem_t *ptr = collect.field; !local.status.abort && ptr < end; ptr++ )
+	{
+	    local.path_ptr = StringCopyE(path_ptr,sp->path_end,ptr->key);
+	    if (local.source.len)
+	    {
+		search_paths_helper(&local);
+		if (local.status.abort)
+		    break;
+	    }
+	    else
+	    {
+		mem_t path = { .ptr = local.path_buf, .len = local.path_ptr - local.path_buf };
+		search_paths_hit(&local,path,ptr->num);
+	    }
+	}
+    }
+
+ terminate:;
+    ResetParamField(&collect);
+    FreeString(pattern.ptr);
+    sp->status = local.status;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+search_paths_stat_t SearchPaths
+(
+    ccp			path1,		// not NULL: part #1 of base path
+    ccp			path2,		// not NULL: part #2 of base path
+    bool		allow_hidden,	// allow hiddent directories and files
+    SearchPathsFunc	func,		// callback function, never NULL
+    void		*param		// last param for func()
+)
+{
+    if (!func)
+    {
+	search_paths_stat_t stat = { .max_err = ERR_MISSING_PARAM };
+	return stat;
+    }
+
+    char srcbuf[PATH_MAX+2];
+    ccp source = PathCatPP(srcbuf,sizeof(srcbuf),path1,path2);
+
+    char pathbuf[PATH_MAX];
+    search_paths_t sp =
+    {
+	.source.ptr	= source,
+	.source.len	= strlen(source),
+	.allow_hidden	= allow_hidden,
+	.path_buf	= pathbuf,
+	.path_ptr	= pathbuf,
+	.path_end	= pathbuf + sizeof(pathbuf) - 2,
+	.func		= func,
+	.param		= param,
+    };
+
+    search_paths_helper(&sp);
+    PRINT0("abort=%d, max_err = %d, %u dirs scanned, %u func calls, %u hits\n",
+		sp.abort, sp.max_err, sp.dir_count, sp.func_count, sp.hit_count );
+    return sp.status;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static enumError insert_string_field
+(
+    mem_t	path,		// full path of existing file, never NULL
+    uint	st_mode,	// copy of struct stat.st_mode, see "man 2 stat"
+    void	*param		// user defined parameter
+)
+{
+    StringField_t * sf = param;
+    DASSERT(sf);
+    InsertStringField(sf,path.ptr,false);
+    return ERR_OK;
+}
+
+//-----------------------------------------------------------------------------
+
+uint InsertStringFieldExpand
+	( StringField_t * sf, ccp path1, ccp path2, bool allow_hidden )
+{
+    DASSERT(sf);
+    search_paths_stat_t stat = SearchPaths(path1,path2,allow_hidden,insert_string_field,sf);
+    PRINT0("%d %d %d\n",stat.dir_count,stat.func_count,stat.hit_count);
+    if (!stat.hit_count)
+    {
+	char srcbuf[PATH_MAX+2];
+	ccp source = PathCatPP(srcbuf,sizeof(srcbuf),path1,path2);
+	InsertStringField(sf,source,false);
+	stat.hit_count++;
+    }
+    return stat.hit_count;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static enumError append_string_field
+(
+    mem_t	path,		// full path of existing file, never NULL
+    uint	st_mode,	// copy of struct stat.st_mode, see "man 2 stat"
+    void	*param		// user defined parameter
+)
+{
+    StringField_t * sf = param;
+    DASSERT(sf);
+    AppendStringField(sf,path.ptr,false);
+    return ERR_OK;
+}
+
+//-----------------------------------------------------------------------------
+
+uint AppendStringFieldExpand
+	( StringField_t * sf, ccp path1, ccp path2, bool allow_hidden )
+{
+    DASSERT(sf);
+    search_paths_stat_t stat = SearchPaths(path1,path2,allow_hidden,append_string_field,sf);
+    PRINT0("%d %d %d\n",stat.dir_count,stat.func_count,stat.hit_count);
+    if (!stat.hit_count)
+    {
+	char srcbuf[PATH_MAX+2];
+	ccp source = PathCatPP(srcbuf,sizeof(srcbuf),path1,path2);
+	AppendStringField(sf,source,false);
+	stat.hit_count++;
+    }
+    return stat.hit_count;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+typedef struct search_param_field_t
+{
+    ParamField_t	*pf;
+    uint		num;
+    cvp			data;
+}
+search_param_field_t;
+
+//-----------------------------------------------------------------------------
+
+static enumError insert_param_field
+(
+    mem_t	path,		// full path of existing file, never NULL
+    uint	st_mode,	// copy of struct stat.st_mode, see "man 2 stat"
+    void	*param		// user defined parameter
+)
+{
+    search_param_field_t *spf = param;
+    DASSERT(spf);
+    InsertParamField(spf->pf,path.ptr,false,spf->num,spf->data);
+    return ERR_OK;
+}
+
+//-----------------------------------------------------------------------------
+
+uint InsertParamFieldExpand
+	( ParamField_t * pf, ccp path1, ccp path2, bool allow_hidden, uint num, cvp data )
+{
+    DASSERT(pf);
+    search_param_field_t spf = { .pf = pf, .num = num, .data = data };
+    search_paths_stat_t stat = SearchPaths(path1,path2,allow_hidden,insert_param_field,&spf);
+    PRINT0("%d %d %d\n",stat.dir_count,stat.func_count,stat.hit_count);
+    if (!stat.hit_count)
+    {
+	char srcbuf[PATH_MAX+2];
+	ccp source = PathCatPP(srcbuf,sizeof(srcbuf),path1,path2);
+	InsertParamField(pf,source,false,num,data);
+	stat.hit_count++;
+    }
+    return stat.hit_count;
+}
+	
+///////////////////////////////////////////////////////////////////////////////
+
+static enumError append_param_field
+(
+    mem_t	path,		// full path of existing file, never NULL
+    uint	st_mode,	// copy of struct stat.st_mode, see "man 2 stat"
+    void	*param		// user defined parameter
+)
+{
+    search_param_field_t *spf = param;
+    DASSERT(spf);
+    AppendParamField(spf->pf,path.ptr,false,spf->num,spf->data);
+    return ERR_OK;
+}
+
+//-----------------------------------------------------------------------------
+
+uint AppendParamFieldExpand
+	( ParamField_t * pf, ccp path1, ccp path2, bool allow_hidden, uint num, cvp data )
+{
+    DASSERT(pf);
+    search_param_field_t spf = { .pf = pf, .num = num, .data = data };
+    search_paths_stat_t stat = SearchPaths(path1,path2,allow_hidden,append_param_field,&spf);
+    PRINT0("%d %d %d\n",stat.dir_count,stat.func_count,stat.hit_count);
+    if (!stat.hit_count)
+    {
+	char srcbuf[PATH_MAX+2];
+	ccp source = PathCatPP(srcbuf,sizeof(srcbuf),path1,path2);
+	AppendParamField(pf,source,false,num,data);
+	stat.hit_count++;
+    }
+    return stat.hit_count;
+}
+
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			normalize filenames		///////////////
@@ -3305,13 +4260,13 @@ char * NormalizeFileName
 		if ( isalnum(ch)
 			|| ( is_utf8
 				? ch >= 0x80
-				:    ch == 0xe4 // ä
-				  || ch == 0xf6 // ö
-				  || ch == 0xfc // ü
-				  || ch == 0xdf // ß
-				  || ch == 0xc4 // Ä
-				  || ch == 0xd6 // Ö
-				  || ch == 0xdc // Ü
+				:    ch == 0xe4 // Ã¤
+				  || ch == 0xf6 // Ã¶
+				  || ch == 0xfc // Ã¼
+				  || ch == 0xdf // ÃŸ
+				  || ch == 0xc4 // Ã„
+				  || ch == 0xd6 // Ã–
+				  || ch == 0xdc // Ãœ
 			    )
 			|| strchr("_+-=%'\"$%&#,.!()[]{}<>",ch)
 			)
@@ -3439,7 +4394,7 @@ uint NormalizeFilenameCygwin
 	}
 	else
 	    dest = buf;
- #else // 
+ #else //
 	*dest++ = '/';
 	src += 2;
 	if (*src)
@@ -3459,7 +4414,7 @@ uint NormalizeFilenameCygwin
 	    *dest++ = *src++;
 
     *dest = 0;
-    ASSERT( dest < buf + buf_size );
+    DASSERT( dest < buf + buf_size );
     return dest - buf;
 }
 
@@ -3618,99 +4573,12 @@ void DumpSearchFile ( FILE *f, int indent,
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-uint SearchConfig1
-(
-    search_file_list_t *sfl,
-			// valid search list, new file will be appended
-    ccp config_fname,	// default filename (without path) of config file
-
-    ccp option,		// NULL or filename by option		=> CONF_HINT_OPT
-    ccp home_path,	// NULL or home path for config file	=> CONF_HINT_HOME
-    ccp etc_path,	// NULL or etc path for config file	=> CONF_HINT_ETC
-    ccp share_path,	// NULL or share path for config file	=> CONF_HINT_MISC
-
-    int stop_mode	// >0: stop if found, >1: stop on option
-
-    // hints (by source, values=prio): 8:option, 4:home, 2:etc, 1:prog-path
-)
-{
-    DASSERT(sfl);
-    char buf[PATH_MAX];
-
-    uint count = 0;
-    search_file_t *sf;
-    if ( option && *option )
-    {
-	sf = AppendSearchFile(sfl,option,CPM_COPY,config_fname);
-	if (sf)
-	{
-	    sf->hint |= CONF_HINT_OPT;
-	    if ( sf->itype == INTY_REG && ++count && stop_mode > 0 )
-		return 1;
-	    if ( stop_mode > 1 )
-		return 0;
-	}
-    }
-
-    if (home_path)
-    {
-	ccp home = getenv("HOME");
-	if (home)
-	    home_path = PathCatPP(buf,sizeof(buf),home,home_path);
-	sf = AppendSearchFile(sfl,home_path,CPM_COPY,config_fname);
-	if (sf)
-	{
-	    sf->hint |= CONF_HINT_HOME;
-	    if ( sf->itype == INTY_REG && ++count && stop_mode > 0 )
-		return 1;
-	}
-    }
-
-    if (etc_path)
-    {
-	sf = AppendSearchFile(sfl,etc_path,CPM_COPY,config_fname);
-	if (sf)
-	{
-	    sf->hint |= CONF_HINT_ETC;
-	    if ( sf->itype == INTY_REG && ++count && stop_mode > 0 )
-		return 1;
-	}
-    }
-
-    if (share_path)
-    {
-	sf = AppendSearchFile(sfl,share_path,CPM_COPY,config_fname);
-	if (sf)
-	{
-	    sf->hint |= CONF_HINT_MISC;
-	    if ( sf->itype == INTY_REG && ++count && stop_mode > 0 )
-		return 1;
-	}
-    }
-
-    ccp progpath = ProgramDirectory();
-    if (progpath)
-    {
-	sf = AppendSearchFile(sfl,progpath,CPM_COPY,config_fname);
-	if (sf)
-	{
-	    sf->hint |= CONF_HINT_INST;
-	    if ( sf->itype == INTY_REG && ++count && stop_mode > 0 )
-		return 1;
-	}
-    }
-
-    return count;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
 static int add_search
 (
     // returns 0 if !stop_if_found, 2 if added+found, 1 if added, 0 else
 
     search_file_list_t *sfl,	// valid data
-    ccp		config_fname,	// default filename (without path) of config file 
+    ccp		config_fname,	// default filename (without path) of config file
     ccp		*list,		// NULL or list of filenames
     int		n_list,		// num of 'list' elements, -1:null terminated list
     ccp		prefix,		// prefix for relative filenames
@@ -3746,7 +4614,7 @@ static int add_search
 	search_file_t *sf = AppendSearchFile( sfl, res.data.ptr,
 				res.is_alloced ? CPM_MOVE : CPM_COPY, config_fname );
 	if (sf)
-	{    
+	{
 	    sf->hint |= hint;
 	    if ( sf->itype == INTY_REG && stop_if_found > 0 )
 		return 2;
@@ -3842,6 +4710,7 @@ void ClearFDList ( FDList_t *fdl )
 
     fdl->now_usec = GetTimeUSec(false);
     fdl->timeout_usec = M1(fdl->timeout_usec);
+    fdl->timeout_nsec = M1(fdl->timeout_nsec);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3902,10 +4771,11 @@ uint AddFDList
 
     FDList_t	*fdl,	// valid socket list
     int		sock,	// socket to add
-    uint	events	// bit field: POLLIN|POLLOUT|POLLERR
+    uint	events	// bit field: POLLIN|POLLPRI|POLLOUT|POLLRDHUP|...
 )
 {
-    if ( sock == -1 || !(events&(POLLIN|POLLOUT|POLLERR)) )
+    events &= ~(POLLERR|POLLHUP|POLLNVAL); // only result!
+    if ( sock == -1 || !events )
 	return ~0;
 
     fdl->n_sock++;
@@ -3927,7 +4797,7 @@ uint AddFDList
 	FD_SET(sock,&fdl->readfds);
     if ( events & POLLOUT )
 	FD_SET(sock,&fdl->writefds);
-    if ( events & POLLERR )
+    if ( events & POLLPRI )
 	FD_SET(sock,&fdl->exceptfds);
     return ~0;
 }
@@ -3936,7 +4806,7 @@ uint AddFDList
 
 uint GetEventFDList
 (
-    // returns bit field: POLLIN|POLLOUT|POLLERR
+    // returns bit field: POLLIN|POLLOUT|POLLERR|...
 
     FDList_t	*fdl,		// valid socket list
     int		sock,		// socket to look for
@@ -3966,11 +4836,51 @@ uint GetEventFDList
     if (FD_ISSET(sock,&fdl->writefds))
 	revents |= POLLOUT;
     if (FD_ISSET(sock,&fdl->exceptfds))
-	revents |= POLLERR;
+	revents |= POLLPRI;
     return revents;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static s_usec_t prepare_wait_fdl ( FDList_t *fdl )
+{
+    DASSERT(fdl);
+    const s_usec_t now_usec = GetTimeUSec(false);
+
+    if (fdl->timeout_nsec)
+    {
+	const u_usec_t wait_until
+	    = ( (s_usec_t)fdl->timeout_nsec - (s_usec_t)GetTimerNSec() )
+			/ NSEC_PER_USEC + now_usec + 1;
+	if ( !fdl->timeout_usec || fdl->timeout_usec > wait_until )
+	     fdl->timeout_usec = wait_until;
+    }
+
+    if ( fdl->min_wait_usec && fdl->timeout_usec )
+    {
+	const u_usec_t wait_until = now_usec + fdl->min_wait_usec;
+	if ( fdl->timeout_usec < wait_until )
+	     fdl->timeout_usec = wait_until;
+    }
+
+    return now_usec;
+}
+
+//-----------------------------------------------------------------------------
+
+static void finish_wait_fdl ( FDList_t *fdl, u_usec_t start_usec )
+{
+    DASSERT(fdl);
+    UpdateCurrentTime();
+    fdl->now_usec	= current_time.usec;
+    fdl->last_wait_usec	= fdl->now_usec - start_usec;
+    fdl->wait_usec	+= fdl->last_wait_usec;
+    fdl->wait_count++;
+
+    UpdateCpuUsageIncrement();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 int WaitFDList
@@ -3980,49 +4890,75 @@ int WaitFDList
 {
     DASSERT(fdl);
 
-    int stat;
-    u64 now_usec = GetTimeUSec(false);
+    const s_usec_t now_usec = prepare_wait_fdl(fdl);
 
+    int stat;
     if (fdl->use_poll)
     {
 	int timeout;
-	if ( fdl->timeout_usec > now_usec )
+	if ( !fdl->timeout_usec )
+	    timeout = -1;
+	else if ( fdl->timeout_usec > now_usec )
 	{
-	    u64 delta = ( fdl->timeout_usec - now_usec ) / 1000;
-	    timeout = delta > 0x7fffffffull ? -1 : delta;
+	    u_msec_t delta = ( fdl->timeout_usec - now_usec ) / USEC_PER_MSEC;
+	    timeout = delta < 0x7fffffff ? delta : 0x7fffffff;
+	    if (!timeout)
+		timeout = 1;
 	}
 	else
 	    timeout = 0;
 
+	if (fdl->debug_file)
+	{
+	    fprintf(fdl->debug_file,"POLL: timeout=%d\n",timeout);
+	    fflush(fdl->debug_file);
+	}
 	stat = poll( fdl->poll_list, fdl->poll_used, timeout );
     }
     else
     {
 	struct timeval tv, *ptv = &tv;
-	if ( fdl->timeout_usec > now_usec )
+	if ( !fdl->timeout_usec )
+	    ptv = NULL;
+	else if ( fdl->timeout_usec > now_usec )
 	{
-	    const u64 delta = fdl->timeout_usec - now_usec;
-	    if ( delta > 1000000ull * 0x7fffffffull )
-		ptv = NULL;
+	    const u_usec_t delta = fdl->timeout_usec - now_usec;
+	    if ( delta > USEC_PER_YEAR )
+	    {
+		tv.tv_sec  = SEC_PER_YEAR;
+		tv.tv_usec = 0;
+	    }
+	    else if ( delta > USEC_PER_MSEC )
+	    {
+		tv.tv_sec  = delta / USEC_PER_SEC;
+		tv.tv_usec = delta % USEC_PER_SEC;
+	    }
 	    else
 	    {
-		tv.tv_sec  = delta / 1000000;
-		tv.tv_usec = delta % 1000000;
+		tv.tv_sec  = 0;
+		tv.tv_usec = USEC_PER_MSEC;
 	    }
 	}
 	else
 	    tv.tv_sec = tv.tv_usec = 0;
 
-//DEL	fprintf(stderr,"#SELECT %lld: ptv=%d: %lu.%06lu\n",
-//DEL			fdl->timeout_usec-now_usec, ptv!=0, tv.tv_sec, tv.tv_usec );
+	if (fdl->debug_file)
+	{
+	    if (ptv)
+		fprintf(fdl->debug_file,"# SELECT: usec=%lld, Î”now=%lld, timeout=%llu.%06llu\n",
+				fdl->timeout_usec, fdl->timeout_usec - now_usec,
+				(u64)ptv->tv_sec, (u64)ptv->tv_usec );
+	    else
+		fprintf(fdl->debug_file,"# SELECT: usec=%lld, Î”now=%lld, timeout=NULL\n",
+				fdl->timeout_usec, fdl->timeout_usec - now_usec );
+	    fflush(fdl->debug_file);
+	}
+
 	stat = select( fdl->max_fd+1, &fdl->readfds, &fdl->writefds,
 			&fdl->exceptfds, ptv );
     }
 
-    fdl->now_usec = GetTimeUSec(false);
-    fdl->cur_usec = fdl->now_usec - now_usec;
-    fdl->wait_usec += fdl->cur_usec;
-    fdl->wait_count++;
+    finish_wait_fdl(fdl,now_usec);
     return stat;
 }
 
@@ -4030,7 +4966,7 @@ int WaitFDList
 
 int PWaitFDList
 (
-    FDList_t	*fdl,		// valid socket list
+    FDList_t		*fdl,		// valid socket list
     const sigset_t	*sigmask	// NULL or signal mask
 )
 {
@@ -4050,17 +4986,23 @@ int PWaitFDList
     }
  #endif
 
+    const u_usec_t now_usec = prepare_wait_fdl(fdl);
+
     struct timespec ts, *pts = &ts;
-    u64 now_usec = GetTimeUSec(false);
     if ( fdl->timeout_usec > now_usec )
     {
 	const u64 delta = fdl->timeout_usec - now_usec;
 	if ( delta > 1000000ull * 0x7fffffffull )
 	    pts = NULL;
-	else
+	else if ( delta > USEC_PER_MSEC )
 	{
 	    ts.tv_sec  = delta / 1000000;
 	    ts.tv_nsec = delta % 1000000 * 1000;
+	}
+	else
+	{
+	    ts.tv_sec  = 0;
+	    ts.tv_nsec = NSEC_PER_MSEC;
 	}
     }
     else
@@ -4076,10 +5018,7 @@ int PWaitFDList
 				&fdl->exceptfds, pts, sigmask );
  #endif
 
-    fdl->now_usec = GetTimeUSec(false);
-    fdl->cur_usec = fdl->now_usec - now_usec;
-    fdl->wait_usec += fdl->cur_usec;
-    fdl->wait_count++;
+    finish_wait_fdl(fdl,now_usec);
     return stat;
 }
 
@@ -5478,6 +6417,8 @@ void RestoreStateByTable
     uint aelem_count	= 0;
     uint aelem_offset	= 0;
 
+    bool mode_add = false;
+
     for ( ; srt->type != SRT__TERM; srt++ )
     {
       if ( srt->type == SRT_DEF_ARRAY )
@@ -5491,6 +6432,16 @@ void RestoreStateByTable
 	}
 	else
 	    aelem_count = srt->n_elem;
+	continue;
+      }
+
+      if ( srt->type >= SRT_MODE__BEGIN && srt->type <= SRT_MODE__END )
+      {
+	switch (srt->type)
+	{
+	    case SRT_MODE_ASSIGN: mode_add = false; break;
+	    case SRT_MODE_ADD:    mode_add = true;  break;
+	}
 	continue;
       }
 
@@ -5543,13 +6494,22 @@ void RestoreStateByTable
 		    if ( !i && srt->type == SRT_COUNT && num <= UINT_MAX )
 			last_count = num;
 
-		    switch(srt->size)
-		    {
-			case 1: *(u8*) val = num; break;
-			case 2: *(u16*)val = num; break;
-			case 4: *(u32*)val = num; break;
-			case 8: *(u64*)val = num; break;
-		    }
+		    if (mode_add)
+			switch(srt->size)
+			{
+			    case 1: *(u8*) val += num; break;
+			    case 2: *(u16*)val += num; break;
+			    case 4: *(u32*)val += num; break;
+			    case 8: *(u64*)val += num; break;
+			}
+		    else
+			switch(srt->size)
+			{
+			    case 1: *(u8*) val = num; break;
+			    case 2: *(u16*)val = num; break;
+			    case 4: *(u32*)val = num; break;
+			    case 8: *(u64*)val = num; break;
+			}
 		    if ( ++i == n_elem )
 			break;
 		    val += elem_off;
@@ -5572,13 +6532,22 @@ void RestoreStateByTable
 		while (*src)
 		{
 		    s64 num = str2ll(src,&src,10);
-		    switch(srt->size)
-		    {
-			case 1: *(s8*) val = num; break;
-			case 2: *(s16*)val = num; break;
-			case 4: *(s32*)val = num; break;
-			case 8: *(s64*)val = num; break;
-		    }
+		    if (mode_add)
+			switch(srt->size)
+			{
+			    case 1: *(s8*) val += num; break;
+			    case 2: *(s16*)val += num; break;
+			    case 4: *(s32*)val += num; break;
+			    case 8: *(s64*)val += num; break;
+			}
+		    else
+			switch(srt->size)
+			{
+			    case 1: *(s8*) val = num; break;
+			    case 2: *(s16*)val = num; break;
+			    case 4: *(s32*)val = num; break;
+			    case 8: *(s64*)val = num; break;
+			}
 		    if ( ++i == n_elem )
 			break;
 		    val += elem_off;
@@ -5601,12 +6570,25 @@ void RestoreStateByTable
 		uint i = 0;
 		while (*src)
 		{
-		    if ( srt->size == sizeof(float) )
-			*(float*)val = strtof(src,&src);
-		    else if ( srt->size == sizeof(double) )
-			*(double*)val = strtod(src,&src);
-		    else if ( srt->size == sizeof(long double) )
-			*(long double*)val = strtold(src,&src);
+		    if (mode_add)
+		    {
+			if ( srt->size == sizeof(float) )
+			    *(float*)val += strtof(src,&src);
+			else if ( srt->size == sizeof(double) )
+			    *(double*)val += strtod(src,&src);
+			else if ( srt->size == sizeof(long double) )
+			    *(long double*)val += strtold(src,&src);
+		    }
+		    else
+		    {
+			if ( srt->size == sizeof(float) )
+			    *(float*)val = strtof(src,&src);
+			else if ( srt->size == sizeof(double) )
+			    *(double*)val = strtod(src,&src);
+			else if ( srt->size == sizeof(long double) )
+			    *(long double*)val = strtold(src,&src);
+		    }
+
 		    if ( ++i == n_elem )
 			break;
 		    val += elem_off;
@@ -6461,6 +7443,192 @@ int PrintScriptVars
 	*buf = 0;
 
     return PutScriptVars(ps,mode,buf);
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			CpuStatus_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+CpuStatus_t GetCpuStatus ( CpuStatus_t * prev_cpuinfo )
+{
+    //--- retrieve static data
+
+    static int n_cpu = -1;
+    static int clock_ticks = 100;
+
+    char buf[1000];
+
+    if ( n_cpu < 0 )
+    {
+	n_cpu = 0;
+	FILE *f = fopen("/proc/cpuinfo","r");
+	if (f)
+	{
+	    while (fgets(buf,sizeof(buf),f))
+		if ( !memcmp(buf,"processor",9) && buf[9] <= ' ' )
+		    n_cpu++;
+	    fclose(f);
+	}
+
+	clock_ticks = sysconf(_SC_CLK_TCK);
+	if ( clock_ticks <= 0 )
+	    clock_ticks = 100;
+    }
+
+
+    //--- retrieve cpu data
+
+    CpuStatus_t current =
+    {
+	.valid		= true,
+	.nsec		= GetTimerNSec(),
+	.n_cpu		= n_cpu,
+	.clock_ticks	= clock_ticks
+    };
+
+
+    // man 5 proc | oo +/proc/loadavg
+    FILE *f_load = fopen("/proc/loadavg","r");
+    if (f_load)
+    {
+	if (fgets(buf,sizeof(buf),f_load))
+	{
+	    char *ptr = buf;
+	    current.loadavg_1m  = strtod(ptr,&ptr);
+	    current.loadavg_5m  = strtod(ptr,&ptr);
+	    current.loadavg_15m = strtod(ptr,&ptr);
+
+	    current.running_proc = strtol(ptr,&ptr,10);
+	    current.total_proc   = strtol(ptr+1,&ptr,10);
+	}
+	fclose(f_load);
+    }
+
+
+    // man 5 proc | oo +/proc/stat
+    FILE * f_stat = fopen("/proc/stat","r");
+    if (f_stat)
+    {
+	while (fgets(buf,sizeof(buf),f_stat))
+	    if ( !memcmp(buf,"cpu ",4) )
+	    {
+		char *ptr	= buf;
+		current.user	= strtol(ptr+4,&ptr,10) * 10000 / clock_ticks;
+		current.nice	= strtol(ptr,&ptr,10)   * 10000 / clock_ticks;
+		current.system	= strtol(ptr,&ptr,10)   * 10000 / clock_ticks;
+		current.idle	= strtol(ptr,&ptr,10)   * 10000 / clock_ticks;
+		break;
+	    }
+	fclose(f_stat);
+    }
+
+    if (!prev_cpuinfo)
+	return current; 
+
+
+    //--- get delta for result
+
+    if (!prev_cpuinfo->valid)
+	*prev_cpuinfo = current;
+
+    CpuStatus_t res = current;
+    res.nsec	-= prev_cpuinfo->nsec;
+    res.user	-= prev_cpuinfo->user;
+    res.nice	-= prev_cpuinfo->nice;
+    res.system	-= prev_cpuinfo->system;
+    res.idle	-= prev_cpuinfo->idle;
+
+    *prev_cpuinfo = current;
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintCpuStatus ( const CpuStatus_t * cpuinfo )
+{
+    if ( !cpuinfo || !cpuinfo->valid )
+	return "INVALID";
+
+    return PrintCircBuf(
+	"ticks=%d, cpus=%d, times=%lld+%lld+%lld+%lld=%lld, avg=%4.2f,%4.2f,%4.2f %u/%u, nsec=%llu",
+	cpuinfo->clock_ticks,
+	cpuinfo->n_cpu,
+	cpuinfo->user, cpuinfo->nice, cpuinfo->system, cpuinfo->idle,
+	cpuinfo->user + cpuinfo->nice + cpuinfo->system + cpuinfo->idle,
+	cpuinfo->loadavg[0], cpuinfo->loadavg[1], cpuinfo->loadavg[2],
+	cpuinfo->running_proc, cpuinfo->total_proc,
+	cpuinfo->nsec );
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			MemoryStatus_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+MemoryStatus_t GetMemoryStatus(void)
+{
+    MemoryStatus_t mem = {0};
+
+    FILE *f = fopen("/proc/meminfo","r");
+    if (f)
+    {
+	char buf[200];
+	int count = 5; // abort, if all 5 params scanned
+
+	while ( count > 0 && fgets(buf,sizeof(buf),f) )
+	{
+	    ccp colon = strchr(buf,':');
+	    if (colon)
+	    {
+		u64 num = strtoul(colon+1,0,10) * 1024;
+		switch (colon-buf)
+		{
+		    case 6:
+			if (!memcmp(buf,"Cached",6)) { count--; mem.cached = num; break; }
+			break;
+
+		    case 7:
+			if (!memcmp(buf,"MemFree",7)) { count--; mem.free = num; break; }
+			if (!memcmp(buf,"Buffers",7)) { count--; mem.buffers = num; break; }
+			break;
+
+		    case 8:
+			if (!memcmp(buf,"MemTotal",8)) { count--; mem.total = num; break; }
+			break;
+
+		    case 12:
+			if (!memcmp(buf,"MemAvailable",12)) { count--; mem.avail = num; break; }
+			break;
+		}
+	    }
+	}
+	fclose(f);
+	mem.used = mem.total - mem.free - mem.buffers - mem.cached;
+    }
+    return mem;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintMemoryStatus ( const MemoryStatus_t * ms )
+{
+    MemoryStatus_t temp;
+    if (!ms)
+    {
+	temp = GetMemoryStatus();
+	ms = &temp;
+    }
+	
+    const sizeform_mode_t mode = DC_SFORM_NARROW;
+    return PrintCircBuf(
+	"tot=%s, free=%s, avail=%s, used=%s, buf=%s, cache=%s\n",
+	PrintNumberU7(0,0,ms->total,mode),
+	PrintNumberU7(0,0,ms->free,mode),
+	PrintNumberU7(0,0,ms->avail,mode),
+	PrintNumberU7(0,0,ms->used,mode),
+	PrintNumberU7(0,0,ms->buffers,mode),
+	PrintNumberU7(0,0,ms->cached,mode) );
 }
 
 //

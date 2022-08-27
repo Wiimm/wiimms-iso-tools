@@ -1349,14 +1349,14 @@ enumError XSetupSplitWFile ( XPARM WFile_t *f, enumOFT oft, off_t split_size )
     {
 	AnalyseSplitFilename(&f->split_fname,f->fname,OFT_PLAIN);
 	AnalyseSplitFilename(&f->split_rename,f->rename,oft);
-xBINGO;
+xBINGO; // wanted!
 fprintf(stderr,"FNAME:  %s\n",f->split_fname.format);
 fprintf(stderr,"RENAME: %s\n",f->split_rename.format);
     }
     else
     {
 	AnalyseSplitFilename(&f->split_fname,f->fname,oft);
-xBINGO;
+xBINGO; // wanted!
 fprintf(stderr,"FNAME:  %s\n",f->split_fname.format);
     }
 

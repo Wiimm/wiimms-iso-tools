@@ -587,7 +587,7 @@ void header_128_setup
 )
 {
     memset(dhead,0,sizeof(*dhead));
-    id_setup(&dhead->disc_id,id6,6);
+    id_setup(&dhead->id6,id6,6);
 
     if (!disc_title)
 	disc_title = "WIT: Wiimms ISO Tools, https://wit.wiimm.de/";
@@ -642,7 +642,7 @@ wd_disc_type_t get_header_128_disc_type
 	{
 	    wd_disc_attrib_t att = WD_DA_GAMECUBE;
 
-	    ccp id6 = &dhead->disc_id;
+	    ccp id6 = dhead->id6.id6;
 	    if (   !memcmp(id6,"GCOPDV",6)
 		|| !memcmp(id6,"COBRAM",6)
 		|| !memcmp(id6,"GGCOSD",6)

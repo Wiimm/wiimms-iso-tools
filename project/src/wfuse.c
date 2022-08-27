@@ -623,7 +623,7 @@ static size_t print_iso_info
     if (disc)
     {
 	char id[7];
-	wd_print_id(&disc->dhead.disc_id,6,id);
+	wd_print_id(&disc->dhead.id6,6,id);
 	dest += snprintf( pbuf, bufsize,
 		"disc-id=%s\n"
 		"disc-title=%.64s\n"

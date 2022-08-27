@@ -1,0 +1,35 @@
+
+ ###########################################################################
+ #                                                                         #
+ #                     _____     ____                                      #
+ #                    |  __ \   / __ \   _     _ _____                     #
+ #                    | |  \ \ / /  \_\ | |   | |  _  \                    #
+ #                    | |   \ \| |      | |   | | |_| |                    #
+ #                    | |   | || |      | |   | |  ___/                    #
+ #                    | |   / /| |   __ | |   | |  _  \                    #
+ #                    | |__/ / \ \__/ / | |___| | |_| |                    #
+ #                    |_____/   \____/  |_____|_|_____/                    #
+ #                                                                         #
+ #                       Wiimms source code library                        #
+ #                                                                         #
+ ###########################################################################
+
+#------------------------------------------------------------------------------
+
+.PHONY: dclib
+dclib:
+	@echo ""
+	@echo "DCLIB_THREAD           = $(DCLIB_THREAD)"
+	@echo "DCLIB_MYSQL            = $(DCLIB_MYSQL)"
+	@echo "DCLIB_TERMINAL         = $(DCLIB_TERMINAL)"
+	@echo "DCLIB_NETWORK          = $(DCLIB_NETWORK)"
+	@echo "DCLIB_HAVE_USABLE_SIZE = $(DCLIB_HAVE_USABLE_SIZE)"
+	@echo ""
+	@echo "DCLIB_FLAGS     = $(DCLIB_FLAGS)"
+	@echo "DCLIB_O_MKW     = $(DCLIB_O_MKW)"
+	@echo "DCLIB_O_WIIMMFI = $(DCLIB_O_WIIMMFI)"
+	@echo ""
+	@echo "DCLIB_O = $(DCLIB_O)"
+	@echo ""
+
+#------------------------------------------------------------------------------

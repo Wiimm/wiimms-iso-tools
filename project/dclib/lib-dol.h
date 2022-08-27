@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -123,7 +123,7 @@ typedef struct dol_sect_addr_t
 {
     //--- source info
     u32		addr;		// address of data
-    u32		size;		// size of data 
+    u32		size;		// size of data
 
     //--- search info
     int		section;	// section index, <0: invalid
@@ -148,6 +148,8 @@ static inline ccp GetDolSectionName ( uint section )
 {
     return section < DOL_NN_SECTIONS ? dol_section_name[section] : 0;
 }
+
+extern const sizeof_info_t sizeof_info_dol[];
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -261,7 +263,7 @@ u32 GetDolOffsetByAddr
 u32 GetDolAddrByOffset
 (
     const dol_header_t	*dol_head,	// valid DOL header
-    u32			off,		// address to search
+    u32			off,		// offset to search
     u32			size,		// >0: wanted size
     u32			*valid_size	// not NULL: return valid size
 );
@@ -273,7 +275,7 @@ uint AddDolAddrByOffset
     const dol_header_t	*dol_head,	// valid DOL header
     MemMap_t		*mm,		// valid destination mem map, not cleared
     bool		use_tie,	// TRUE: use InsertMemMapTie()
-    u32			off,		// address to search
+    u32			off,		// offset to search
     u32			size		// size, may overlay multiple sections
 );
 

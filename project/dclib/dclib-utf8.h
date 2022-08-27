@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -36,11 +36,12 @@
 #define DCLIB_UTF8_H 1
 #ifndef WIN_DCLIB
 
-#include "dclib-types.h"
+#include "dclib-basics.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 /////   this software is taken from dcLib2 and now publiced under GPL2.   /////
 ///////////////////////////////////////////////////////////////////////////////
+// [[dcUnicodeConsts]]
 
 typedef enum dcUnicodeConsts
 {
@@ -54,6 +55,7 @@ typedef enum dcUnicodeConsts
 } dcUnicodeConsts;
 
 ///////////////////////////////////////////////////////////////////////////////
+// [[dcUTF8Mode]]
 
 typedef enum dcUTF8Mode
 {
@@ -89,23 +91,57 @@ static inline dcUTF8Mode CheckUTF8Mode ( unsigned char ch )
 	{ return (dcUTF8Mode)TableUTF8Mode[ch]; }
 
 int	GetUTF8CharLength ( u32 code );
-char *	NextUTF8Char ( ccp str );
+char *	NextUTF8Char  ( ccp str );
 char *	NextUTF8CharE ( ccp str, ccp end );
-char *	PrevUTF8Char ( ccp str );
+char *	PrevUTF8Char  ( ccp str );
 char *  PrevUTF8CharB ( ccp str, ccp begin );
-u32	GetUTF8Char ( ccp str );
-u32	ScanUTF8Char ( ccp * str );
-u32	ScanUTF8CharE ( ccp * str, ccp end );
-u32	ScanUTF8CharInc ( ccp * str );
-u32	ScanUTF8CharIncE ( ccp * str, ccp end );
-u32	GetUTF8AnsiChar ( ccp str );
-u32	ScanUTF8AnsiChar ( ccp * str );
+char *	SkipUTF8Char  ( ccp str, int skip );
+char *	SkipUTF8CharE ( ccp str, ccp end, int skip );
+
+u32	GetUTF8Char       ( ccp str );
+u32	ScanUTF8Char      ( ccp * str );
+u32	ScanUTF8CharE     ( ccp * str, ccp end );
+u32	ScanUTF8CharInc   ( ccp * str );
+u32	ScanUTF8CharIncE  ( ccp * str, ccp end );
+u32	GetUTF8AnsiChar   ( ccp str );
+u32	ScanUTF8AnsiChar  ( ccp * str );
 u32	ScanUTF8AnsiCharE ( ccp * str, ccp end );
-int	ScanUTF8Length ( ccp str, ccp end );
-int	CalcUTF8PrintFW ( ccp str, ccp end, uint wanted_fw );
+int	ScanUTF8Length	  ( ccp str );
+int	ScanUTF8LengthE	  ( ccp str, ccp end );
+int	CalcUTF8PrintFW   ( ccp str, ccp end, uint wanted_fw );
 
 char *	PrintUTF8Char ( char * buf, u32 code );
 char *	PrintUTF8CharToCircBuf ( u32 code );
+
+exmem_t AlignUTF8 ( exmem_dest_t *dest, ccp str, int str_len, int fw, int prec );
+ccp	AlignUTF8ToCircBuf ( ccp str, int fw, int prec );
+
+///////////////////////////////////////////////////////////////////////////////
+// special variants, that ignore known escape sequences
+
+char *	NextEUTF8Char    ( ccp str );
+char *	NextEUTF8CharE   ( ccp str, ccp end );
+char *	SkipEUTF8Char    ( ccp str, int skip );
+char *	SkipEUTF8CharE   ( ccp str, ccp end, int skip );
+int	ScanEUTF8Length  ( ccp str );
+int	ScanEUTF8LengthE ( ccp str, ccp end );
+
+exmem_t AlignEUTF8 ( exmem_dest_t *dest, ccp str, int str_len, int fw, int prec );
+ccp	AlignEUTF8ToCircBuf ( ccp str, int fw, int prec );
+
+///////////////////////////////////////////////////////////////////////////////
+
+static inline int strlen8 ( ccp str )
+	{ return ScanUTF8Length(str); }
+
+static inline int strlen8e ( ccp str, ccp end )
+	{ return ScanUTF8LengthE(str,end); }
+
+static inline int strlene8 ( ccp str )
+	{ return ScanEUTF8Length(str); }
+
+static inline int strlene8e ( ccp str, ccp end )
+	{ return ScanEUTF8LengthE(str,end); }
 
 ///////////////////////////////////////////////////////////////////////////////
 

@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -46,8 +46,13 @@ struct TCPStream_t;
 
 typedef struct GenericOptParm_t
 {
-    u32		id;		// id of the option,
-    u8		arg;		// 0:no arg, 1:arg, 2:optional arg
+    u32		id;		// id of the option
+
+    u8		arg;		// 0: no arguments
+				// 1: always argument,
+				// 2: optional argument
+				// 3: short-opt: no arg / long-opt: optional arg
+
     ccp		name;		// pipe separated option names
 }
 GenericOptParm_t;
@@ -85,7 +90,7 @@ void AddGenericOpt
 (
     GenericOpt_t	*go,		// data structure
     const GenericOptParm_t *gp,		// list to add, list end on name==NULL
-    bool		rm_minus	// remove '-' on options for alternatives
+    bool		rm_minus	// remove '-' of options for alternatives
 );
 
 //
@@ -100,7 +105,7 @@ typedef enum GOPT_t
 	GOPT_RESERVED_END	= 0x02000000,	// end of reserved range
 
 	GOPT_M_INDEX		= 0x000000ff,	// mask to get the index
-	GOPT_N_PARAM		=         25,	// max used index+1 = num of params
+	GOPT_N_PARAM		=         60,	// max used index+1 = num of params
 	 GOPT_M_VALUE		= 0x0003ff00,	// mask for GOPT_T_PLUS|GOPT_T_MINUS
 	 GOPT_S_VALUE		=	   8,	// value is shifted by this num
 	GOPT_M_TYPE		= 0x00fc0000,	// mask to isolate option type
@@ -108,7 +113,7 @@ typedef enum GOPT_t
 	GOPT_S_TYPE		=	  18,	// type is shifted by this num
 
 
-	//--- parameters by index
+	//--- parameters by index (sn=signed num, un=unsigned num)
 
 	GOPT_IDX_NULL = 0,	// type undefined
 
@@ -174,15 +179,17 @@ typedef enum GOPT_t
 	//--- named options
 
 	GOPT_O__BEGIN		= 0x100,
-	GOPT_O_TEST_OPT,	// test: print all defined options
+	GOPT_O_TEST_OPT,	// test: print all defined options: --@opt
 
 	GOPT_O_HELP,		// force help
 	GOPT_O_CLEAR,		// clear screen -> ScanGOptionsHelperTN()
 	GOPT_O_PAGER,		// activate pager -> ScanGOptionsHelperTN()
+	GOPT_O_WIDTH,		// limit terminal width -> ScanGOptionsHelperTN()
 	GOPT_O_QUIT,		// quit if command done -> ScanGOptionsHelperTN()
 
 	GOPT_O_QUIET,		// be quiet
-	GOPT_O_VERBOSE,		// be verbose
+	GOPT_O_VERBOSE,		// be verbose, or set by --verbose=#
+	GOPT_O_DEBUG,		// increment debug level, or set by --debug=#
 
 	GOPT_O__CONTINUE	// continue with this value on more options
 }
@@ -239,7 +246,7 @@ GParam_t;
 
 typedef enum GetGParam_t
 {
-	GGP_NONE,	// no param set or param unusable, 'return_val' untouched
+	GGP_NONE = 0,	// no param set or param unusable, 'return_val' is untouched
 	GGP_CONVERT,	// param set, but converted (different numeric type)
 	GGP_SIGN,	// param returned, but sign maybe converted
 	GGP_OK		// original or extended param returned
@@ -253,7 +260,7 @@ GetGParam_t GetGParamUINT ( const GParam_t *par, uint   *return_val );
 GetGParam_t GetGParamS64  ( const GParam_t *par, s64    *return_val );
 GetGParam_t GetGParamU64  ( const GParam_t *par, u64    *return_val );
 GetGParam_t GetGParamDBL  ( const GParam_t *par, double *return_val );
-GetGParam_t GetGParamSTR  ( const GParam_t *par, ccp    *return_val );
+GetGParam_t GetGParamCCP  ( const GParam_t *par, ccp    *return_val );
 GetGParam_t GetGParamBIT  ( const GParam_t *par, u32    *return_val, u32 *return_mask );
 
 ccp PrintGParam ( const GParam_t *par );
@@ -276,10 +283,13 @@ typedef struct GOptions_t
 
     int		help;		// number of GOPT_O_HELP
     int		clear;		// number of GOPT_O_CLEAR
-    int		pager;		// number of GOPT_O_PAGER,
-    int		quit;		// number of GOPT_O_QUIT,
-    int		verbose;	// combi of GOPT_O_QUIET & GOPT_O_VERBOSE,
+    int		pager;		// number of GOPT_O_PAGER
+    int		quit;		// number of GOPT_O_QUIT
+    int		debug;		// number of GOPT_O_DEBUG
+    int		verbose;	// combi of GOPT_O_QUIET & GOPT_O_VERBOSE
 
+    int		max_width;	// max terminal width
+    int		width;		// terminal width
 
     //--- generic parameter support
 
@@ -289,10 +299,14 @@ GOptions_t;
 
 //-----------------------------------------------------------------------------
 
-static inline void InitializeGOptions ( GOptions_t *go )
+#define GOOD_INFO_MAX_WIDTH 120
+
+static inline void InitializeGOptions ( GOptions_t *go, int max_width )
 {
     DASSERT(go);
     memset(go,0,sizeof(*go));
+    go->max_width = max_width;
+    go->width = max_width < GOOD_INFO_MAX_WIDTH ? max_width : GOOD_INFO_MAX_WIDTH;
 }
 
 static inline const GParam_t * GetGParam ( const GOptions_t *go, uint par_index )

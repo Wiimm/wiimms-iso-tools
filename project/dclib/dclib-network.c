@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -47,8 +47,11 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
+#include <stddef.h>
+#include <ifaddrs.h>
 
 #include "dclib-network.h"
+#include "dclib-punycode.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -239,6 +242,1431 @@ bool ResolveHostMem
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			enum PrintModeIP_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+PrintModeIP_t ScanPrintModeIP ( PrintModeIP_t base, ccp arg )
+{
+    if (arg)
+    {
+	bool neg = false;
+	while (*arg)
+	{
+	    PrintModeIP_t val  = 0;
+	    PrintModeIP_t mask = 0;
+	    switch(*arg++)
+	    {
+		case '-': neg = !neg; break;
+
+		case 'n': val = PMIP_NEVER;    mask = PMIP_M_BITS; break;
+		case 'r': val = PMIP_RELEVANT; mask = PMIP_M_BITS; break;
+		case 'i': val = PMIP_IF_SET;   mask = PMIP_M_BITS; break;
+		case 'a': val = PMIP_ALWAYS;   mask = PMIP_M_BITS; break;
+
+		case 'p': val = PMIP_PORT;      break;
+		case 's': val = PMIP_SERVICE;   break;
+		case 'm': val = PMIP_MASK;      break;
+		case 'b': val = PMIP_BRACKETS;  break;
+		case 'f': val = PMIP_FULL_IPV6; break;
+
+		case '0': val = PMIP_0DOTS; mask = PMIP_M_DOTS; break;
+		case '1': val = PMIP_1DOT;  mask = PMIP_M_DOTS; break;
+		case '2': val = PMIP_2DOTS; mask = PMIP_M_DOTS; break;
+		case '3': val = PMIP_3DOTS; mask = PMIP_M_DOTS; break;
+	    }
+
+	    if (mask) // ignore 'neg'
+	    {
+		base = base & ~mask | val;
+		neg = false;
+	    }
+	    else if (val)
+	    {
+		if (neg)
+		    base &= ~val;
+		else
+		    base |= val;
+		neg = false;
+	    }
+	}
+    }
+
+    return base;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintPrintModeIP ( PrintModeIP_t val, bool align )
+{
+    char buf[20], *dest = buf;
+
+    DASSERT( PMIP_M_BITS == 3 );
+    *dest++ = "nria"[ val & PMIP_M_BITS ];
+
+    if ( val & PMIP_PORT )	*dest++ = 'p'; else if (align) *dest++ = '-';
+    if ( val & PMIP_SERVICE )	*dest++ = 's'; else if (align) *dest++ = '-';
+    if ( val & PMIP_MASK )	*dest++ = 'm'; else if (align) *dest++ = '-';
+    if ( val & PMIP_BRACKETS )	*dest++ = 'b'; else if (align) *dest++ = '-';
+    if ( val & PMIP_FULL_IPV6 )	*dest++ = 'f'; else if (align) *dest++ = '-';
+
+    if ( val & PMIP_0DOTS )
+	*dest++ = '0';
+    else if ( val & PMIP_1DOT )
+	*dest++ = '1';
+    else if ( val & PMIP_2DOTS )
+	*dest++ = '2';
+    else if (align)
+	*dest++ = '3';
+
+    DASSERT( dest < buf+sizeof(buf) );
+    return CopyCircBuf0(buf,dest-buf);
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			enum IPClass_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetIPClassColor ( const ColorSet_t *colset, IPClass_t ipc )
+{
+    if ( !colset || !colset->colorize )
+	return "";
+
+    switch (ipc)
+    {
+	case IPCL_INVALID:	return colset->b_red;
+	case IPCL_LOOPBACK:	return colset->b_cyan;
+	case IPCL_LOCAL:	return colset->b_green;
+	case IPCL_STANDARD:	return colset->reset;
+	case IPCL_SPECIAL:	return colset->b_yellow;
+	default:		return colset->b_magenta;
+    }
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct SplitIP_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+bool SplitIP ( SplitIP_t *sip, ccp addr )
+{
+    DASSERT(sip);
+    memset(sip,0,sizeof(*sip));
+    if (!addr)
+	return false;
+
+    while ( isblank((int)*addr) )
+	addr++;
+
+    int bits = -1;
+    ccp slash = strchr(addr,'/');
+    if (slash)
+    {
+	if (strchr(slash,'.'))
+	{
+	    // is there a netmask?
+	    struct in_addr inp;
+	    if (inet_aton(slash+1,&inp))
+	    {
+		const int bits2 = Count1Bits32(inp.s_addr);
+		const ipv4_t mask = GetIP4Mask(bits2);
+		if ( mask == inp.s_addr )
+		    bits = bits2;
+	    }
+	}
+
+	if ( bits < 0 )
+	{
+	    const int val = strtol(slash+1,0,10);
+	    if ( val >= 0 && val <= 128 )
+		bits = val;
+	}
+    }
+
+    ccp have_port = 0;
+    if ( *addr == '[' )
+    {
+	ccp close = strchr(++addr,']');
+	if (!close)
+	    return false;
+
+	StringCopySM(sip->name,sizeof(sip->name),addr,close-addr);
+	if ( close[1] == ':' )
+	    have_port = close+2;
+    }
+    else
+    {
+	char *end_name = slash
+	    ? StringCopySM(sip->name,sizeof(sip->name),addr,slash-addr)
+	    : StringCopyS(sip->name,sizeof(sip->name),addr);
+
+	if ( end_name > sip->name && end_name[-1] == '.' )
+	{
+	    // remove trailing point if not a valid IPv4 (domains only)
+	    if ( CheckIP4(sip->name,end_name-sip->name) <= CIP4_INVALID )
+		*--end_name = 0;
+	}
+
+	ccp point = strchr(sip->name,'.');
+	if (point)
+	{
+	    char *colon = strchr(point,':');
+	    if (colon)
+	    {
+		*colon++ = 0;
+		have_port = colon;
+	    }
+	}
+    }
+
+    if (!*sip->name)
+	return false;
+
+    if (have_port)
+    {
+	if ( *have_port >= '0' && *have_port <= '9' )
+	{
+	    const uint port = strtol(have_port,0,10);
+	    if ( port <= 0xffff )
+		sip->port = port;
+	}
+	else
+	{
+	    char serv[100];
+	    if (slash)
+	    {
+		StringCopySM(serv,sizeof(serv),have_port,slash-have_port);
+		have_port = serv;
+	    }
+
+	    struct servent result_buf;
+	    struct servent *result = 0;
+	    char buf[1000];
+	    if ( !getservbyname_r(have_port,0,&result_buf,buf,sizeof(buf),&result) && result )
+		sip->port = ntohs(result->s_port);
+	}
+    }
+
+    sip->bits = bits;
+    return true;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct NamesIP_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+struct ip_names_list_t
+{
+    int offset;
+    char name[8];
+};
+
+//-----------------------------------------------------------------------------
+
+#undef RECORD
+#define RECORD(v) { offsetof(NamesIP_t,v), #v },
+
+static const struct ip_names_list_t ip_names_list[] =
+{
+    RECORD(binaddr)
+    RECORD(ipvers)
+    RECORD(addr1)
+    RECORD(addr2)
+    RECORD(bits)
+    RECORD(mask1)
+    RECORD(mask2)
+    {-1,""}
+};
+
+#undef RECORD
+
+#undef GET_NAME_IP_PTR
+#define GET_NAME_IP_PTR(nip,offset) ((ccp*)( (char*)(nip)+offset ))
+
+///////////////////////////////////////////////////////////////////////////////
+
+void SetupNamesIP ( NamesIP_t *dest, const NamesIP_t *src )
+{
+    if (!dest)
+	return;
+
+    if (src)
+    {
+	for ( const struct ip_names_list_t *in = ip_names_list; in->offset >= 0; in++ )
+	{
+	    ccp *s = GET_NAME_IP_PTR(src,in->offset);
+	    ccp *d = GET_NAME_IP_PTR(dest,in->offset);
+	    *d = *s && **s ? *s : in->name;
+	}
+    }
+    else
+    {
+	for ( const struct ip_names_list_t *in = ip_names_list; in->offset >= 0; in++ )
+	{
+	    ccp *d = GET_NAME_IP_PTR(dest,in->offset);
+	    *d = in->name;
+	}
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void SetupNamesByListIP ( NamesIP_t *dest, const exmem_list_t *src )
+{
+    if (!dest)
+	return;
+
+    // [[2do]] ??? qqq
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintNamesIP ( const NamesIP_t *nip )
+{
+    return nip
+	? PrintCircBuf("ba=%s, iv=%s, a1=%s, a2=%s, b=%s, m1=%s, m2=%s\n",
+		nip->binaddr, nip->ipvers, nip->addr1, nip->addr2,
+		nip->bits, nip->mask1, nip->mask2 )
+	: 0;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct BinIP_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+BinIP_t GetIPMask ( const BinIP_t *src )
+{
+    BinIP_t res = {0};
+    if (src)
+    {
+	if ( src->ipvers == 4 )
+	    res.ip4 = GetIP4Mask(src->bits);
+	else if ( src->ipvers == 6 )
+	    res.ip6 = GetIP6Mask(src->bits);
+	else
+	    goto abort;
+
+	res.ipvers = src->ipvers;
+	res.bits   = src->bits;
+    }
+
+ abort:
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ApplyIPMask ( BinIP_t *bip )
+{
+    if (bip)
+    {
+	BinIP_t mask = GetIPMask(bip);
+	bip->ip6_64[0] &= mask.ip6_64[0];
+	bip->ip6_64[1] &= mask.ip6_64[1];
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+IPClass_t GetIPClassBIP ( const BinIP_t * bip )
+{
+    struct ip4_tab
+    {
+	ipv4_t    addr;
+	ipv4_t    mask;
+	IPClass_t ipc;
+    };
+
+    static const struct ip4_tab ip4_tab[] =
+    {
+	{ 0x00000000, 0xffffffff, IPCL_INVALID	}, // 0.0.0.0
+	{ 0x7f000000, 0xff000000, IPCL_LOOPBACK	}, // 127.0.0.0/8
+	{ 0x0a000000, 0xff000000, IPCL_LOCAL	}, // 10.0.0.0/8
+	{ 0xac100000, 0xfff00000, IPCL_LOCAL	}, // 172.16.0.0/12
+	{ 0xc0a80000, 0xffff0000, IPCL_LOCAL	}, // 192.168.0.0/16
+	{ 0xa9fe0000, 0xffff0000, IPCL_LOCAL	}, // 169.254.0.0/16
+	{ 0xe0000000, 0xe0000000, IPCL_SPECIAL	}, // 224.0.0.0/3
+	{ 0,0,IPCL__N },
+    };
+
+    struct ip6_tab
+    {
+	IPClass_t ipc;
+	ccp	  name;
+	ipv6_t	  addr;
+	ipv6_t	  mask;
+    };
+
+    static struct ip6_tab ip6_tab[] =
+    {
+	{ IPCL_INVALID,  "::" },
+	{ IPCL_LOOPBACK, "::1" },
+	{ IPCL_LOCAL,    "fe80::/10" },
+	{ IPCL_SPECIAL,  "f00::/8" },
+	{ 0,0 },
+    };
+
+    if (bip)
+    {
+	if ( bip->ipvers == 4 )
+	{
+	    const ipv4_t addr = ntohl(bip->ip4);
+	    for ( const struct ip4_tab *ptr = ip4_tab; ptr->ipc < IPCL__N; ptr++ )
+		if ( ( addr & ptr->mask ) == ptr->addr )
+		    return ptr->ipc;
+	    return IPCL_STANDARD;
+	}
+	else if ( bip->ipvers == 6 )
+	{
+	    ipv6_t addr;
+	    memcpy(&addr,bip->ip6_64,sizeof(addr));
+	    PRINT0("> %016llx.%016llx\n",ntoh64(addr.v64[0]),ntoh64(addr.v64[1]));
+
+	    static bool init_done = false;
+	    if (!init_done)
+	    {
+		init_done = true;
+		ManageIP_t mip = {{0}};
+		for ( struct ip6_tab *ptr = ip6_tab; ptr->name; ptr++ )
+		{
+		    ScanMIP(&mip,ptr->name);
+		    memcpy(&ptr->addr,mip.bin.ip6_64,sizeof(ptr->addr));
+		    ptr->mask = GetIP6Mask(mip.bin.bits);
+		}
+		ResetMIP(&mip);
+	    }
+
+	    for ( struct ip6_tab *ptr = ip6_tab; ptr->name; ptr++ )
+	    {
+		PRINT0("  %016llx.%016llx / %016llx.%016llx : %s\n",
+			ntoh64(ptr->addr.v64[0]), ntoh64(ptr->addr.v64[1]),
+			ntoh64(ptr->mask.v64[0]), ntoh64(ptr->mask.v64[1]),
+			ptr->name );
+
+		if (   ( addr.v64[0] & ptr->mask.v64[0] ) == ptr->addr.v64[0]
+		    && ( addr.v64[1] & ptr->mask.v64[1] ) == ptr->addr.v64[1] )
+		{
+		    return ptr->ipc;
+		}
+	    }
+	    return IPCL_STANDARD;
+	}
+    }
+
+    return IPCL_INVALID;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintBIP ( const BinIP_t * bip )
+{
+    ccp res;
+    int bitlen = 32;
+    char buf[INET6_ADDRSTRLEN+1];
+
+    switch ( bip ? bip->ipvers : 0 )
+    {
+	case 4:
+	    res = inet_ntop(AF_INET,&bip->ip4,buf,sizeof(buf));
+	    break;
+
+	case 6:
+	    res = inet_ntop(AF_INET6,bip->ip6_32,buf,sizeof(buf));
+	    bitlen = 128;
+	    break;
+
+	default:
+	    res = 0;
+	    break;
+    }
+
+    if (!res)
+	return 0;
+
+    return bip->bits < bitlen
+	? PrintCircBuf("%s/%u",res,bip->bits)
+	: CopyCircBuf(res,strlen(res)+1);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool IsSameBIP ( const BinIP_t *a1, const BinIP_t *a2, uint use_mask )
+{
+    if ( a1 && a2 && a1->ipvers == a2->ipvers )
+    {
+	int bits;
+	switch ( use_mask & 3 )
+	{
+	    case 1:  bits = a1->bits; break;
+	    case 2:  bits = a2->bits; break;
+	    case 3:  bits = a1->bits < a2->bits ? a1->bits : a2->bits; break;
+	    default: bits = 128; break;
+	}
+
+	if ( a1->ipvers == 4 )
+	{
+	    ipv4_t mask = GetIP4Mask(bits);
+	    return ( a1->ip4 & mask ) == ( a2->ip4 & mask );
+	}
+	else if ( a1->ipvers == 6 )
+	{
+	    ipv6_t mask = GetIP6Mask(bits);
+	    return !( ( a1->ip6.v64[0] ^ a2->ip6.v64[0] ) & mask.v64[0] )
+		&& !( ( a1->ip6.v64[1] ^ a2->ip6.v64[1] ) & mask.v64[1] );
+	}
+    }
+    return false;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct BinIPList_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void ResetBIL ( BinIPList_t *bil )
+{
+    if (bil)
+    {
+	ClearBIL(bil);
+	FREE(bil->list);
+	InitializeBIL(bil);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ClearBIL ( BinIPList_t *bil )
+{
+    if (bil)
+    {
+	BinIPItem_t *it = bil->list;
+	for ( int i = 0; i < bil->used; i++, it++ )
+	{
+	    FreeString(it->name);
+	    it->name = 0;
+	}
+	bil->used = 0;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void SetSizeBIL ( BinIPList_t *bil, int size )
+{
+    DASSERT(bil);
+    if ( size < 0 )
+	size = 0;
+
+    if ( bil->used > size )
+    {
+	for ( int i = size; i < bil->used; i++ )
+	{
+	    BinIPItem_t *it = bil->list + i;
+	    FreeString(it->name);
+	}
+	bil->used = size;
+    }
+
+    if ( bil->size != size )
+    {
+	bil->size = size;
+	bil->list = REALLOC( bil->list, size * sizeof(*bil->list) );
+    }
+
+    DASSERT( !bil->size || bil->list );
+    DASSERT( bil->used <= bil->size );
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void SetMinSizeBIL ( BinIPList_t *bil, int min_size )
+{
+    DASSERT(bil);
+    if ( min_size > bil->size )
+    {
+	const int good_size = bil->size / 8 + 10;
+	if ( min_size < good_size )
+	     min_size = good_size;
+	SetSizeBIL(bil,min_size);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+BinIPItem_t * CreateItemBIL ( BinIPList_t *bil, int n_item )
+{
+    DASSERT(bil);
+    if ( n_item < 0 )
+	n_item = 0;
+
+    SetMinSizeBIL(bil,bil->used+n_item);
+    BinIPItem_t *res = bil->list + bil->used;
+    if ( n_item > 0 )
+	memset( res, 0, n_item * sizeof(*res) );
+    bil->used += n_item;
+
+    DASSERT( !bil->size || bil->list );
+    DASSERT( bil->used <= bil->size );
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+#if 0
+
+BinIPItem_t * InsertBIL ( BinIPList_t *bil, int index, ccp key, CopyMode_t copy_mode )
+{
+    DASSERT(bil);
+    // ???
+    return 0;
+}
+
+#endif
+///////////////////////////////////////////////////////////////////////////////
+#if 0
+
+BinIPItem_t * InsertByKeyBIL ( BinIPList_t *bil, ccp key, CopyMode_t copy_mode )
+{
+    DASSERT(bil);
+    // ???
+    return 0;
+}
+
+#endif
+///////////////////////////////////////////////////////////////////////////////
+#if 0
+
+int FindIndexBIL ( const BinIPList_t *bil, ccp key )
+{
+    DASSERT(bil);
+    // ???
+    return 0;
+}
+
+#endif
+///////////////////////////////////////////////////////////////////////////////
+
+BinIPIterate_t FindAddressBIL ( const BinIPList_t *bil, BinIP_t *addr, uint use_mask )
+{
+    BinIPIterate_t iter;
+    if ( bil && bil->used && addr && addr->ipvers )
+    {
+	iter.valid	= true;
+	iter.bil	= bil;
+	iter.cur	= bil->list - 1;
+	iter.addr	= *addr;
+	iter.use_mask	= use_mask;
+	FindNextAddressBIL(&iter);
+    }
+    else
+	memset(&iter,0,sizeof(iter));
+    return iter;
+}
+
+//-----------------------------------------------------------------------------
+
+void FindNextAddressBIL ( BinIPIterate_t *iter )
+{
+    if ( iter && iter->valid && iter->bil && iter->cur )
+    {
+	for ( uint idx = iter->cur + 1 - iter->bil->list; idx < iter->bil->used; idx++ )
+	{
+	    BinIPItem_t *it = iter->bil->list + idx;
+	    if (IsSameBIP(&it->bip,&iter->addr,iter->use_mask))
+	    {
+		iter->cur = it;
+		return;
+	    }
+	}
+    }
+
+    iter->valid = false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+BinIP_t GetBIPBySA ( sockaddr_t *addr, sockaddr_t *mask )
+{
+    BinIP_t res = {0};
+    if (addr)
+    {
+	if ( addr->sa_family == AF_INET )
+	{
+	    res.ipvers	= 4;
+	    res.bits	= GetBitsBySA(mask,32);
+	    res.ip4	= ((sockaddr_in4_t*)addr)->sin_addr.s_addr;
+	}
+	else if ( addr->sa_family == AF_INET6 )
+	{
+	    res.ipvers	= 6;
+	    res.bits	= GetBitsBySA(mask,128);
+	    memcpy(&res.ip6,&((sockaddr_in6_t*)addr)->sin6_addr,sizeof(res.ip6));
+	}
+    }
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+uint ScanInterfaceAddresses ( BinIPList_t *bil, bool init_bil )
+{
+    DASSERT(bil);
+    if (init_bil)
+	InitializeBIL(bil);
+    else
+	ClearBIL(bil);
+
+    struct ifaddrs *ifaddr;
+    if (getifaddrs(&ifaddr))
+	return -1;
+
+    for ( const struct ifaddrs *ifa = ifaddr; ifa; ifa = ifa->ifa_next )
+    {
+	BinIP_t temp = GetBIPBySA(ifa->ifa_addr,ifa->ifa_netmask);
+	if (temp.ipvers)
+	{
+	    BinIPItem_t *it	= CreateItemBIL(bil,1);
+	    it->name		= STRDUP(ifa->ifa_name);
+	    it->bip		= temp;
+	}
+    }
+    freeifaddrs(ifaddr);
+
+    return bil->used;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+const BinIPList_t * GetInterfaceAddressList ( bool update )
+{
+    static BinIPList_t *list = 0;
+
+    if ( !list || update )
+    {
+	bool init = !list;
+	if (init)
+	    list = MALLOC(sizeof(*list));
+	ScanInterfaceAddresses(list,init);
+    }
+    return list;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool IsLocalBIL ( BinIP_t *addr, uint use_mask )
+{
+    const BinIPList_t *ial = GetInterfaceAddressList(false);
+    BinIPIterate_t iter = FindAddressBIL(ial,addr,use_mask);
+    return iter.valid;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct ManageIP_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void ResetMIP ( ManageIP_t *mip )
+{
+    if (mip)
+    {
+	FreeString(mip->name);
+	FreeString(mip->decoded_name);
+	memset(mip,0,sizeof(*mip));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ClearNameMIP ( ManageIP_t *mip )
+{
+    if (mip)
+    {
+	FreeString(mip->name);
+	FreeString(mip->decoded_name);
+	mip->name = mip->decoded_name = 0;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ManageIP_t GetCopyMIP ( const ManageIP_t *mip )
+{
+    ManageIP_t res;
+    if (mip)
+    {
+	memcpy(&res,mip,sizeof(res));
+	if (res.name)
+	    res.name = STRDUP(res.name);
+	if (res.decoded_name)
+	    res.decoded_name = STRDUP(res.decoded_name);
+    }
+    else
+	memset(&res,0,sizeof(res));
+
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool AssignMIP ( ManageIP_t *dest, const ManageIP_t *src )
+{
+    if (dest)
+    {
+	ClearNameMIP(dest);
+	*dest = GetCopyMIP(src);
+	return dest->bin.ipvers != 0;
+    }
+    return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool AssignBinMIP ( ManageIP_t *mip, cvp bin, int bits )
+{
+    DASSERT(mip);
+    ResetMIP(mip);
+    if (!bin)
+	return false;
+
+    const BinIP_t *bip = bin;
+    if ( bip->ipvers == 4 )
+	mip->relevant_bits = 32;
+    else if ( bip->ipvers == 6 )
+	mip->relevant_bits = 128;
+    else
+	return false;
+
+    memcpy(&mip->bin,bin,sizeof(mip->bin));
+    if ( bits >= 0 )
+    {
+	mip->have_bits = true;
+	mip->bin.bits = bits < mip->relevant_bits ? bits : mip->relevant_bits;
+    }
+
+    if ( mip->bin.bits < mip->relevant_bits )
+	mip->have_bits = true;
+    else
+	mip->bin.bits = mip->relevant_bits;
+
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool AssignSockaddrMIP ( ManageIP_t *mip, cvp sockaddr, u16 port, int bits )
+{
+    DASSERT(mip);
+    ResetMIP(mip);
+    if (!sockaddr)
+	return false;
+
+    const sockaddr_in46_t *sa = sockaddr;
+    if ( sa->family == AF_INET )
+    {
+	mip->bin.ipvers	= 4;
+	mip->bin.bits	= 32;
+	mip->bin.ip4	= sa->in4.sin_addr.s_addr;
+	mip->port	= ntohs(sa->in4.sin_port);
+    }
+    else if ( sa->family == AF_INET6 )
+    {
+	mip->bin.ipvers	= 6;
+	mip->bin.bits	= 128;
+	memcpy(mip->bin.ip6_8,sa->in6.sin6_addr.s6_addr,sizeof(mip->bin.ip6_8));
+	mip->port	= ntohs(sa->in6.sin6_port);
+    }
+
+    mip->relevant_bits = mip->bin.bits;
+    if ( bits >= 0 )
+    {
+	mip->have_bits = true;
+	if ( mip->bin.bits > bits )
+	     mip->bin.bits = bits;
+    }
+
+    if ( !mip->port )
+	mip->port = port;
+
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool ScanMIP ( ManageIP_t *mip, ccp addr )
+{
+    DASSERT(mip);
+    ResetMIP(mip);
+
+    SplitIP_t sip;
+    if (!SplitIP(&sip,addr))
+	return false;
+
+    if (strchr(sip.name,':'))
+    {
+	if ( inet_pton(AF_INET6,sip.name,mip->bin.ip6_32) != 1 )
+	    return false;
+	mip->bin.ipvers = 6;
+	mip->relevant_bits = 128;
+    }
+    else
+    {
+	struct in_addr inp;
+	if (!dclib_aton(sip.name,&inp))
+	    return false;
+
+	mip->bin.ipvers = 4;
+	mip->bin.ip4 = inp.s_addr;
+	mip->relevant_bits = 32;
+    }
+
+    mip->bin.bits = mip->relevant_bits;
+    if ( sip.bits >= 0 )
+    {
+	mip->have_bits = true;
+	if ( sip.bits < mip->relevant_bits )
+	    mip->bin.bits = sip.bits;
+    }
+
+    mip->port = sip.port;
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ManageIP_t GetSockNameMIP ( int sock )
+{
+    ManageIP_t mip = {{0}};
+    sockaddr_in46_t sa;
+    socklen_t sa_len = sizeof(sa);
+    if (!getsockname(sock,(sockaddr_t*)&sa,&sa_len))
+	AssignSockaddrMIP(&mip,&sa,0,-1);
+    return mip;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ManageIP_t GetPeerNameMIP ( int sock )
+{
+    ManageIP_t mip = {{0}};
+    sockaddr_in46_t sa;
+    socklen_t sa_len = sizeof(sa);
+    if (!getpeername(sock,(sockaddr_t*)&sa,&sa_len))
+	AssignSockaddrMIP(&mip,&sa,0,-1);
+    return mip;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ManageIP_t GetAddrInfoMIP ( ccp addr, int protocol, IpMode_t ipm )
+{
+    ManageIP_t mip = {{0}};
+
+    SplitIP_t sip;
+    if (SplitIP(&sip,addr))
+    {
+	struct addrinfo hints
+		= { .ai_family = AF_UNSPEC,
+		    .ai_protocol = protocol < 0 ? IPPROTO_TCP : protocol };
+	struct addrinfo *result;
+	if (!getaddrinfo(sip.name,0,&hints,&result))
+	{
+	    struct addrinfo *ip4 = 0, *ip6 = 0;
+	    for ( struct addrinfo *rp = result; rp; rp = rp->ai_next)
+	    {
+		if ( !ip4 && rp->ai_family == AF_INET )
+		    ip4 = rp;
+		else if ( !ip6 && rp->ai_family == AF_INET6 )
+		    ip6 = rp;
+	    }
+
+	    switch (ipm)
+	    {
+		case IPV4_ONLY:  break; // nothing to do
+		case IPV6_ONLY:  ip4 = ip6; break;
+		case IPV4_FIRST: if (!ip4) ip4 = ip6; break;
+		case IPV6_FIRST: if (ip6) ip4 = ip6; break;
+	    }
+
+	    if (ip4)
+		AssignSockaddrMIP(&mip,ip4->ai_addr,sip.port,sip.bits);
+
+	    freeaddrinfo(result);
+	}
+    }
+
+    return mip;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+sockaddr_in46_t GetSockaddrMIP ( const ManageIP_t *mip )
+{
+    DASSERT(mip);
+    sockaddr_in46_t sa = { .family = 0 };
+
+    if ( mip->bin.ipvers == 4 )
+    {
+	sa.in4.sin_family	= AF_INET;
+	sa.in4.sin_addr.s_addr	= mip->bin.ip4;
+	sa.in4.sin_port		= htons(mip->port);
+    }
+    else if ( mip->bin.ipvers == 6 )
+    {
+	sa.in6.sin6_family	= AF_INET6;
+	sa.in6.sin6_port	= htons(mip->port);
+	memcpy(sa.in6.sin6_addr.s6_addr,mip->bin.ip6_8,sizeof(sa.in6.sin6_addr));
+    }
+
+    return sa;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetNameInfoMIP ( ManageIP_t *mip )
+{
+    DASSERT(mip);
+    if ( !mip->name && mip->bin.ipvers )
+    {
+	char host1[NI_MAXHOST+20], host2[NI_MAXHOST+20];
+	sockaddr_in46_t sa = GetSockaddrMIP(mip);
+
+	if (!getnameinfo( (sockaddr_t*)&sa,sizeof(sa), host1,sizeof(host1), 0,0, 0 ))
+	{
+	    mip->name = STRDUP(host1);
+
+	    FreeString(mip->decoded_name);
+	    const uint stat = Domain2UTF8(host2,sizeof(host2),host1,-1);
+	    mip->decoded_name = stat && *host2 && strcmp(host1,host2) ? STRDUP(host2) : 0;
+	}
+    }
+    return mip->name;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ApplyMaskMIP ( ManageIP_t *mip, int bits )
+{
+    DASSERT(mip);
+    if ( bits >= 0 && bits < mip->bin.bits )
+	mip->bin.bits = bits;
+    ApplyIPMask(&mip->bin);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void MaskPrefixMIP ( ManageIP_t *mip )
+{
+    DASSERT(mip);
+    if ( mip->bin.ipvers == 4 || mip->bin.ip6_64[0] != 0ull )
+	ApplyMaskMIP(mip,64);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintAddrMIP ( const ManageIP_t *mip, PrintModeIP_t pmode )
+{
+    DASSERT(mip);
+
+    ccp res;
+    char buf[INET6_ADDRSTRLEN+1];
+
+    switch (mip->bin.ipvers)
+    {
+     case 4:
+	res = buf;
+	if ( pmode & PMIP_0DOTS )
+	    snprintf(buf,sizeof(buf),"%u",ntohl(mip->bin.ip4));
+	else if ( pmode & PMIP_1DOT )
+	    snprintf(buf,sizeof(buf), "%u.%u",
+			mip->bin.ip4x.v8[0], ntohl(mip->bin.ip4)&0xffffff );
+	else if ( pmode & PMIP_2DOTS )
+	    snprintf(buf,sizeof(buf), "%u.%u.%u",
+			mip->bin.ip4x.v8[0], mip->bin.ip4x.v8[1], ntohs(mip->bin.ip4x.v16[1]) );
+	else
+	    snprintf(buf,sizeof(buf), "%u.%u.%u.%u",
+			mip->bin.ip4x.v8[0], mip->bin.ip4x.v8[1],
+			mip->bin.ip4x.v8[2], mip->bin.ip4x.v8[3] );
+	break;
+
+     case 6:
+	if ( pmode & PMIP_FULL_IPV6 )
+	{
+	    snprintf(buf,sizeof(buf), "%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x",
+			ntohs(mip->bin.ip6.v16[0]),
+			ntohs(mip->bin.ip6.v16[1]),
+			ntohs(mip->bin.ip6.v16[2]),
+			ntohs(mip->bin.ip6.v16[3]),
+			ntohs(mip->bin.ip6.v16[4]),
+			ntohs(mip->bin.ip6.v16[5]),
+			ntohs(mip->bin.ip6.v16[6]),
+			ntohs(mip->bin.ip6.v16[7]) );
+	    res = buf;
+	}
+	else
+	    res = inet_ntop(AF_INET6,mip->bin.ip6_32,buf,sizeof(buf));
+	break;
+
+     default:
+	res = 0;
+    }
+
+    if (!res)
+	return 0;
+
+    char port[100];
+    *port = 0;
+    if ( mip->port && pmode & (PMIP_SERVICE|PMIP_PORT) )
+    {
+	if ( pmode & PMIP_SERVICE )
+	{
+	    struct servent result_buf;
+	    struct servent *result;
+	    char buf[1000];
+	    const int stat = getservbyport_r(htons(mip->port),0,&result_buf,buf,sizeof(buf),&result);
+	    if ( !stat && result )
+		snprintf(port,sizeof(port),":%s",result_buf.s_name);
+	}
+
+	if (!*port)
+	    snprintf(port,sizeof(port),":%u",mip->port);
+	pmode |= PMIP_BRACKETS;
+    }
+
+    char bits[20];
+    if (PrintBitsMIP(mip,pmode))
+    {
+	if ( mip->bin.ipvers == 4 && pmode & PMIP_MASK )
+	{
+	    ipv4x_t mask;
+	    mask.ip4 = GetIP4Mask(mip->bin.bits);
+	    snprintf(bits,sizeof(bits),"/%d.%d.%d.%d",
+		mask.v8[0], mask.v8[1], mask.v8[2], mask.v8[3] );
+	}
+	else
+	    snprintf(bits,sizeof(bits),"/%u",mip->bin.bits);
+    }
+    else
+	*bits = 0;
+
+    return pmode & PMIP_BRACKETS && mip->bin.ipvers == 6
+	? PrintCircBuf("[%s]%s%s",res,port,bits)
+	: PrintCircBuf("%s%s%s",res,port,bits);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintVersAddrMIP ( const ManageIP_t *mip, PrintModeIP_t pmode )
+{
+    DASSERT(mip);
+    ccp res = PrintAddrMIP(mip,pmode);
+    return res ? PrintCircBuf("IPv%u %s",mip->bin.ipvers,res) : 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetSqlSetAddrMIP ( const ManageIP_t *mip, const NamesIP_t *names )
+{
+    if (!mip)
+	return 0;
+
+    NamesIP_t nip;
+    SetupNamesIP(&nip,names);
+
+    if ( mip->bin.ipvers == 4 )
+    {
+	const ipv4_t mask = GetIP4Mask(mip->bin.bits);
+	return PrintCircBuf("%s=4,%s=0,%s=0x%08x",
+				nip.ipvers, nip.addr1,
+				nip.addr2, ntohl( mip->bin.ip4 & mask ));
+    }
+    else if ( mip->bin.ipvers == 6 )
+    {
+	const ipv6_t mask = GetIP6Mask(mip->bin.bits);
+	return PrintCircBuf("%s=6,%s=0x%llx,%s=0x%llx",
+				nip.ipvers,
+				nip.addr1, ntoh64( mip->bin.ip6_64[0] & mask.v64[0] ),
+				nip.addr2, ntoh64( mip->bin.ip6_64[1] & mask.v64[1] ));
+    }
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetSqlSetMaskMIP ( const ManageIP_t *mip, const NamesIP_t *names )
+{
+    if (!mip)
+	return 0;
+
+    NamesIP_t nip;
+    SetupNamesIP(&nip,names);
+
+    if ( mip->bin.ipvers == 4 )
+    {
+	const ipv4_t mask = GetIP4Mask(mip->bin.bits);
+	return PrintCircBuf("%s=4,%s=0,%s=0x%08x,%s=0,%s=0x%08x",
+				nip.ipvers, nip.addr1,
+				nip.addr2, ntohl( mip->bin.ip4 & mask ),
+				nip.mask1, nip.mask2, ntohl(mask));
+    }
+    else if ( mip->bin.ipvers == 6 )
+    {
+	const ipv6_t mask = GetIP6Mask(mip->bin.bits);
+	return PrintCircBuf("%s=6,%s=0x%llx,%s=0x%llx,%s=0x%llx,%s=0x%llx",
+				nip.ipvers,
+				nip.addr1, ntoh64( mip->bin.ip6_64[0] & mask.v64[0] ),
+				nip.addr2, ntoh64( mip->bin.ip6_64[1] & mask.v64[1] ),
+				nip.mask1, ntoh64(mask.v64[0]),
+				nip.mask2, ntoh64(mask.v64[1]) );
+    }
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetSqlSetBinMIP ( const ManageIP_t *mip, const NamesIP_t *names )
+{
+    if (!mip)
+	return 0;
+
+    NamesIP_t nip;
+    SetupNamesIP(&nip,names);
+
+    return PrintCircBuf("%s=unhex('%02x%02x%016llx%016llx')",
+		nip.binaddr, mip->bin.ipvers, mip->bin.bits,
+		ntoh64(mip->bin.ip6_64[0]), ntoh64(mip->bin.ip6_64[0]) );
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetSqlCondAddrMIP ( const ManageIP_t *mip, const NamesIP_t *names )
+{
+    if (!mip)
+	return 0;
+
+    NamesIP_t nip;
+    SetupNamesIP(&nip,names);
+
+    if ( mip->bin.ipvers == 4 )
+	return PrintCircBuf("%s=4 && %s=0x%08x",
+			nip.ipvers, nip.addr2, ntohl(mip->bin.ip4) );
+    else if ( mip->bin.ipvers == 6 )
+	return PrintCircBuf("%s=6 && %s=0x%llx && %s=0x%llx",
+			nip.ipvers,
+			nip.addr1, ntoh64(mip->bin.ip6_64[0]),
+			nip.addr2, ntoh64(mip->bin.ip6_64[1]) );
+
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetSqlCondMaskMIP ( const ManageIP_t *mip, const NamesIP_t *names )
+{
+    if (!mip)
+	return 0;
+
+    NamesIP_t nip;
+    SetupNamesIP(&nip,names);
+
+    if ( mip->bin.ipvers == 4 )
+	return PrintCircBuf("%s=4 && %s=(%s&0x%08x)",
+			nip.ipvers,
+			nip.addr2, nip.mask2, ntohl(mip->bin.ip4) );
+    else if ( mip->bin.ipvers == 6 )
+	return PrintCircBuf("%s=6 && %s=(%s&0x%llx) && %s=(%s&0x%llx)",
+			nip.ipvers,
+			nip.addr1, nip.mask1, ntoh64(mip->bin.ip6_64[0]),
+			nip.addr2, nip.mask2, ntoh64(mip->bin.ip6_64[1]) );
+
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetSqlCondBinMaskMIP ( const ManageIP_t *mip, const NamesIP_t *names )
+{
+    if (!mip)
+	return 0;
+
+    NamesIP_t nip;
+    SetupNamesIP(&nip,names);
+
+    if ( mip->bin.ipvers == 4 )
+	return PrintCircBuf("compare_binaddr(%s,4,0,0x%08x,%s,%s)",
+			nip.binaddr, ntohl(mip->bin.ip4),
+			nip.mask1, nip.mask2 );
+    else if ( mip->bin.ipvers == 6 )
+	return PrintCircBuf("compare_binaddr(%s,6,0x%llx,0x%llx,%s,%s)",
+			nip.binaddr,
+			ntoh64(mip->bin.ip6_64[0]), ntoh64(mip->bin.ip6_64[1]),
+			nip.mask1, nip.mask2 );
+
+    return 0;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct ResolveIP_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void ResetRIP ( ResolveIP_t *rip )
+{
+    if (rip)
+    {
+	ResetMIP(&rip->mip4);
+	ResetMIP(&rip->mip6);
+	memset(rip,0,sizeof(*rip));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ClearNamesRIP ( ResolveIP_t *rip )
+{
+    if (rip)
+    {
+	ClearNameMIP(&rip->mip4);
+	ClearNameMIP(&rip->mip6);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int SetupListRIP ( ResolveIP_t *rip )
+{
+    DASSERT(rip);
+    memset(rip->mip_list,0,sizeof(rip->mip_list));
+
+    ManageIP_t **mp = rip->mip_list;
+    switch (rip->ip_mode)
+    {
+	case IPV6_FIRST:
+	    if (rip->mip6.bin.ipvers)
+		*mp++ = &rip->mip6;
+	    // fall though
+	case IPV4_ONLY:
+	    if (rip->mip4.bin.ipvers)
+		*mp++ = &rip->mip4;
+	    break;
+
+	case IPV4_FIRST:
+	    if (rip->mip4.bin.ipvers)
+		*mp++ = &rip->mip4;
+	    // fall though
+	case IPV6_ONLY:
+	    if (rip->mip6.bin.ipvers)
+		*mp++ = &rip->mip6;
+	    break;
+    }
+
+    return mp - rip->mip_list;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ResolveIP_t GetCopyRIP ( const ResolveIP_t *rip )
+{
+    ResolveIP_t res;
+    if (rip)
+    {
+	res.ip_mode = rip->ip_mode;
+	res.mip4 = GetCopyMIP(&rip->mip4);
+	res.mip6 = GetCopyMIP(&rip->mip6);
+	SetupListRIP(&res);
+    }
+    else
+	memset(&res,0,sizeof(res));
+
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void AssignRIP ( ResolveIP_t *dest, const ResolveIP_t *src )
+{
+    if (dest)
+    {
+	ClearNamesRIP(dest);
+	*dest = GetCopyRIP(src);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int ScanRIP
+(
+    // return 0..2 = number of records
+
+    ResolveIP_t	*rip,		// valid data, ResetRIP()
+    ccp		addr,		// address to scan
+    int		protocol,	// protocol to use: 0=all, -1=default (IPPROTO_TCP at the moment)
+    IpMode_t	ip_mode,	// IPv4 and/or IPV6, order of 'mip_list'
+    bool	get_names	// true: call GetNameInfoMIP()
+)
+{
+    DASSERT(rip);
+    ResetRIP(rip);
+
+    SplitIP_t sip;
+    if (!SplitIP(&sip,addr))
+	return 0;
+    NormalizeNameSIP(&sip);
+
+    rip->ip_mode = ip_mode;
+
+    struct addrinfo hints = { .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM };
+    struct addrinfo *result;
+    char aname[300];
+    Domain2ASCII(aname,sizeof(aname),sip.name,-1);
+    if (!getaddrinfo(aname,0,&hints,&result))
+    {
+	struct addrinfo *ip4 = 0, *ip6 = 0;
+	for ( struct addrinfo *rp = result; rp; rp = rp->ai_next)
+	{
+	    if ( !ip4 && rp->ai_family == AF_INET )
+		ip4 = rp;
+	    else if ( !ip6 && rp->ai_family == AF_INET6 )
+		ip6 = rp;
+	}
+
+	if (ip4)
+	    AssignSockaddrMIP(&rip->mip4,ip4->ai_addr,sip.port,sip.bits);
+
+	if (ip6)
+	    AssignSockaddrMIP(&rip->mip6,ip6->ai_addr,sip.port,sip.bits);
+
+	if (get_names)
+	{
+	    GetNameInfoMIP(&rip->mip4);
+	    GetNameInfoMIP(&rip->mip6);
+	}
+
+	freeaddrinfo(result);
+    }
+
+    return SetupListRIP(rip);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+#if 0
+
+void DumpRIP ( FILE *f, int indent, const ResolveIP_t *rip )
+{
+    if ( !f || !rip )
+	return;
+    indent = NormalizeIndent(indent);
+}
+
+#endif
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct AllowIP4_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -261,6 +1689,9 @@ const KeywordTab_t AllowIP4KeyTable[] =
 
 	{ ALLOW_MODE_LOG,	"LOG",		0,		0 },
 	{ ALLOW_MODE_VERBOSE,	"VERBOSE",	0,		0 },
+
+	{ ALLOW_RELEASE,	"RELEASE",	0,		0 },
+	{ ALLOW_DEBUG,		"DEBUG",	0,		0 },
 
 	{ ALLOW_MODE_NOT,	"NOT",		0,		0 },
 	{ ALLOW_MODE_SET,	"SET",		0,		ALLOW_MODE__OP },
@@ -382,6 +1813,13 @@ enumError ScanLineAllowIP4
     if ( res & ALLOW_MODE_NOT )
 	res = res ^ ALLOW_MODE__MASK;
 
+ #if defined(DEBUG) && DEBUG > 0 || defined(IS_DEVELOP) && IS_DEVELOP > 0
+    if ( res & ALLOW_RELEASE )
+	return ERR_OK;
+ #else
+    if ( res & ALLOW_DEBUG )
+	return ERR_OK;
+ #endif
 
     //--- add item
 
@@ -2082,7 +3520,11 @@ int PrintBinary1TCPStream
 	return -1;
 
     char buf[10000], *end_buf = buf + sizeof(buf) - 4;
+ #if 0 // gcc-12: throws error: 'buf' may be used uninitialized
     char *dest = StringCopyE(buf,end_buf,cmd);
+ #else
+    char *dest = StringCopyS(buf,sizeof(buf)-4,cmd);
+ #endif
     if ( dest + 6 + bin_size >= end_buf )
 	return -1;
 
@@ -2141,7 +3583,11 @@ int PrintBinary2TCPStream
 	return -1;
 
     char buf[10000], *end_buf = buf + sizeof(buf) - 4;
+ #if 0 // gcc-12: throws error: 'buf' may be used uninitialized
     char *dest = StringCopyE(buf,end_buf,cmd);
+ #else
+    char *dest = StringCopyS(buf,sizeof(buf)-4,cmd);
+ #endif
     if ( dest + 9 + bin1_size + bin2_size >= end_buf )
 	return -1;
 
@@ -3120,12 +4566,15 @@ void OnCloseStream
 	PRINT("CLOSE: %d\n",ts->sock);
 	if (ts->OnClose)
 	    ts->OnClose(ts,now_usec);
+
 	if ( ts->sock != -1 )
 	{
+	    // if not closed by OnClose()
 	    shutdown(ts->sock,SHUT_RDWR);
 	    close(ts->sock);
 	    ts->sock = -1;
 	}
+
 	if ( !ts->protect && ts->handler )
 	    ts->handler->need_maintenance |= 1;
 
@@ -3312,7 +4761,7 @@ void CheckTimeoutTCP ( TCPHandler_t *th )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool MaintenanceTCP ( TCPHandler_t *th )
+bool MaintainTCP ( TCPHandler_t *th )
 {
     DASSERT(th);
 
@@ -3338,7 +4787,7 @@ bool MaintenanceTCP ( TCPHandler_t *th )
 
 void ManageSocketsTCP
 (
-    // call  CheckSocketsTCP(), CheckTimeoutTCP(), MaintenanceTCP()
+    // call  CheckSocketsTCP(), CheckTimeoutTCP(), MaintainTCP()
 
     TCPHandler_t	*th,		// valid TCP handler
     FDList_t		*fdl,		// valid socket list
@@ -3351,7 +4800,7 @@ void ManageSocketsTCP
 	CheckTimeoutTCP(th);
 
     if (th->need_maintenance)
-	MaintenanceTCP(th);
+	MaintainTCP(th);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

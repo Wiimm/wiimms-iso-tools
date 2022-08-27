@@ -854,6 +854,7 @@ wd_disc_t * OpenDiscSF
 	disc->image_ext = oft_info[OFT__DEFAULT].ext1 + 1;
     sf->disc1 = disc;
 
+
     if (load_part_data)
 	wd_load_all_part(disc,false,false,false);
 
@@ -888,10 +889,12 @@ wd_disc_t * OpenDiscSF
     }
     else if ( disable_patch_on_load <= 0 )
     {
+
 	reloc |= patch_main_and_rel(disc,0);
 
 	if (main_part)
 	{
+
 	    reloc |= wd_patch_part_id(main_part,modify,
 				modify_disc_id, modify_boot_id,
 				modify_ticket_id, modify_tmd_id );
@@ -908,7 +911,7 @@ wd_disc_t * OpenDiscSF
 	else if ( modify_id
 		    && strlen(modify_id) > 3
 		    && modify_id[3] != '.'
-		    && modify_id[3] != disc->dhead.region_code )
+		    && modify_id[3] != disc->dhead.id6.region_code )
 	{
 	    const enumRegion region = GetRegionInfo(modify_id[3])->reg;
 	    reloc |= wd_patch_region(disc,region);
@@ -1187,6 +1190,7 @@ enumError PatchSF
 )
 {
     DASSERT(sf);
+
 
     OpenDiscSF(sf,true,true);
     wd_disc_t * disc = sf->disc1;

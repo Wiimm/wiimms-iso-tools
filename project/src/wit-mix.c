@@ -232,18 +232,18 @@ static enumError verify_mix
 			    snprintf(item->info,sizeof(item->info),
 				"P.%0*u, %s, %s -> %s",
 				part_fw, (int)(mix-mp->mix),
-				wd_print_id(&mix->disc->dhead.disc_id,6,0),
+				wd_print_id(mix->disc->dhead.id6.id6,6,0),
 				wd_print_part_name(0,0,part->part_type,WD_PNAME_NUM_INFO),
 				wd_print_part_name(0,0,mix->ptype,WD_PNAME_NUM_INFO) );
 			else if (mix->is_boot_part)
 			    snprintf(item->info,sizeof(item->info),
 				"Boot, %s",
-				wd_print_id(&mix->disc->dhead.disc_id,6,0) );
+				wd_print_id(mix->disc->dhead.id6.id6,6,0) );
 			else
 			    snprintf(item->info,sizeof(item->info),
 				"P.%0*u, %s",
 				part_fw, (int)(mix-mp->mix),
-				wd_print_id(&mix->disc->dhead.disc_id,6,0) );
+				wd_print_id(mix->disc->dhead.id6.id6,6,0) );
 		    }
 		}
 	    }
@@ -1368,7 +1368,7 @@ static enumError create_wii_mix
 		"  Title:  %.64s\n"
 		"  Region: %x [%s] / %s\n\n",
 		testmode ? "WOULD c" : "C",
-		&dhead->disc_id, oft_info[oft].name,
+		dhead->id6.id6, oft_info[oft].name,
 		mp->fo.f.fname, dhead->disc_title,
 		regnum, GetRegionName(regnum,"?"),
 		wd_print_age_rating(0,0,reg->age_rating) );
@@ -1569,7 +1569,7 @@ enumError cmd_mix()
     Mix_t * mix;
     for ( mix = mp.mix; mix < mp.end_mix; mix++ )
     {
-	dest += sprintf(dest,"%s%s",sep,wd_print_id(&mix->part->boot.dhead.disc_id,6,0));
+	dest += sprintf(dest,"%s%s",sep,wd_print_id(mix->part->boot.dhead.id6.id6,6,0));
 	sep = "+";
 	const u64 end_off = mix->part->part_size + mix->dest_sector * (u64)WII_SECTOR_SIZE;
 	if ( dest_file_size < end_off )
@@ -1605,7 +1605,7 @@ enumError cmd_mix()
     else if ( mp.n_mix == 1 )
 	memcpy(&reg,&mp.mix->disc->region,sizeof(reg));
     else
-	reg.region = htonl(GetRegionInfo(dhead.region_code)->reg);
+	reg.region = htonl(GetRegionInfo(dhead.id6.region_code)->reg);
 
 
     //----- setup output file

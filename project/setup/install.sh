@@ -49,6 +49,9 @@ fi
 #------------------------------------------------------------------------------
 # settings
 
+SYSTEM="@@SYSTEM@@"
+SYSTEM2="@@SYSTEM2@@"
+
 BASE_PATH="@@INSTALL-PATH@@"
 BIN_PATH="$BASE_PATH/bin"
 SHARE_PATH="@@SHARE-PATH@@"
@@ -79,6 +82,8 @@ do
     mkdir -p "$BIN_PATH"
     install $INST_FLAGS bin/$f "$BIN_PATH/$f"
 done
+
+[[ $SYSTEM = mac ]] && xattr -dr com.apple.quarantine "$BIN_PATH" || true
 
 #------------------------------------------------------------------------------
 echo "*** create wdf links"

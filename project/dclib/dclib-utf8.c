@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -108,7 +108,7 @@ int GetUTF8CharLength ( u32 code )
 
 char * NextUTF8Char ( ccp ptr )
 {
-    // go to next next UTF8 character
+    // goto next UTF8 character
 
     switch (CheckUTF8Mode(*ptr))
     {
@@ -144,7 +144,7 @@ char * NextUTF8Char ( ccp ptr )
 
 char * NextUTF8CharE( ccp ptr, ccp end )
 {
-    // go to next next UTF8 character
+    // goto next UTF8 character
 
     if ( ptr >= end )
 	return (char*)end;
@@ -177,6 +177,20 @@ char * NextUTF8CharE( ccp ptr, ccp end )
 	    return (char*)ptr+1;
     }
     return (char*)ptr;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * NextEUTF8Char ( ccp ptr )
+{
+    return NextUTF8Char(SkipEscapes(ptr));
+}
+
+//-----------------------------------------------------------------------------
+
+char * NextEUTF8CharE ( ccp ptr, ccp end )
+{
+    return NextUTF8CharE(SkipEscapesE(ptr,end),end);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -261,6 +275,82 @@ char * PrevUTF8CharB ( ccp str, ccp begin )
 	default:
 	    return (char*)str-1;
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * SkipUTF8Char ( ccp str, int skip )
+{
+    if (str)
+    {
+	if ( skip < 0 )
+	    skip += ScanUTF8Length(str);
+	while ( skip-- > 0 )
+	{
+	    ccp next = NextUTF8Char(str);
+	    if ( str == next )
+		break;
+	    str = next;
+	}
+    }
+    return (char*)str;
+}
+
+//-----------------------------------------------------------------------------
+
+char * SkipUTF8CharE ( ccp str, ccp end, int skip )
+{
+    if (str)
+    {
+	if ( skip < 0 )
+	    skip += ScanUTF8LengthE(str,end);
+	while ( skip-- > 0 )
+	{
+	    ccp next = NextUTF8CharE(str,end);
+	    if ( str == next )
+		break;
+	    str = next;
+	}
+    }
+    return (char*)str;
+}
+
+//-----------------------------------------------------------------------------
+
+char * SkipEUTF8Char ( ccp str, int skip )
+{
+    if (str)
+    {
+	if ( skip < 0 )
+	    skip += ScanEUTF8Length(str);
+	while ( skip-- > 0 )
+	{
+	    ccp next = NextEUTF8Char(str);
+	    if ( str == next )
+		break;
+	    str = next;
+	}
+    }
+    return (char*)str;
+}
+
+//-----------------------------------------------------------------------------
+
+char * SkipEUTF8CharE ( ccp str, ccp end, int skip )
+{
+    if (str)
+    {
+	if ( skip < 0 )
+	    skip += ScanEUTF8LengthE(str,end);
+	while ( skip-- > 0 )
+	{
+	    ccp next = NextEUTF8CharE(str,end);
+	    if ( str == next )
+		break;
+	    str = next;
+	}
+    }
+    return (char*)str;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -698,12 +788,57 @@ u32 ScanUTF8AnsiCharE ( ccp * p_str, ccp end )
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-int ScanUTF8Length ( ccp str, ccp end )
+int ScanUTF8Length ( ccp str )
 {
     int count = 0;
-    ccp ptr = str;
-    if (end)
+    if (str)
     {
+	ccp ptr = str;
+	for(;;)
+	{
+	    const char ch = *ptr++;
+	    if (!ch)
+		break;
+	    switch (CheckUTF8Mode(ch))
+	    {
+		case DC_UTF8_2CHAR:
+		    if ( CheckUTF8Mode(*ptr) == DC_UTF8_CONT_ANY )
+			ptr++;
+		    break;
+
+		case DC_UTF8_3CHAR:
+		    if (   CheckUTF8Mode(ptr[0]) == DC_UTF8_CONT_ANY
+			&& CheckUTF8Mode(ptr[1]) == DC_UTF8_CONT_ANY )
+			    ptr += 2;
+		    break;
+
+		case DC_UTF8_4CHAR:
+		    if (   CheckUTF8Mode(ptr[0]) == DC_UTF8_CONT_ANY
+			&& CheckUTF8Mode(ptr[1]) == DC_UTF8_CONT_ANY
+			&& CheckUTF8Mode(ptr[2]) == DC_UTF8_CONT_ANY )
+			    ptr += 3;
+		    break;
+
+		default:
+		    break;
+	    }
+	    count++;
+	}
+    }
+    return count;
+}
+
+//-----------------------------------------------------------------------------
+
+int ScanUTF8LengthE ( ccp str, ccp end )
+{
+    if (!end)
+	return ScanUTF8Length(str);
+
+    int count = 0;
+    if (str)
+    {
+	ccp ptr = str;
 	while ( ptr < end )
 	{
 	    const char ch = *ptr++;
@@ -733,13 +868,78 @@ int ScanUTF8Length ( ccp str, ccp end )
 	    count++;
 	}
     }
-    else
+    return count;
+}
+
+//-----------------------------------------------------------------------------
+
+int ScanEUTF8Length ( ccp str )
+{
+    int count = 0;
+    if (str)
     {
+	ccp ptr = str;
 	for(;;)
 	{
 	    const char ch = *ptr++;
 	    if (!ch)
 		break;
+
+	    if ( ch == '\e' )
+	    {
+		ptr = SkipEscapes(ptr-1);
+		continue;
+	    }
+
+	    switch (CheckUTF8Mode(ch))
+	    {
+		case DC_UTF8_2CHAR:
+		    if ( CheckUTF8Mode(*ptr) == DC_UTF8_CONT_ANY )
+			ptr++;
+		    break;
+
+		case DC_UTF8_3CHAR:
+		    if (   CheckUTF8Mode(ptr[0]) == DC_UTF8_CONT_ANY
+			&& CheckUTF8Mode(ptr[1]) == DC_UTF8_CONT_ANY )
+			    ptr += 2;
+		    break;
+
+		case DC_UTF8_4CHAR:
+		    if (   CheckUTF8Mode(ptr[0]) == DC_UTF8_CONT_ANY
+			&& CheckUTF8Mode(ptr[1]) == DC_UTF8_CONT_ANY
+			&& CheckUTF8Mode(ptr[2]) == DC_UTF8_CONT_ANY )
+			    ptr += 3;
+		    break;
+
+		default:
+		    break;
+	    }
+	    count++;
+	}
+    }
+    return count;
+}
+
+//-----------------------------------------------------------------------------
+
+int ScanEUTF8LengthE ( ccp str, ccp end )
+{
+    if (!end)
+	return ScanEUTF8Length(str);
+
+    int count = 0;
+    if (str)
+    {
+	ccp ptr = str;
+	while ( ptr < end )
+	{
+	    const char ch = *ptr++;
+	    if ( ch == '\e' )
+	    {
+		ptr = SkipEscapesE(ptr-1,end);
+		continue;
+	    }
+
 	    switch (CheckUTF8Mode(ch))
 	    {
 		case DC_UTF8_2CHAR:
@@ -775,7 +975,7 @@ int ScanUTF8Length ( ccp str, ccp end )
 int CalcUTF8PrintFW ( ccp str, ccp end, uint wanted_fw )
 {
     const uint bytecount = end ? end - str : strlen(str);
-    const uint utf8len = ScanUTF8Length(str,end);
+    const uint utf8len = ScanUTF8LengthE(str,end);
     return utf8len < wanted_fw
 		? wanted_fw - utf8len + bytecount
 		: bytecount;
@@ -850,6 +1050,152 @@ char * PrintUTF8CharToCircBuf ( u32 code )
 	buf[3] = code       & 0x3f | 0x80;
 	buf[4] = 0;
     }
+    return buf;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_t AlignUTF8 ( exmem_dest_t *dest, ccp str, int str_len, int fw, int prec )
+{
+    int slen = str_len < 0
+		? ScanUTF8Length(str)
+		: ScanUTF8LengthE(str,str+str_len);
+
+    if ( prec >= 0 && slen > prec )
+	slen = prec;
+
+    const int align_left = fw < 0;
+    if (align_left)
+	fw = -fw;
+    if ( fw < slen )
+	fw = slen;
+    int spaces = fw - slen;
+
+    ccp end = SkipUTF8Char(str,slen);
+    const int copy_len = end - str;
+
+    exmem_t res = GetExmemDestBuf(dest,copy_len+spaces);
+    char *buf = (char*)res.data.ptr;
+
+    DASSERT(buf);
+    if (align_left)
+    {
+	memcpy(buf,str,copy_len);
+	memset(buf+copy_len,' ',spaces);
+    }
+    else
+    {
+	memset(buf,' ',spaces);
+	memcpy(buf+spaces,str,copy_len);
+    }
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp AlignUTF8ToCircBuf ( ccp str, int fw, int prec )
+{
+    uint len = ScanUTF8Length(str);
+    if ( prec >= 0 && len > prec )
+	len = prec;
+
+    const int align_left = fw < 0;
+    if ( align_left)
+	fw = -fw;
+    if ( fw < len )
+	fw = len;
+    int spaces = fw - len;
+
+    ccp end = SkipUTF8Char(str,len);
+    const int copy_len = end - str;
+
+    char *buf = GetCircBuf(copy_len+spaces+1);
+    DASSERT(buf);
+    if (align_left)
+    {
+	memcpy(buf,str,copy_len);
+	memset(buf+copy_len,' ',spaces);
+    }
+    else
+    {
+	memset(buf,' ',spaces);
+	memcpy(buf+spaces,str,copy_len);
+    }
+    buf[copy_len+spaces] = 0;
+    return buf;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_t AlignEUTF8 ( exmem_dest_t *dest, ccp str, int str_len, int fw, int prec )
+{
+    int slen = str_len < 0
+		? ScanUTF8Length(str)
+		: ScanUTF8LengthE(str,str+str_len);
+
+    if ( prec >= 0 && slen > prec )
+	slen = prec;
+
+    const int align_left = fw < 0;
+    if (align_left)
+	fw = -fw;
+    if ( fw < slen )
+	fw = slen;
+    int spaces = fw - slen;
+
+    ccp end = SkipEUTF8Char(str,slen);
+    const int copy_len = end - str;
+
+    exmem_t res = GetExmemDestBuf(dest,copy_len+spaces);
+    char *buf = (char*)res.data.ptr;
+
+    DASSERT(buf);
+    if (align_left)
+    {
+	memcpy(buf,str,copy_len);
+	memset(buf+copy_len,' ',spaces);
+    }
+    else
+    {
+	memset(buf,' ',spaces);
+	memcpy(buf+spaces,str,copy_len);
+    }
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp AlignEUTF8ToCircBuf ( ccp str, int fw, int prec )
+{
+    uint len = ScanEUTF8Length(str);
+    if ( prec >= 0 && len > prec )
+	len = prec;
+
+    const int align_left = fw < 0;
+    if ( align_left)
+	fw = -fw;
+    if ( fw < len )
+	fw = len;
+    int spaces = fw - len;
+
+    ccp end = SkipEUTF8Char(str,len);
+    const int copy_len = end - str;
+
+    char *buf = GetCircBuf(copy_len+spaces+1);
+    DASSERT(buf);
+    if (align_left)
+    {
+	memcpy(buf,str,copy_len);
+	memset(buf+copy_len,' ',spaces);
+    }
+    else
+    {
+	memset(buf,' ',spaces);
+	memcpy(buf+spaces,str,copy_len);
+    }
+    buf[copy_len+spaces] = 0;
     return buf;
 }
 

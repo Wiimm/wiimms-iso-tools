@@ -447,7 +447,7 @@ static enumError exec_analyze ( SuperFile_t * fi, Iterator_t * it )
 
 
     //--- terminate
-    
+
     fflush(ps->f);
     if (!ps->create_array)
     {
@@ -770,6 +770,7 @@ static enumError cmd_create()
 	    char tmd_buf[WII_TMD_GOOD_SIZE];
 	    wd_tmd_t * tmd = (wd_tmd_t*)tmd_buf;
 	    tmd_setup(tmd,sizeof(tmd_buf),modify_id /* [[id]] */);
+
 
 	    if (opt_ios_valid)
 		tmd->sys_version = hton64(opt_ios);
@@ -2881,15 +2882,11 @@ static enumError cmd_diff ( bool file_level )
     if (SetupFilePattern(pat))
 	encoding |= ENCODE_F_FAST; // hint: no encryption needed
 
-    int done_count = 0;
     ParamList_t * param;
     for ( param = first_param; param; param = param->next )
 	if (param->arg)
-	{
-	    done_count++;
 	    AppendStringField(&source_list,param->arg,true);
-	}
-    if (!done_count)
+    if ( !source_list.used && !recurse_list.used )
 	SYNTAX_ERROR; // no return
 
     Iterator_t it;
@@ -3025,15 +3022,11 @@ static enumError cmd_extract()
 	param->arg = 0;
     }
 
-    int done_count = 0;
     ParamList_t * param;
     for ( param = first_param; param; param = param->next )
 	if (param->arg)
-	{
-	    done_count++;
 	    AppendStringField(&source_list,param->arg,true);
-	}
-    if (!done_count)
+    if ( !source_list.used && !recurse_list.used )
 	SYNTAX_ERROR; // no return
 
     encoding |= ENCODE_F_FAST; // hint: no encryption needed
@@ -3419,6 +3412,7 @@ static enumError cmd_convert()
 
 enumError exec_edit ( SuperFile_t * fi, Iterator_t * it )
 {
+
     if (!fi->f.id6_dest[0])
 	return ERR_OK;
     fflush(0);
@@ -3482,6 +3476,7 @@ enumError exec_edit ( SuperFile_t * fi, Iterator_t * it )
     if ( verbose >= 0 )
 	printf( "%s: EDIT %s:%s\n", ProgInfo.progname, oinfo->name, fi->f.fname );
 #endif
+
 
     enumError err = PatchSF(fi,ERR_OK);
     ResetSF( fi, !err && OptionUsed[OPT_PRESERVE] ? &fi->f.fatt : 0 );
@@ -4104,6 +4099,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_VERSION:	version_exit();
 	case GO_HELP:		help_exit(false);
 	case GO_XHELP:		help_exit(true);
+	case GO_CONFIG:		opt_config = optarg; break;
 	case GO_WIDTH:		err += ScanOptWidth(optarg); break;
 	case GO_QUIET:		verbose = verbose > -1 ? -1 : verbose - 1; break;
 	case GO_VERBOSE:	verbose = verbose <  0 ?  0 : verbose + 1; break;
@@ -4132,9 +4128,9 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_NEW:		newmode = +1; break;
 #endif
 
-	case GO_SOURCE:		AppendStringField(&source_list,optarg,false); break;
+	case GO_SOURCE:		AppendStringFieldExpand(&source_list,optarg,0,false); break;
 	case GO_NO_EXPAND:	opt_no_expand = true; break;
-	case GO_RECURSE:	AppendStringField(&recurse_list,optarg,false); break;
+	case GO_RECURSE:	AppendStringFieldExpand(&recurse_list,optarg,0,false); break;
 	case GO_RDEPTH:		err += ScanOptRDepth(optarg); break;
 	case GO_AUTO:		opt_source_auto++; break;
 
@@ -4236,6 +4232,8 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_VAR:		script_varname = optarg; break;
 	case GO_ARRAY:		script_array++; break;
 	case GO_AVAR:		script_array++; script_varname = optarg; break;
+	case GO_CASE:		err += ScanOptCase(optarg); break;
+	case GO_INSTALL:	opt_install++; break;
 
 	case GO_ITIME:		SetTimeOpt(PT_USE_ITIME|PT_F_ITIME); break;
 	case GO_MTIME:		SetTimeOpt(PT_USE_MTIME|PT_F_MTIME); break;
@@ -4325,6 +4323,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
  #ifdef DEBUG
     DumpUsedOptions(&InfoUI_wit,TRACE_FILE,11);
  #endif
+    NormalizeOptions( verbose > 3 && !is_env );
 
     if ( verbose > 3 && !is_env )
     {
@@ -4389,25 +4388,34 @@ enumError CheckCommand ( int argc, char ** argv )
     TRACE("COMMAND FOUND: #%lld = %s\n",(u64)cmd_ct->id,cmd_ct->name1);
     current_command = cmd_ct;
 
-    enumError err = VerifySpecificOptions(&InfoUI_wit,cmd_ct);
-    if (err)
-	hint_exit(err);
+//    if (!allow_all)
+//    {
+	enumError err = VerifySpecificOptions(&InfoUI_wit,cmd_ct);
+	if (err)
+	    hint_exit(err);
+//    }
+    WarnDepractedOptions(&InfoUI_wit);
 
-    argc -= optind+1;
-    argv += optind+1;
+    if ( cmd_ct->id != CMD_ARGTEST )
+    {
+	argc -= optind+1;
+	argv += optind+1;
 
-    if ( cmd_ct->id == CMD_MIX || cmd_ct->id == CMD_TEST )
-	while ( argc-- > 0 )
-	    AddParam(*argv++,false);
-    else
-	while ( argc-- > 0 )
-	    AtFileHelper(*argv++,false,true,AddParam);
+	if ( cmd_ct->id == CMD_MIX || cmd_ct->id == CMD_TEST )
+	    while ( argc-- > 0 )
+		AddParam(*argv++,false);
+	else
+	    while ( argc-- > 0 )
+		AtFileHelper(*argv++,false,true,AddParam);
+    }
 
     switch ((enumCommands)cmd_ct->id)
     {
 	case CMD_VERSION:	version_exit();
 	case CMD_HELP:		PrintHelp(&InfoUI_wit,stdout,0,"HELP",0,URI_HOME,
 					first_param ? first_param->arg : 0 ); break;
+	case CMD_CONFIG:	err = cmd_config(); break;
+	case CMD_ARGTEST:	err = cmd_argtest(argc,argv); break;
 	case CMD_INFO:		err = cmd_info(); break;
 	case CMD_TEST:		err = cmd_test(); break;
 	case CMD_ERROR:		err = cmd_error(); break;
@@ -4474,6 +4482,7 @@ enumError CheckCommand ( int argc, char ** argv )
 
 int main ( int argc, char ** argv )
 {
+    print_title_func = print_title;
     SetupLib(argc,argv,WIT_SHORT,PROG_WIT);
 
     InitializeStringField(&source_list);

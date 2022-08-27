@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -39,6 +39,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <stddef.h>
+#include <signal.h>
 #include <errno.h>
 #include <sys/time.h>
 #include <fcntl.h>
@@ -117,6 +118,14 @@ const char ThinLine300_3[901] = // 300 * '─' (U+2500) + NULL
 	"──────────────────────────────────────────────────"
 	"──────────────────────────────────────────────────"
 	"──────────────────────────────────────────────────";
+
+const char DoubleLine300_3[901] = // 300 * '═' (U+2550) + NULL
+	"══════════════════════════════════════════════════"
+	"══════════════════════════════════════════════════"
+	"══════════════════════════════════════════════════"
+	"══════════════════════════════════════════════════"
+	"══════════════════════════════════════════════════"
+	"══════════════════════════════════════════════════";
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -301,9 +310,9 @@ int GetProgramPath
 #ifdef __APPLE__
 
     //--- read apple path of executable
-    
+
     extern int _NSGetExecutablePath( char* buf, uint32_t * bufsize );
-     
+
     uint32_t size = sizeof(path);
     if (!_NSGetExecutablePath(path,&size))
     {
@@ -312,7 +321,7 @@ int GetProgramPath
 	return StringCopyS(buf,buf_size,path) - buf;
     }
 
-#else // !__APPLE__  
+#else // !__APPLE__
 
     //--- read files of /proc/...
 
@@ -332,7 +341,7 @@ int GetProgramPath
 		return StringCopyS(buf,buf_size,path) - buf;
     }
 
-#endif // !__APPLE__  
+#endif // !__APPLE__
 
 
     //--- analyze argv0
@@ -399,21 +408,20 @@ void FreeString ( ccp str )
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-char * StringCopyE ( char * buf, ccp buf_end, ccp src )
+char * StringCopyS ( char * buf, ssize_t buf_size, ccp src )
 {
-    // RESULT: end of copied string pointing to NULL
-    // 'src' may be a NULL pointer.
-
-    if ( buf >= buf_end )
-	return (char*)buf_end - 1;
-
     DASSERT(buf);
-    DASSERT(buf<buf_end);
-    buf_end--;
+    if ( !buf || buf_size <= 0 )
+	return buf;
 
     if (src)
-	while( buf < buf_end && *src )
-	    *buf++ = *src++;
+    {
+	size_t slen = strlen(src);
+	if ( slen >= buf_size )
+	    slen = buf_size-1;
+	memcpy(buf,src,slen);
+	buf += slen;
+    }
 
     *buf = 0;
     return buf;
@@ -421,27 +429,22 @@ char * StringCopyE ( char * buf, ccp buf_end, ccp src )
 
 //-----------------------------------------------------------------------------
 
-char * StringCopyS ( char * buf, size_t buf_size, ccp src )
+char * StringCopySM ( char * buf, ssize_t buf_size, ccp src, ssize_t max_copy )
 {
-    return StringCopyE(buf,buf+buf_size,src);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-char * StringCopyEM ( char * buf, ccp buf_end, ccp src, size_t max_copy )
-{
-    // RESULT: end of copied string pointing to NULL
-    // 'src' may be a NULL pointer.
-
-    ASSERT(buf);
-    ASSERT(buf<buf_end);
-    buf_end--;
-    if ( max_copy >= 0 && buf + max_copy < buf_end )
-	buf_end = buf + max_copy;
+    DASSERT(buf);
+    if ( !buf || buf_size <= 0 )
+	return buf;
 
     if (src)
-	while( buf < buf_end && *src )
-	    *buf++ = *src++;
+    {
+	size_t slen = strlen(src);
+	if ( slen >= buf_size )
+	    slen = buf_size-1;
+	if ( max_copy >= 0 && slen >= max_copy )
+	    slen = max_copy;
+	memcpy(buf,src,slen);
+	buf += slen;
+    }
 
     *buf = 0;
     return buf;
@@ -449,9 +452,24 @@ char * StringCopyEM ( char * buf, ccp buf_end, ccp src, size_t max_copy )
 
 //-----------------------------------------------------------------------------
 
-char * StringCopySM ( char * buf, size_t buf_size, ccp src, size_t max_copy )
+char * StringCopySL ( char * buf, ssize_t buf_size, ccp src, ssize_t src_len )
 {
-    return StringCopyEM(buf,buf+buf_size,src,max_copy);
+    DASSERT(buf);
+    if ( !buf || buf_size <= 0 )
+	return buf;
+
+    if (src)
+    {
+	if ( src_len < 0 )
+	    src_len = strlen(src);
+	if ( src_len >= buf_size )
+	    src_len = buf_size-1;
+	memcpy(buf,src,src_len);
+	buf += src_len;
+    }
+
+    *buf = 0;
+    return buf;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -479,9 +497,50 @@ char * StringCat2E ( char * buf, ccp buf_end, ccp src1, ccp src2 )
 
 //-----------------------------------------------------------------------------
 
-char * StringCat2S ( char * buf, size_t buf_size, ccp src1, ccp src2 )
+char * StringCat2S ( char * buf, ssize_t buf_size, ccp src1, ccp src2 )
 {
     return StringCat2E(buf,buf+buf_size,src1,src2);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * StringCatSep2E ( char * buf, ccp buf_end, ccp sep, ccp src1, ccp src2 )
+{
+    // RESULT: end of copied string pointing to NULL
+    // 'src*' may be a NULL pointer.
+
+    DASSERT(buf);
+    DASSERT(buf<buf_end);
+
+    if ( !sep || !*sep )
+	return StringCat2E(buf,buf_end,src1,src2);
+
+    char *buf0 = buf;
+    buf_end--;
+
+    if (src1)
+	while( buf < buf_end && *src1 )
+	    *buf++ = *src1++;
+
+    if (src2)
+    {
+	if ( buf > buf0 )
+	    while ( buf < buf_end && *sep )
+		*buf++ = *sep++;
+
+	while( buf < buf_end && *src2 )
+	    *buf++ = *src2++;
+    }
+
+    *buf = 0;
+    return buf;
+}
+
+//-----------------------------------------------------------------------------
+
+char * StringCatSep2S ( char * buf, ssize_t buf_size, ccp sep, ccp src1, ccp src2 )
+{
+    return StringCatSep2E(buf,buf+buf_size,sep,src1,src2);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -513,9 +572,65 @@ char * StringCat3E ( char * buf, ccp buf_end, ccp src1, ccp src2, ccp src3 )
 
 //-----------------------------------------------------------------------------
 
-char * StringCat3S ( char * buf, size_t buf_size, ccp src1, ccp src2, ccp src3 )
+char * StringCat3S ( char * buf, ssize_t buf_size, ccp src1, ccp src2, ccp src3 )
 {
     return StringCat3E(buf,buf+buf_size,src1,src2,src3);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * StringCatSep3E
+	( char * buf, ccp buf_end, ccp sep, ccp src1, ccp src2, ccp src3 )
+{
+    // RESULT: end of copied string pointing to NULL
+    // 'src*' may be a NULL pointer.
+
+    DASSERT(buf);
+    DASSERT(buf<buf_end);
+
+    if ( !sep || !*sep )
+	return StringCat3E(buf,buf_end,src1,src2,src3);
+
+    buf_end--;
+    char *buf0 = buf;
+
+    if (src1)
+	while( buf < buf_end && *src1 )
+	    *buf++ = *src1++;
+
+    if (src2)
+    {
+	if ( buf > buf0 )
+	{
+	    ccp ptr = sep;
+	    while ( buf < buf_end && *ptr )
+		*buf++ = *ptr++;
+	}
+
+	while( buf < buf_end && *src2 )
+	    *buf++ = *src2++;
+    }
+
+    if (src3)
+    {
+	if ( buf > buf0 )
+	    while ( buf < buf_end && *sep )
+		*buf++ = *sep++;
+
+	while( buf < buf_end && *src3 )
+	    *buf++ = *src3++;
+    }
+
+    *buf = 0;
+    return buf;
+}
+
+//-----------------------------------------------------------------------------
+
+char * StringCatSep3S
+	( char * buf, ssize_t buf_size, ccp sep, ccp src1, ccp src2, ccp src3 )
+{
+    return StringCatSep3E(buf,buf+buf_size,sep,src1,src2,src3);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -533,6 +648,75 @@ char * StringCat3A ( ccp src1, ccp src2, ccp src3 )
     mem_t mem = MemCat3A( MemByString0(src1), MemByString0(src2), MemByString0(src3) );
     return (char*)mem.ptr;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * StringCatSep2A ( ccp sep, ccp src1, ccp src2 )
+{
+    mem_t mem = MemCatSep2A( MemByString0(sep), 
+			     MemByString0(src1),
+			     MemByString0(src2) );
+    return (char*)mem.ptr;
+}
+
+//-----------------------------------------------------------------------------
+
+char * StringCatSep3A ( ccp sep, ccp src1, ccp src2, ccp src3 )
+{
+    mem_t mem = MemCatSep3A( MemByString0(sep),
+			     MemByString0(src1),
+			     MemByString0(src2),
+			     MemByString0(src3) );
+    return (char*)mem.ptr;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp StringCenterE 
+(
+    char		* buf,		// result buffer; if NULL, circ-buf is used
+    ccp			buf_end,	// end of 'buf', NULL if buf==NULL
+    ccp			src,		// source string
+    int			width		// wanted width
+)
+{
+    if (!src)
+	src = "";
+    int n2 = strlen(src);
+    if ( n2 >= width )
+    {
+	if (!buf)
+	    return CopyCircBuf(src,n2+1);
+
+	StringCopyEM(buf,buf_end,src,n2);
+	return buf;
+    }
+
+    n2 = width - n2;
+    int n1 = n2/2;
+    n2 -= n1;
+
+    if (!buf)
+    {
+	buf = GetCircBuf(width+1);
+	buf_end = buf + width;
+    }    
+    else
+	buf_end--;
+
+    char *dest = buf;
+    while ( n1-- > 0 && dest < buf_end )
+	*dest++ = ' ';
+
+    while ( *src && dest < buf_end )
+	*dest++ = *src++;
+
+    while ( n2-- > 0 && dest < buf_end )
+	*dest++ = ' ';
+
+    *dest = 0;
+    return buf;
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -558,7 +742,7 @@ char * StringLowerE ( char * buf, ccp buf_end, ccp src )
 
 //-----------------------------------------------------------------------------
 
-char * StringLowerS ( char * buf, size_t buf_size, ccp src )
+char * StringLowerS ( char * buf, ssize_t buf_size, ccp src )
 {
     return StringLowerE(buf,buf+buf_size,src);
 }
@@ -590,7 +774,7 @@ char * MemLowerE ( char * buf, ccp buf_end, mem_t src )
 
 //-----------------------------------------------------------------------------
 
-char * MemLowerS ( char * buf, size_t buf_size, mem_t src )
+char * MemLowerS ( char * buf, ssize_t buf_size, mem_t src )
 {
     return MemLowerE(buf,buf+buf_size,src);
 }
@@ -619,7 +803,7 @@ char * StringUpperE ( char * buf, ccp buf_end, ccp src )
 
 //-----------------------------------------------------------------------------
 
-char * StringUpperS ( char * buf, size_t buf_size, ccp src )
+char * StringUpperS ( char * buf, ssize_t buf_size, ccp src )
 {
     return StringUpperE(buf,buf+buf_size,src);
 }
@@ -651,9 +835,169 @@ char * MemUpperE ( char * buf, ccp buf_end, mem_t src )
 
 //-----------------------------------------------------------------------------
 
-char * MemUpperS ( char * buf, size_t buf_size, mem_t src )
+char * MemUpperS ( char * buf, ssize_t buf_size, mem_t src )
 {
     return MemUpperE(buf,buf+buf_size,src);
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			Signals & Sleep			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+volatile int SIGINT_level	= 0;
+volatile int SIGHUP_level	= 0;
+volatile int SIGALRM_level	= 0;
+volatile int SIGCHLD_level	= 0;
+volatile int SIGPIPE_level	= 0;
+volatile int SIGUSR1_level	= 0;
+volatile int SIGUSR2_level	= 0;
+
+// no timout for SIGPIPE
+u_sec_t SIGINT_sec		= 0;
+u_sec_t SIGHUP_sec		= 0;
+u_sec_t SIGALRM_sec		= 0;
+u_sec_t SIGCHLD_sec		= 0;
+u_sec_t SIGUSR1_sec		= 0;
+u_sec_t SIGUSR2_sec		= 0;
+
+int  SIGINT_level_max		= 3;
+bool ignore_SIGINT		= false;
+bool ignore_SIGHUP		= false;
+
+int  redirect_signal_pid	= 0;
+LogFile_t log_signal_file	= {0};
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void inc_sig_handler ( volatile int *level, volatile uint *sec )
+{
+    DASSERT(level);
+    DASSERT(sec);
+
+    const uint now = GetTimeSec(false);
+
+    if ( now - *sec > 30 )
+	*level = 0;
+    *sec = now;
+    (*level)++;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void sig_handler ( int signum )
+{
+    fflush(stdout);
+    static bool had_sigpipe = false;
+
+    if (redirect_signal_pid)
+    {
+	kill(redirect_signal_pid,signum);
+	return;
+    }
+
+    switch(signum)
+    {
+      case SIGINT:
+	if (ignore_SIGINT)
+	    break;
+	// fall through
+
+      case SIGTERM:
+	inc_sig_handler(&SIGINT_level,&SIGINT_sec);
+	ccp signame = signum == SIGINT ? "INT" : "TERM";
+	if ( SIGINT_level > 1 )
+	    PrintLogFile(&log_signal_file,"#SIGNAL %s: level set to %d/%d\n",
+			signame, SIGINT_level, SIGINT_level_max );
+	if ( SIGINT_level >= SIGINT_level_max )
+	{
+	    PrintLogFile(&log_signal_file,"#SIGNAL %s: TERMINATE IMMEDIATELY!\n",signame);
+	    exit(0);
+	}
+	break;
+
+      case SIGHUP:
+	if (!ignore_SIGHUP)
+	{
+	    inc_sig_handler(&SIGHUP_level,&SIGHUP_sec);
+	    PrintLogFile(&log_signal_file,"#SIGNAL HUP: level set to %d\n",SIGHUP_level);
+	}
+	break;
+
+      case SIGCHLD:
+	SIGCHLD_level++;
+	PrintLogFile(&log_signal_file,"#SIGNAL CHLD: level set to %d\n",SIGCHLD_level);
+	break;
+
+      case SIGALRM:
+	inc_sig_handler(&SIGALRM_level,&SIGALRM_sec);
+	PrintLogFile(&log_signal_file,"#SIGNAL ALRM: level set to %d\n",SIGALRM_level);
+	break;
+
+      case SIGUSR1:
+	inc_sig_handler(&SIGUSR1_level,&SIGUSR1_sec);
+	PrintLogFile(&log_signal_file,"#SIGNAL USR1: level set to %d\n",SIGUSR1_level);
+	break;
+
+      case SIGUSR2:
+	inc_sig_handler(&SIGUSR2_level,&SIGUSR2_sec);
+	PrintLogFile(&log_signal_file,"#SIGNAL USR2: level set to %d\n",SIGUSR2_level);
+	break;
+
+      case SIGPIPE:
+	SIGPIPE_level++;
+	if (!had_sigpipe)
+	{
+	    PrintLogFile(&log_signal_file,"#SIGNAL SIGPIPE: %d\n",SIGPIPE_level);
+	    had_sigpipe = true;
+	}
+	if ( SIGPIPE_level >= 5 )
+	{
+	    PrintLogFile(&log_signal_file,"#SIGNAL SIGPIPE: TERMINATE IMMEDIATELY!\n");
+	    exit(0);
+	}
+	break;
+
+      default:
+	PrintLogFile(&log_signal_file,"#SIGNAL: %d\n",signum);
+    }
+    fflush(stderr);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void SetupSignalHandler ( int max_sigint_level, FILE *log_file )
+{
+    SIGINT_level_max = max_sigint_level;
+    if (log_file)
+    {
+	log_signal_file.log = log_file;
+	log_signal_file.flush = true;
+    }
+
+    static const int sigtab[] = { SIGTERM, SIGINT, SIGHUP, SIGALRM, SIGPIPE, -1 };
+    int i;
+    for ( i = 0; sigtab[i] >= 0; i++ )
+    {
+	struct sigaction sa;
+	memset(&sa,0,sizeof(sa));
+	sa.sa_handler = &sig_handler;
+	sigaction(sigtab[i],&sa,0);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int SleepNSec ( s_nsec_t nsec )
+{
+    if ( nsec > 0 )
+    {
+	struct timespec ts;
+	ts.tv_sec  = nsec / NSEC_PER_SEC;
+	ts.tv_nsec = nsec % NSEC_PER_SEC;
+	return nanosleep(&ts,0);
+    }
+    return 0;
 }
 
 //
@@ -661,7 +1005,7 @@ char * MemUpperS ( char * buf, size_t buf_size, mem_t src )
 ///////////////				PathCat*()		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-char * PathCatBufPP ( char * buf, size_t bufsize, ccp path1, ccp path2 )
+char * PathCatBufPP ( char * buf, ssize_t bufsize, ccp path1, ccp path2 )
 {
     // concatenate path + path; returns buf
 
@@ -692,12 +1036,12 @@ char * PathCatBufPP ( char * buf, size_t bufsize, ccp path1, ccp path2 )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-ccp PathCatPP ( char * buf, size_t bufsize, ccp path1, ccp path2 )
+ccp PathCatPP ( char * buf, ssize_t bufsize, ccp path1, ccp path2 )
 {
     // concatenate path + path; returns path1 | path2 | buf
 
     if ( !path1 || !*path1 )
-	return path2 ? path2 : "";
+	return path2 ? path2 : EmptyString;
 
     if ( !path2 || !*path2 )
 	return path1;
@@ -714,6 +1058,21 @@ ccp PathCatPP ( char * buf, size_t bufsize, ccp path1, ccp path2 )
 
 ///////////////////////////////////////////////////////////////////////////////
 
+ccp PathCatDirP ( char * buf, ssize_t bufsize, ccp path1, ccp path2 )
+{
+    // concatenate path + path; returns path1 | path2 | buf
+
+    if ( !path1 || !*path1 )
+	return path2 ? path2 : EmptyString;
+
+    if ( !path2 || !*path2 || !IsDirectory(path1,0) )
+	return path1;
+
+    return PathCatPP(buf,bufsize,path1,path2);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 ccp PathAllocPP ( ccp path1, ccp path2 )
 {
     char buf[PATH_MAX];
@@ -723,7 +1082,7 @@ ccp PathAllocPP ( ccp path1, ccp path2 )
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-char * PathCatBufPPE ( char * buf, size_t bufsize, ccp path1, ccp path2, ccp ext )
+char * PathCatBufPPE ( char * buf, ssize_t bufsize, ccp path1, ccp path2, ccp ext )
 {
     // concatenate path + path; returns (by definition) path1 | path2 | buf
 
@@ -763,7 +1122,7 @@ ccp PathAllocPPE ( ccp path1, ccp path2, ccp ext )
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-char * PathCatBufBP ( char *buf, size_t bufsize, ccp base, ccp path )
+char * PathCatBufBP ( char *buf, ssize_t bufsize, ccp base, ccp path )
 {
     // PathCatBP() is special: path can be part of buf
 
@@ -805,7 +1164,7 @@ char * PathCatBufBP ( char *buf, size_t bufsize, ccp base, ccp path )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-ccp PathCatBP ( char *buf, size_t bufsize, ccp base, ccp path )
+ccp PathCatBP ( char *buf, ssize_t bufsize, ccp base, ccp path )
 {
     // PathCatBP() is special: path can be part of buf
 
@@ -826,7 +1185,7 @@ ccp PathAllocBP ( ccp base, ccp path )
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-char * PathCatBufBPP ( char * buf, size_t bufsize, ccp base, ccp path1, ccp path2 )
+char * PathCatBufBPP ( char * buf, ssize_t bufsize, ccp base, ccp path1, ccp path2 )
 {
     ccp path = PathCatPP(buf,bufsize,path1,path2);
     return PathCatBufBP(buf,bufsize,base,path);
@@ -834,7 +1193,7 @@ char * PathCatBufBPP ( char * buf, size_t bufsize, ccp base, ccp path1, ccp path
 
 ///////////////////////////////////////////////////////////////////////////////
 
-ccp PathCatBPP ( char * buf, size_t bufsize, ccp base, ccp path1, ccp path2 )
+ccp PathCatBPP ( char * buf, ssize_t bufsize, ccp base, ccp path1, ccp path2 )
 {
     ccp path = PathCatPP(buf,bufsize,path1,path2);
     return PathCatBP(buf,bufsize,base,path);
@@ -851,7 +1210,7 @@ ccp PathAllocBPP ( ccp base, ccp path1, ccp path2 )
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-char * PathCatBufBPPE ( char * buf, size_t bufsize, ccp base, ccp path1, ccp path2, ccp ext )
+char * PathCatBufBPPE ( char * buf, ssize_t bufsize, ccp base, ccp path1, ccp path2, ccp ext )
 {
     ccp path = PathCatPPE(buf,bufsize,path1,path2,ext);
     return PathCatBufBP(buf,bufsize,base,path);
@@ -859,7 +1218,7 @@ char * PathCatBufBPPE ( char * buf, size_t bufsize, ccp base, ccp path1, ccp pat
 
 ///////////////////////////////////////////////////////////////////////////////
 
-ccp PathCatBPPE ( char * buf, size_t bufsize, ccp base, ccp path1, ccp path2, ccp ext )
+ccp PathCatBPPE ( char * buf, ssize_t bufsize, ccp base, ccp path1, ccp path2, ccp ext )
 {
     ccp path = PathCatPPE(buf,bufsize,path1,path2,ext);
     return PathCatBP(buf,bufsize,base,path);
@@ -954,7 +1313,7 @@ char * NewFileExtE ( char * buf, ccp buf_end, ccp path, ccp ext )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-char * NewFileExtS ( char * buf, size_t bufsize, ccp path, ccp ext )
+char * NewFileExtS ( char * buf, ssize_t bufsize, ccp path, ccp ext )
 {
     return NewFileExtE(buf,buf+bufsize,path,ext);
 }
@@ -1145,6 +1504,67 @@ uint CountEqual ( cvp m1, cvp m2, uint size )
 	if ( *p1++ != *p2++ )
 	    return  p1 - (u8*)m1 - 1;
     return p1 - (u8*)m1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+char * SkipEscapes ( ccp str )
+{
+    if (str)
+    {
+	while ( *str == '\e' )
+	{
+	    str++;
+	    if ( *str == '[' )
+		str++;
+	    while ( *str > 0 && *str < 0x40 )
+		str++;
+	    if (*str)
+		str++;
+	}
+    }
+    return (char*)str;
+}
+
+//-----------------------------------------------------------------------------
+
+char * SkipEscapesE ( ccp str, ccp end )
+{
+    if (str)
+    {
+	if (!end)
+	    return SkipEscapes(str);
+
+	while ( str < end && *str == '\e' )
+	{
+	    str++;
+	    if ( str < end && *str == '[' )
+		str++;
+	    while ( str < end && *str > 0 && *str < 0x40 )
+		str++;
+	    if ( str < end )
+		str++;
+	}
+    }
+    return (char*)str;
+}
+
+//-----------------------------------------------------------------------------
+
+char * SkipEscapesS ( ccp str, int size )
+{
+    return size < 0 ? SkipEscapes(str) : SkipEscapesE(str,str+strlen(str));
+}
+
+//-----------------------------------------------------------------------------
+
+mem_t SkipEscapesM ( mem_t mem )
+{
+    mem_t res;
+    res.ptr = SkipEscapesE(mem.ptr,mem.ptr+mem.len);
+    res.len = mem.ptr + mem.len - res.ptr;
+    return res;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1560,9 +1980,10 @@ char * PrintID
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			    circ buf			///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[CircBuf]]
 
-static char circ_buf[CIRC_BUF_SIZE];
-static char *circ_ptr = circ_buf;
+static __thread char circ_buf[CIRC_BUF_SIZE];
+static __thread char *circ_ptr = 0;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1582,6 +2003,8 @@ char * GetCircBuf
 				//  ==> ERROR0(ERR_OUT_OF_MEMORY)
 )
 {
+    if (!circ_ptr)
+	circ_ptr = circ_buf;
     DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
 
     buf_size = buf_size + 3 & ~3;
@@ -1710,6 +2133,8 @@ void ReleaseCircBuf
     uint    release_size	// number of bytes to give back from end
 )
 {
+    if (!circ_ptr)
+	circ_ptr = circ_buf;
     DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
 
     if ( end_buf == circ_ptr
@@ -1719,6 +2144,94 @@ void ReleaseCircBuf
 	circ_ptr -= release_size;
 	DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
     }
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			PrintMode_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void SetupPrintMode ( PrintMode_t * pm )
+{
+    DASSERT(pm);
+
+    //-- stdout
+
+    if (!pm->fout)
+    {
+	pm->fout = stdout;
+	pm->cout = colout;
+    }
+    if (!pm->cout)
+	pm->cout = GetColorSet0();
+
+
+    //-- stderr
+
+    //if (!pm->ferr)	pm->ferr	= stderr;
+    if (!pm->cerr)
+	pm->cerr = GetColorSet0();
+
+
+    //-- stdlog
+
+    if (pm->flog)
+    {
+	if (!pm->clog)
+	    pm->clog = GetColorSet0();
+    }
+    else if (pm->ferr)
+    {
+	pm->flog = pm->ferr;
+	pm->clog = pm->cerr;
+    }
+    else
+    {
+	pm->flog = pm->fout;
+	pm->clog = pm->cout;
+    }
+
+
+    //-- misc
+
+    if (!pm->prefix)	pm->prefix	= EmptyString;
+    if (!pm->eol)	pm->eol		=	"\n";
+
+    pm->indent = NormalizeIndent(pm->indent);
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			get line by list		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetLineByListHelper ( const int *list, ccp beg, ccp mid, ccp end, ccp line )
+{
+    DASSERT(list);
+    DASSERT(beg);
+    DASSERT(mid);
+    DASSERT(end);
+    DASSERT(line);
+
+    char buf[CIRC_BUF_MAX_ALLOC+20];
+    char *endbuf = buf + CIRC_BUF_MAX_ALLOC;
+    char *dest = buf;
+
+    for (;;)
+    {
+	int wd = *list++;
+	if ( wd < 0 )
+	    break;
+
+	dest = StringCopyE(dest,endbuf,beg);
+	beg = mid;
+	while ( wd-- > 0 )
+	    dest = StringCopyE(dest,endbuf,line);
+    }
+
+    dest = StringCopyE(dest,endbuf,end);
+    *dest++ = 0;
+    return dest <= endbuf ? CopyCircBuf(buf,dest-buf) : EmptyString;
 }
 
 //
@@ -2328,6 +2841,650 @@ int ScanSplitArg
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			PointerList_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void ResetPointerMgr ( PointerList_t *pl )
+{
+    if (pl)
+    {
+	FREE(pl->list);
+	InitializePointerMgr(pl,pl->grow);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void AddToPointerMgr ( PointerList_t *pl, const void *info )
+{
+    DASSERT(pl);
+    if (!info)
+	return;
+
+    // no duplicates!
+    for ( int i = 0; i < pl->used; i++ )
+	if ( pl->list[i] == info )
+	    return;
+
+    if ( pl->used == pl->size )
+    {
+	if ( pl->grow < 10 )
+	    pl->grow = 10;
+	pl->size += pl->size/2 + pl->grow;
+	pl->list = REALLOC ( pl->list, (pl->size+1) * sizeof(*pl->list) );
+    }
+    DASSERT( pl->used < pl->size );
+    void **dest = pl->list + pl->used++;
+    *dest++ = (void*)info;
+    *dest = 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void AddListToPointerMgr ( PointerList_t *pl, const void **list, int n_elem )
+{
+    if (list)
+    {
+	if ( n_elem < 0 )
+	    while (*list)
+		AddToPointerMgr(pl,*list++);
+	else
+	    while( --n_elem >= 0 )
+		AddToPointerMgr(pl,*list++);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ** DupPointerMgr ( PointerList_t *pl, bool reset )
+{
+    DASSERT(pl);
+    void **dest = MEMDUP( pl->list, (pl->used+1) * sizeof(*dest) );
+    if (reset)
+	ResetPointerMgr(pl);
+    return dest;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ** ReplacePointerMgr
+	( PointerList_t *pl, bool reset, const PointerList_t **old_list )
+{
+    FREE(old_list);
+    return DupPointerMgr(pl,reset);
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			ArgManager_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void ResetArgManager ( ArgManager_t *am )
+{
+    static char *null_list[] = {0};
+
+    if (am)
+    {
+	if (am->size)
+	{
+	    uint i;
+	    for ( i = 0; i < am->argc; i++ )
+		FreeString(am->argv[i]);
+	    if ( am->argv != null_list )
+		FREE(am->argv);
+	}
+
+	const typeof(am->force_case) force_case = am->force_case;
+	memset(am,0,sizeof(*am));
+	am->force_case = force_case;
+	am->argv = null_list;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void SetupArgManager
+	( ArgManager_t *am, LowerUpper_t force_case, int argc, char ** argv, bool clone )
+{
+    DASSERT(am);
+    memset(am,0,sizeof(*am));
+    am->force_case = force_case;
+    if (clone)
+	CloneArgManager(am,argc,argv);
+    else
+	AttachArgManager(am,argc,argv);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void AttachArgManager ( ArgManager_t *am, int argc, char ** argv )
+{
+    DASSERT(am);
+    ResetArgManager(am);
+    am->argc = argc;
+    am->argv = argv;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void CloneArgManager ( ArgManager_t *am, int argc, char ** argv )
+{
+    DASSERT(am);
+    AttachArgManager(am,argc,argv);
+    PrepareEditArgManager(am,0);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void CopyArgManager ( ArgManager_t *dest, const ArgManager_t *src )
+{
+    DASSERT(dest);
+    if (!src)
+	ResetArgManager(dest);
+    else if( dest != src )
+	AttachArgManager(dest,src->argc,src->argv);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void MoveArgManager ( ArgManager_t *dest, ArgManager_t *src )
+{
+    DASSERT(dest);
+    ResetArgManager(dest);
+    if (src)
+    {
+	dest->argv = src->argv;
+	dest->argc = src->argc;
+	dest->size = src->size;
+	memset(src,0,sizeof(*src));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void PrepareEditArgManager ( ArgManager_t *am, int needed_space )
+{
+    DASSERT(am);
+
+    uint new_size = am->argc;
+    if ( needed_space > 0 )
+	new_size += needed_space;
+    new_size = GetGoodAllocSize2(new_size+(new_size>>4)+10,sizeof(*am->argv));
+    PRINT("PrepareEditArgManager(,%d) n=%d, size: %d -> %d\n",
+		needed_space, am->argc, am->size, new_size );
+
+    if (am->size)
+	am->argv = REALLOC(am->argv,sizeof(*am->argv)*new_size);
+    else
+    {
+	char **old = am->argv;
+	am->argv = MALLOC(sizeof(*am->argv)*new_size);
+
+	uint i;
+	for ( i = 0; i < am->argc; i++ )
+	    am->argv[i] = old[i] ? STRDUP(old[i]) : 0;
+    }
+    am->size = new_size - 1;
+    DASSERT( am->argc <= am->size );
+    am->argv[am->argc] = 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint AppendArgManager ( ArgManager_t *am, ccp arg1, ccp arg2, bool move_arg )
+{
+    DASSERT(am);
+    PRINT("AppendArgManager(,%s,%s,%d)\n",arg1,arg2,move_arg);
+    return InsertArgManager(am,am->argc,arg1,arg2,move_arg);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static char ** insert_arg_manager
+	( ArgManager_t *am, char **dest, ccp p_arg, bool move_arg )
+{
+    DASSERT(am);
+    if (p_arg)
+    {
+	char *arg = (char*)p_arg;
+	if (!move_arg)
+	    arg = STRDUP(arg);
+
+	if ( am->force_case == LOUP_LOWER || am->force_case == LOUP_UPPER )
+	{
+	    char * end = arg + strlen(arg) + 1;
+	    if (am->force_case == LOUP_LOWER)
+		StringLowerE(arg,end,arg);
+	    else
+		StringUpperE(arg,end,arg);
+	}
+	*dest++ = arg;
+    }
+    return dest;
+}
+
+//-----------------------------------------------------------------------------
+
+uint InsertArgManager
+	( ArgManager_t *am, int pos, ccp arg1, ccp arg2, bool move_arg )
+{
+    DASSERT(am);
+    PRINT("InsertArgManager(,%d,%s,%s,%d)\n",pos,arg1,arg2,move_arg);
+
+    pos = CheckIndex1(am->argc,pos);
+    const int n = (arg1!=0) + (arg2!=0);
+    if (n)
+    {
+	PrepareEditArgManager(am,n);
+	DASSERT( pos>=0 && pos <= am->argc );
+	char **dest = am->argv + pos;
+	if ( pos < am->argc )
+	    memmove( dest+n, dest, (u8*)(am->argv+am->argc) - (u8*)dest );
+
+	dest = insert_arg_manager(am,dest,arg1,move_arg);
+	dest = insert_arg_manager(am,dest,arg2,move_arg);
+
+	am->argc += n;
+	am->argv[am->argc] = 0;
+    }
+    return pos+n;
+}
+
+//-----------------------------------------------------------------------------
+
+uint InsertListArgManager
+	( ArgManager_t *am, int pos, int argc, char ** argv, bool move_arg )
+{
+    DASSERT(am);
+
+    pos = CheckIndex1(am->argc,pos);
+    if ( argc > 0 )
+    {
+	PrepareEditArgManager(am,argc);
+	DASSERT( pos>=0 && pos <= am->argc );
+	char **dest = am->argv + pos;
+	if ( pos < am->argc )
+	    memmove( dest+argc, dest, (u8*)(am->argv+am->argc) - (u8*)dest );
+	pos += argc;
+	am->argc += argc;
+	am->argv[am->argc] = 0;
+
+	if ( move_arg && am->force_case == LOUP_AUTO )
+	    memcpy( dest, argv, argc*sizeof(*dest) );
+	else
+	    while ( argc-- > 0 ) 
+		dest = insert_arg_manager(am,dest,*argv++,move_arg);
+    }
+    return pos;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint ReplaceArgManager
+	( ArgManager_t *am, int pos, ccp arg1, ccp arg2, bool move_arg )
+{
+    PRINT("ReplaceArgManager(,%d,%s,%s,%d)\n",pos,arg1,arg2,move_arg);
+
+    pos = CheckIndex1(am->argc,pos);
+    const int n = (arg1!=0) + (arg2!=0);
+    if (n)
+    {
+	PrepareEditArgManager(am,n);
+	DASSERT( pos>=0 && pos <= am->argc );
+	char **dest = am->argv + pos;
+	if (arg1)
+	{
+	    if ( pos++ < am->argc )
+		FreeString(*dest);
+	    *dest++ = move_arg ? (char*)arg1 : STRDUP(arg1);
+	}
+	if (arg2)
+	{
+	    if ( pos++ < am->argc )
+		FreeString(*dest);
+	    *dest++ = move_arg ? (char*)arg2 : STRDUP(arg2);
+	}
+	if ( pos > am->argc )
+	{
+	    am->argc = pos;
+	    am->argv[am->argc] = 0;
+	}
+    }
+    return pos;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint RemoveArgManager ( ArgManager_t *am, int pos, int count )
+{
+    DASSERT(am);
+
+ #if HAVE_PRINT
+    const int oldpos = pos;
+ #endif
+    const int n = CheckIndexC(am->argc,&pos,count);
+    PRINT("RemoveArgManager(,%d,%d) : remove n=%d: %d..%d\n",
+		oldpos, count, n, pos, pos+n );
+
+    DASSERT( pos >= 0 && pos <= am->argc );
+    DASSERT( n >= 0 && pos+n <= am->argc );
+
+    if ( n > 0 )
+    {
+	PrepareEditArgManager(am,0);
+	char **dest = am->argv + pos;
+
+	uint i;
+	for ( i = 0; i <n; i++ )
+	    FreeString(dest[i]);
+	am->argc -= n;
+	memmove( dest, dest+n, (u8*)(am->argv+am->argc) - (u8*)dest );
+	am->argv[am->argc] = 0;
+    }
+    return pos;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint ScanSimpleArgManager ( ArgManager_t *am, ccp src )
+{
+    uint count = 0;
+    if (src)
+    {
+	for(;;)
+	{
+	    while ( *src == ' ' || *src == '\t' )
+		src++;
+	    if (!*src)
+		break;
+
+	    ccp start = src;
+	    while ( *src && *src != ' ' && *src != '\t' )
+		src++;
+
+	    ccp arg = MEMDUP(start,src-start);
+	    AppendArgManager(am,arg,0,true);
+	}
+    }
+    return count;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint ScanQuotedArgManager ( ArgManager_t *am, ccp src, bool is_utf8 )
+{
+    uint count = 0;
+    if (src)
+    {
+	char buf[10000], *bufend = buf + sizeof(buf) - 2;
+
+	for(;;)
+	{
+	    while (isspace(*src))
+		src++;
+	    if (!*src)
+		break;
+
+	    char *dest = buf;
+	    while ( dest < bufend )
+	    {
+		if ( *src == '\'' || *src == '\"' )
+		{
+		    uint scanned;
+		    dest += ScanEscapedString(dest,bufend-dest,src,-1,is_utf8,-1,&scanned);
+		    src += scanned;
+		}
+		else
+		{
+		    while ( dest < bufend && *src && !isspace(*src) && *src != '\'' && *src != '\"' )
+		    {
+			if ( *src == '\\' && src[1] )
+			    src++;
+			*dest++ = *src++;
+		    }
+		}
+		if ( !*src || isspace(*src) )
+		    break;
+	    }
+	    ccp arg = MEMDUP(buf,dest-buf);
+	    AppendArgManager(am,arg,0,true);
+	}
+    }
+    return count;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enumError ScanFileArgManager
+(
+    ArgManager_t	*am,		// valid arg-manager
+    int			pos,		// insert position, relative to end if <0
+    ccp			fname,		// filename to open
+    int			silent,		// 0: print all error messages
+					// 1: suppress file size warning
+					// 2: suppress all error messages
+    int			*n_added
+)
+{
+    if (n_added)
+	*n_added = 0;
+    pos = CheckIndex1(am->argc,pos);
+
+    u8 *data;
+    size_t size;
+    enumError err = LoadFileAlloc(fname,0,0,&data,&size,0,silent,0,0);
+
+    if (!err)
+    {
+	if (memchr(data,0,size))
+	{
+	    if ( silent < 2 )
+		ERROR0(ERR_WARNING,"Binary file ignored: %s\n",fname);
+	    err = ERR_WARNING;
+	}
+	else
+	{
+	    ArgManager_t temp = { .force_case = am->force_case };
+	    ScanQuotedArgManager(&temp,(ccp)data,true);
+	    uint newpos = InsertListArgManager(am,pos,temp.argc,temp.argv,true);
+	    if (n_added)
+		*n_added = newpos - pos;
+	    FREE(temp.argv);
+	}
+    }
+
+    FREE(data);
+    return err;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enumError ExpandAtArgManager
+(
+    ArgManager_t	*am,		// valid arg-manager
+    arg_expand_mode_t	expand_mode,	// objects to be replaced
+    int			recursion,	// maximum recursion depth
+    int			silent		// 0: print all error messages
+					// 1: suppress file size warning
+					// 2: suppress all error messages
+)
+{
+    if (!am)
+	return ERR_MISSING_PARAM;
+
+    expand_mode &= AMXM_ALL;
+    if (!expand_mode)
+	return ERR_OK;
+
+    enumError max_err = ERR_OK;
+
+    for ( int try = 0;; try++ )
+    {
+	bool dirty = false;
+
+	int pos = 0;
+	while ( pos < am->argc )
+	{
+	    ccp arg = am->argv[pos];
+	    if (arg)
+	    {
+		int n_rm = 0;
+		ccp fname = 0;
+		int len = strlen(arg);
+
+		if ( len >= 1 && *arg == '@' )
+		{
+		    if ( len > 1 && expand_mode & AMXM_P1 )
+		    {
+			n_rm = 1;
+			fname = arg+1;
+		    }
+		    else if ( len == 1 && expand_mode & AMXM_P2 && pos+1 < am->argc )
+		    {
+			n_rm = 2;
+			fname = am->argv[pos+1];
+		    }
+		}
+		else if ( len >= 2 && !memcmp(arg,"-@",2) )
+		{
+		    if ( len > 2 && expand_mode & AMXM_S1 )
+		    {
+			n_rm = 1;
+			fname = arg+2;
+		    }
+		    else if ( len == 2 && expand_mode & AMXM_S2 && pos+1 < am->argc )
+		    {
+			n_rm = 2;
+			fname = am->argv[pos+1];
+		    }
+		}
+		else if ( len >= 3 && !memcmp(arg,"--@",3) )
+		{
+		    if ( len > 3 && arg[3] == '=' && expand_mode & AMXM_L1 )
+		    {
+			n_rm = 1;
+			fname = arg+4;
+		    }
+		    else if ( len == 3 && expand_mode & AMXM_L2 && pos+1 < am->argc )
+		    {
+			n_rm = 2;
+			fname = am->argv[pos+1];
+		    }
+		}
+
+		if (n_rm)
+		{
+		    PRINT0("rm @%u %d, file=%s\n",pos,n_rm,fname);
+		    int n_added;
+		    enumError err = ScanFileArgManager(am,pos,fname,silent,&n_added);
+		    if ( max_err < err )
+			 max_err = err;
+		    if (n_added)
+		    {
+			pos += n_added;
+			dirty = true;
+		    }
+
+		    // remove after insert to keep fname valid!
+		    PRINT0("rm @%u %d\n",pos,n_rm);
+		    RemoveArgManager(am,pos,n_rm);
+		}
+		else
+		    pos++;
+
+	    } // if (arg)
+	} // while
+
+	if ( !dirty || try >= recursion )
+	    break;
+    }
+
+    return max_err;
+}    
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool CheckFilterArgManager ( const ArgManager_t *filter, ccp name )
+{
+    if ( !name || !*name )
+	return false;
+
+    if (!filter->argc)
+	return true;
+
+    char buf[200];
+    if ( filter->force_case == LOUP_LOWER )
+    {
+	StringLowerS(buf,sizeof(buf),name);
+	name = buf;
+    }
+    else if ( filter->force_case == LOUP_UPPER )
+    {
+	StringUpperS(buf,sizeof(buf),name);
+	name = buf;
+    }
+
+    bool fallback_status = true;
+    for ( int i = 0; i < filter->argc; i++ )
+    {
+	ccp arg = filter->argv[i];
+	const bool status = *arg != '/';
+	if (status)
+	    fallback_status = false;
+	else
+	    arg++;
+
+	const uint len = strlen(arg);
+	if ( *arg == '=' )
+	{
+	    if ( !strcmp(arg+1,name) )
+		return status;
+	}
+	else if ( *arg == '^' )
+	{
+	    if ( len > 1 && !strncmp(arg+1,name,len-1) )
+		return status;
+	}
+	else
+	    if ( len && strstr(name,arg) )
+		return status;
+    }
+
+    return fallback_status;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void DumpArgManager ( FILE *f, int indent, const ArgManager_t *am, ccp title )
+{
+    if ( !f || !am )
+	return;
+
+    indent = NormalizeIndent(indent);
+    if (title)
+	fprintf(f,"%*s" "ArgManager[%s]: N=%d",
+		indent,"", title, am->argc );
+    else
+	fprintf(f,"%*s" "ArgManager: N=%d", indent,"", am->argc );
+
+    if (am->size)
+	fprintf(f,"/%u\n",am->size);
+    else
+	fputc('\n',f);
+
+    if (am->argc)
+    {
+	char buf[10];
+	int fw = snprintf(buf,sizeof(buf),"%u",am->argc-1)+2;
+
+	uint i;
+	for ( i = 0; i < am->argc; i++ )
+	    fprintf(f,"%*s%*u: |%s|\n", indent,"", fw,i, am->argv[i] );
+    }
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct mem_t			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -2472,12 +3629,182 @@ mem_t MemCat3A ( const mem_t m1, const mem_t m2, const mem_t m3 )
     return res;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
+mem_t MemCatSep2A ( const mem_t sep, const mem_t m1, const mem_t m2 )
+{
+    const uint slen = sep.len >= 0 ? sep.len : strlen(sep.ptr);
+    if (!slen)
+	return MemCat2A(m1,m2);
+
+    const uint len1 = m1.len >= 0 ? m1.len : strlen(m1.ptr);
+    const uint len2 = m2.len >= 0 ? m2.len : strlen(m2.ptr);
+
+    char *dest;
+    mem_t res;
+    res.len = len1 + len2;
+    if ( len1 && len2 )
+	res.len += slen;
+
+    res.ptr = dest = MALLOC(res.len+1);
+    dest[res.len] = 0;
+
+    if (len1)
+    {
+	memcpy(dest,m1.ptr,len1);
+	dest += len1;
+    }
+
+    if (len2)
+    {
+	if (len1)
+	{
+	    memcpy(dest,sep.ptr,slen);
+	    dest += slen;
+	}
+
+	memcpy(dest,m2.ptr,len2);
+    }
+
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+
+mem_t MemCatSep3A ( const mem_t sep, const mem_t m1, const mem_t m2, const mem_t m3 )
+{
+    const uint slen = sep.len >= 0 ? sep.len : strlen(sep.ptr);
+    if (!slen)
+	return MemCat3A(m1,m2,m3);
+
+    const uint len1 = m1.len >= 0 ? m1.len : strlen(m1.ptr);
+    const uint len2 = m2.len >= 0 ? m2.len : strlen(m2.ptr);
+    const uint len3 = m3.len >= 0 ? m3.len : strlen(m3.ptr);
+
+    char *dest;
+    mem_t res;
+    res.len = len1 + len2 + len3
+		+ ( (len1>0) + (len2>0) + (len3>0) - 1 ) * slen;
+
+    res.ptr = dest = MALLOC(res.len+1);
+
+    if (len1)
+    {
+	memcpy(dest,m1.ptr,len1);
+	dest += len1;
+    }
+
+    if (len2)
+    {
+	if ( dest > res.ptr )
+	{
+	    memcpy(dest,sep.ptr,slen);
+	    dest += slen;
+	}
+
+	memcpy(dest,m2.ptr,len2);
+	dest += len2;
+    }
+
+    if (len3)
+    {
+	if ( dest > res.ptr )
+	{
+	    memcpy(dest,sep.ptr,slen);
+	    dest += slen;
+	}
+
+	memcpy(dest,m3.ptr,len3);
+	dest += len3;
+    }
+
+    *dest = 0;
+    ASSERT( dest == res.ptr + res.len );
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// UTF8 support
+
+mem_t MidMem8 ( const mem_t src, int begin, int count )
+{
+    if ( !src.ptr || !src.len )
+	return src;
+
+    ccp src_end = src.ptr + src.len;
+    const int u8len = ScanUTF8LengthE(src.ptr,src_end);
+    begin = CheckIndex1(u8len,begin);
+    if ( count < 0 )
+    {
+	count  = -count;
+	begin -= count;
+	if ( begin < 0 )
+	{
+	    count += begin;
+	    begin  = 0;
+	}
+    }
+
+    mem_t res;
+    res.ptr = SkipUTF8CharE(src.ptr,src_end,begin);
+    const int max = u8len - begin;
+    res.len = SkipUTF8CharE( res.ptr, src_end, count < max ? count : max ) - res.ptr;
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+mem_t ExtractMem8 ( const mem_t src, int begin, int end )
+{
+    if ( !src.ptr || !src.len )
+	return src;
+
+    ccp src_end = src.ptr + src.len;
+    const int u8len = ScanUTF8LengthE(src.ptr,src_end);
+    const int count = CheckIndex2(u8len,&begin,&end);
+
+    mem_t res;
+    res.ptr = SkipUTF8CharE( src.ptr, src_end, begin );
+    res.len = SkipUTF8CharE( res.ptr, src_end, count ) - res.ptr;
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+mem_t ExtractEndMem8 ( const mem_t src, int begin, int end )
+{
+    if ( !src.ptr || !src.len )
+	return src;
+
+    ccp src_end = src.ptr + src.len;
+    const int u8len = ScanUTF8LengthE(src.ptr,src_end);
+    const int count = CheckIndex2End(u8len,&begin,&end);
+
+    mem_t res;
+    res.ptr = SkipUTF8CharE( src.ptr, src_end, begin );
+    res.len = SkipUTF8CharE( res.ptr, src_end, count ) - res.ptr;
+    return res;
+}
+
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct exmem_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
 
 exmem_t EmptyExMem = {{EmptyString,0},0,false,false,false,false};
 exmem_t NullExMem  = {{0,0},0,false,false,false,false};
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ResetExMem ( const exmem_t *em )
+{
+    if (em)
+    {
+	if (em->is_alloced)
+	    FreeString(em->data.ptr);
+	memset((exmem_t*)em,0,sizeof(*em));
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -2486,8 +3813,13 @@ void FreeExMem ( const exmem_t *em )
     if (em)
     {
 	if (em->is_alloced)
-	    FreeString(em->data.ptr);
-	memset((exmem_t*)em,0,sizeof(*em));
+	{
+	    exmem_t *em2 = (exmem_t*)em;
+	    FreeString(em2->data.ptr);
+	    em2->data.ptr = 0;
+	    em2->data.len = 0;
+	    em2->is_alloced = false;
+	}
     }
 }
 
@@ -2589,7 +3921,41 @@ void AssignExMem ( exmem_t *dest, const exmem_t *source, CopyMode_t copy_mode )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-exmem_t CopyExMemS ( ccp string, int slen, CopyMode_t copy_mode )
+void AssignExMemS ( exmem_t *dest, cvp source, int slen, CopyMode_t copy_mode )
+{
+    if (dest)
+    {
+	ccp free_str = dest->is_alloced ? dest->data.ptr : 0;
+	const bool dest_key_alloced = dest->is_key_alloced;
+	memset(dest,0,sizeof(*dest));
+	dest->is_key_alloced = dest_key_alloced;
+
+	if (source)
+	{
+	    dest->data.len = slen < 0 ? strlen(source) : slen;
+	    switch (copy_mode)
+	    {
+		case CPM_COPY:
+		    dest->data.ptr	= MEMDUP(source,dest->data.len);
+		    dest->is_alloced	= true;
+		    break;
+
+		case CPM_MOVE:
+		    dest->is_alloced	= true;
+		    // fall through
+		case CPM_LINK:
+		    dest->data.ptr	= source;
+		    break;
+	    }
+	}
+	FreeString(free_str);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#if 0 // [[obsolete]] since 2021-11
+exmem_t CopyExMemS ( cvp string, int slen, CopyMode_t copy_mode )
 {
     exmem_t em = {{0}};
 
@@ -2615,6 +3981,7 @@ exmem_t CopyExMemS ( ccp string, int slen, CopyMode_t copy_mode )
 
     return  em;
 }
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -2635,6 +4002,155 @@ ccp PrintExMem ( const exmem_t * em ) // print to circ-buf
 	em->is_original		? 'O' : '-',
 	em->attrib,
 	len, em->data.len, ebuf );
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+uint GetMemSrcN ( const mem_src_t *src )
+{
+    if (!src)
+	return 0;
+
+    if ( src->n_src >= 0 )
+	return src->n_src;
+
+    const mem_t *ptr = src->src;
+    while ( ptr->ptr )
+	ptr++;
+    const uint n_src = ptr - src->src;
+
+    if ( src->allow_write )
+	*(uint*)&src->n_src = n_src;
+    return n_src;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint GetMemSrcLen ( mem_t sep, const mem_src_t *src )
+{
+    if ( !src || src->n_src <= 0 )
+	return 0;
+
+    int n_valid_src = 0, sum_len = 0;
+    int n_src = GetMemSrcN(src);
+    for ( const mem_t *ptr = src->src; n_src > 0; ptr++, n_src-- )
+    {
+	int slen = ptr->len;
+	if ( slen < 0 )
+	{
+	    slen = ptr->ptr ? strlen(ptr->ptr) : 0;
+	    if (src->allow_write)
+		*(int*)&ptr->len = slen;
+	}
+	if ( slen > 0 )
+	{
+	    n_valid_src++;
+	    sum_len += slen;
+	}
+    }
+
+    if ( n_valid_src > 1 )
+	sum_len += (n_valid_src-1)*sep.len;
+    return sum_len;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_t GetExmemDestBuf ( const exmem_dest_t * dest, uint len )
+{
+    exmem_t res = { .data.len = len };
+    len++; // for additional 0-term 
+
+    if (!dest)
+	goto malloc;
+    else if ( dest->buf && len <= dest->buf_size )
+    {
+	res.data.ptr = dest->buf;
+    }
+    else if ( dest->try_circ && len <= CIRC_BUF_MAX_ALLOC )
+    {
+	res.is_circ_buf = true;
+	res.data.ptr = GetCircBuf(len);
+    }
+    else
+    {
+     malloc:;
+	res.is_alloced = true;
+	res.data.ptr = MALLOC(len);
+    }
+
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_t ExMemCat
+(
+    exmem_dest_t	*dest,	// kind of destination, if NULL then MALLOC()
+    mem_t		sep,	// insert separators between sources with len>0
+    const mem_src_t	*src	// sources. NULL allowed
+)
+{
+    const uint total_size = GetMemSrcLen(sep,src);
+    exmem_t res = GetExmemDestBuf(dest,total_size);
+    char *bufdest = (char*)res.data.ptr; 
+
+    int n_src = GetMemSrcN(src);
+    for ( const mem_t *ptr = src->src; n_src > 0; ptr++, n_src-- )
+    {
+	int slen = ptr->len;
+	if ( slen < 0 )
+	    slen = ptr->ptr ? strlen(ptr->ptr) : 0;
+	if ( slen > 0 )
+	{
+	    if ( sep.len && bufdest > res.data.ptr )
+	    {
+		memcpy(bufdest,sep.ptr,sep.len);
+		bufdest += sep.len;
+	    }
+
+	    memcpy(bufdest,ptr->ptr,slen);
+	    bufdest += slen;
+	    ASSERT( bufdest <= res.data.ptr + res.data.len );
+	}
+    }
+    ASSERT( bufdest == res.data.ptr + res.data.len );
+    *bufdest = 0;
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_t ExMemCat2
+(
+    exmem_dest_t	*dest,	// kind of destination, if NULL then MALLOC()
+    mem_t		sep,	// insert separators between sources with len>0
+    mem_t		src1,	// first source
+    mem_t		src2	// second source
+)
+{
+    mem_t list[] = { src1, src2 };
+    mem_src_t src = { .src = list, .n_src = 2, true };
+    return ExMemCat(dest,sep,&src);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_t ExMemCat3
+(
+    exmem_dest_t	*dest,	// kind of destination, if NULL then MALLOC()
+    mem_t		sep,	// insert separators between sources with len>0
+    mem_t		src1,	// first source
+    mem_t		src2,	// second source
+    mem_t		src3	// third source
+)
+{
+    mem_t list[] = { src1, src2, src3 };
+    mem_src_t src = { .src = list, .n_src = 3, true };
+    return ExMemCat(dest,sep,&src);
 }
 
 //
@@ -3192,7 +4708,6 @@ void * MemDupMemPool ( MemPool_t *mp, cvp source, uint size )
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			    CircBuf_t			///////////////
 ///////////////////////////////////////////////////////////////////////////////
-// [[CircBuf_t]]
 
 void InitializeCircBuf ( CircBuf_t *cb, uint size )
 {
@@ -3369,6 +4884,8 @@ void * CopyData
 )
 {
     DASSERT( data || !size );
+    DASSERT( mode == CPM_COPY || mode == CPM_MOVE || mode == CPM_LINK );
+
     if ( !data || !size )
     {
 	if (res_alloced)
@@ -3379,21 +4896,33 @@ void * CopyData
     if (res_alloced)
 	*res_alloced = mode != CPM_LINK;
 
-    return mode == CPM_MOVE || mode == CPM_LINK
-		? (void*)data
-		: MEMDUP(data,size);
+    return mode == CPM_COPY ? MEMDUP(data,size) : (void*)data;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void FreeData
+char * CopyString
 (
-    const void		*data,		// data to free
-    CopyMode_t		mode		// copy mode
+    ccp			string,		// string to copy/move/link
+    CopyMode_t		mode,		// copy mode
+    bool		*res_alloced	// not NULL:
+					//   store true, if data must be freed
+					//   otherwise store false
 )
 {
-    if ( mode != CPM_LINK && data != EmptyString )
-	FREE((void*)data);
+    DASSERT( mode == CPM_COPY || mode == CPM_MOVE || mode == CPM_LINK );
+
+    if ( !string || !*string )
+    {
+	if (res_alloced)
+	    *res_alloced = false;
+	return string ? (char*)EmptyString : 0;
+    }
+
+    if (res_alloced)
+	*res_alloced = mode != CPM_LINK;
+
+    return mode == CPM_COPY ? STRDUP(string) : (char*)string;
 }
 
 //
@@ -4056,6 +5585,35 @@ uint SplitByTextMemList
 ///////////////			 MatchPattern()			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+bool HaveWildcards ( mem_t str )
+{
+    if (!str.ptr)
+	return false;
+    if ( str.len < 0 )
+	str.len = strlen(str.ptr);
+
+    for ( ccp w = PATTERN_WILDCARDS; *w; w++ )
+	if (memchr(str.ptr,*w,str.len))
+	    return true;
+    return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * FindFirstWildcard ( mem_t str )
+{
+    if (!str.len)
+	return 0;
+
+    ccp end = str.ptr + str.len; 
+    for ( ccp ptr = str.ptr; ptr < end; ptr++ )
+	if (strchr(PATTERN_WILDCARDS,*ptr))
+	    return (char*)ptr;
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 static ccp AnalyseBrackets
 (
     ccp		pattern,
@@ -4186,7 +5744,7 @@ static bool MatchPatternHelper
 			    return true;
 		return false;
 
-	    case ' ':
+	    case '\t':
 		if ( *text < 1 || * text > ' ' )
 		    return false;
 		text++;
@@ -4420,8 +5978,8 @@ char * MatchRuleLine
     // returns a pointer to the first non scanned char
 
     int		*status,	// not NULL: return match status here
-				//   -2: no prefix found  (no ruile found)
-				//   -1: empty line (no ruile found)
+				//   -2: no prefix found  (no rule found)
+				//   -1: empty line (no rule found)
 				//    0: rule found, but don't match
 				//    1: rule found and match
     ccp		src,		// source line, scanned until CONTROL
@@ -4848,6 +6406,73 @@ uint CollectAmbiguousKeywords
 
 ///////////////////////////////////////////////////////////////////////////////
 
+ccp GetKeywordError
+(
+    const KeywordTab_t	* key_tab,	// NULL or pointer to command table
+    ccp			key_arg,	// analyzed command
+    int			key_stat,	// status of ScanKeyword()
+    ccp			object		// NULL or object for error messages
+					//	default= 'command'
+)
+{
+    DASSERT(key_arg);
+
+    if ( !object || !*object )
+	object = "command";
+
+    if ( key_stat <= 0 )
+	return PrintCircBuf("Unknown %s: %s",object,key_arg);
+
+    char buf[1000], *dest = buf;
+    if (key_tab)
+    {
+	int n = 0;
+	char *buf_end = buf + sizeof(buf) - 2;
+	const int arg_len = strlen(key_arg);
+	const KeywordTab_t *ct;
+	int last_id = -1;
+
+	for ( ct = key_tab; ct->name1 && dest < buf_end; ct++ )
+	{
+	    if ( ct->id != last_id )
+	    {
+		ccp ok = 0;
+		if (!strncasecmp(key_arg,ct->name1,arg_len))
+		    ok = ct->name1;
+		else if ( ct->name2 && !strncasecmp(key_arg,ct->name2,arg_len))
+		    ok = ct->name2;
+		if (ok)
+		{
+		    if (!n++)
+		    {
+			*dest++ = ' ';
+			*dest++ = '[';
+		    }
+		    else if ( n > 5 )
+		    {
+			dest = StringCopyE(dest,buf_end,",...");
+			break;
+		    }
+		    else
+			*dest++ = ',';
+		    dest = StringCopyE(dest,buf_end,ok);
+		    last_id = ct->id;
+		}
+	    }
+	}
+	if ( dest > buf+1 )
+	    *dest++ = ']';
+	else
+	    dest = buf;
+    }
+    *dest = 0;
+
+    return PrintCircBuf("%c%s abbreviation is ambiguous: %s%s",
+		toupper((int)*object), object+1, key_arg, buf );
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 enumError PrintKeywordError
 (
     const KeywordTab_t	* key_tab,	// NULL or pointer to command table
@@ -4871,7 +6496,7 @@ enumError PrintKeywordError
     if (key_tab)
     {
 	int n = 0;
-	ccp buf_end = buf + sizeof(buf) - 2;
+	char *buf_end = buf + sizeof(buf) - 2;
 	const int arg_len = strlen(key_arg);
 	const KeywordTab_t *ct;
 	int last_id = -1;
@@ -5023,10 +6648,10 @@ int ScanKeywordOffOn
 const KeywordTab_t KeyTab_OFF_AUTO_ON[] =
 {
   { OFFON_OFF,		"OFF",		"-1",	0 },
-  { OFFON_OFF,		"DISABLED",	0,	0 },
+  { OFFON_OFF,		"DISABLED",	"NO",	0 },
   { OFFON_AUTO,		"AUTO",		"0",	0 },
   { OFFON_ON,		"ON",		"1",	0 },
-  { OFFON_ON,		"ENABLED",	0,	0 },
+  { OFFON_ON,		"ENABLED",	"YES",	0 },
   { OFFON_FORCE,	"FORCE",	"2",	0 },
   { 0,0,0,0 }
 };
@@ -5712,7 +7337,7 @@ void AppendUniqueStringField ( StringField_t * sf, ccp key, bool move_key )
 	return;
 
     ccp * src = sf->field;
-    ccp * end = sf->field + sf->used;
+    ccp * end = src + sf->used;
     while ( src < end )
 	if (!strcmp(*src++,key))
 	{
@@ -6269,6 +7894,51 @@ uint FindParamFieldHelper ( const ParamField_t * pf, bool * p_found, ccp key )
     return beg;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetParamFieldStr ( ParamField_t *pf, uint mark, ccp key, ccp def )
+{
+    DASSERT(pf);
+    DASSERT(key);
+
+    ParamFieldItem_t *it = FindParamField(pf,key);
+    if ( it && it->data )
+    {
+	it->num |= mark;
+	return (ccp)it->data;
+    }
+    return def;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int GetParamFieldInt ( ParamField_t *pf, uint mark, ccp key, int def )
+{
+    DASSERT(pf);
+    DASSERT(key);
+
+    ParamFieldItem_t *it = FindParamField(pf,key);
+    if ( it && it->data )
+    {
+	it->num |= mark;
+	char *end;
+	const int num = str2l((ccp)it->data,&end,10);
+	if (!*end)
+	    return num;
+    }
+    return def;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int GetParamFieldIntMM
+	( ParamField_t *pf, uint mark, ccp key, int def, int min, int max )
+{
+    const int num = GetParamFieldInt(pf,mark,key,def);
+    return num >= min && num <= max ? num : def;
+}
+
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			  exmem_list_t			///////////////
@@ -6574,16 +8244,42 @@ exmem_key_t * AppendEML ( exmem_list_t * eml, ccp key, CopyMode_t cm_key,
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool RemoveEML ( exmem_list_t * eml, ccp key )
+bool RemoveByIndexEML ( exmem_list_t * eml, int index )
+{
+    if ( index < 0 )
+	index += eml->used;
+    if ( index >= 0 && index < eml->used )
+    {
+	DASSERT( eml->used > 0 );
+	eml->used--;
+	exmem_key_t * dest = eml->list + index;
+	if (dest->data.is_key_alloced)
+	    FreeString(dest->key);
+	FreeExMem(&dest->data);
+	if (eml->used)
+	    memmove(dest,dest+1,(eml->used-index)*sizeof(*dest));
+	else
+	    eml->is_unsorted = false;
+	return true;
+    }
+    return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool RemoveByKeyEML ( exmem_list_t * eml, ccp key )
 {
     bool found;
-    uint idx = FindHelperEML(eml,key,&found);
+    const uint index = FindHelperEML(eml,key,&found);
+ #if 1
+    return found && RemoveByIndexEML(eml,index);
+ #else // [[obsolete]] 2021-11
     if (found)
     {
 	DASSERT(eml->used);
 	eml->used--;
-	DASSERT( idx <= eml->used );
-	exmem_key_t * dest = eml->list + idx;
+	DASSERT( index <= eml->used );
+	exmem_key_t * dest = eml->list + index;
 	if (dest->data.is_key_alloced)
 	    FreeString(dest->key);
 	FreeExMem(&dest->data);
@@ -6593,6 +8289,7 @@ bool RemoveEML ( exmem_list_t * eml, ccp key )
 	    eml->is_unsorted = false;
     }
     return found;
+ #endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -6830,6 +8527,560 @@ void AddStandardSymbolsEML ( exmem_list_t * eml, bool overwrite )
     func(eml,"programfiles",CPM_LINK,&temp,CPM_COPY);
     FreeExMem(&temp);
  #endif
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			MultiColumn			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void ResetMultiColumn ( MultiColumn_t *mc )
+{
+    if (mc)
+    {
+	ResetEML(&mc->list);
+	memset(mc,0,sizeof(*mc));
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_key_t * PutLineMC
+	( MultiColumn_t *mc, uint opt, ccp key, ccp value, CopyMode_t cm_value )
+{
+    DASSERT(mc);
+    DASSERT(key);
+    DASSERT(value);
+
+    exmem_t data = ExMemByString(value);
+    exmem_key_t *res = AppendEML( &mc->list, key, CPM_LINK, &data, cm_value );
+    res->data.attrib = opt;
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+exmem_key_t * PrintLineMC
+	( MultiColumn_t *mc, uint opt, ccp key, ccp format, ... )
+{
+    char buf[1000];
+    va_list arg;
+    va_start(arg,format);
+    vsnprintf(buf,sizeof(buf),format,arg);
+    va_end(arg);
+    return PutLineMC(mc,opt,key,buf,CPM_COPY);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// [[mc_len_t]]
+
+typedef struct mc_len_t
+{
+    int key;	// key length
+    int val;	// val length
+}
+mc_len_t;
+
+//-----------------------------------------------------------------------------
+// [[mc_param_t]]
+
+#define MULTI_COLUMN_MAX_COLS 100
+
+typedef struct mc_param_t
+{
+    FILE	*f;		// output file
+    const ColorSet_t
+		*colset;	// color set for the frame
+    int		debug;		// debug level: 0..2
+
+    int		frame_mode;	// 0:ASCII, 1:single line, 2:double line
+    ccp		prefix;		// line prefix
+    int		prefix_fw;	// field width of 'prefix'
+    int		indent;		// indention excluding prefix
+    ccp		sep;		// separator for frame_mode 0 and 1
+    int		sep_fw;		// field width of 'sep'
+    ccp		eol;		// end-of-line string
+    int		fw;		// total field width
+
+    ccp		head_key;	// header string for key column
+    int		head_key_fw;	// field width of 'head_key'
+    ccp		head_val;	// header string for value column
+    int		head_val_fw;	// field width of 'head_val'
+
+    int		row_size;	// additional size for a row
+    int		col_size;	// additional size for a column
+
+    int		n_rows;		// number of rows
+    int		n_cols;		// number of columns
+
+    mc_len_t	*len_list;	// list of estimatest lengths
+    mc_len_t	fw_col[MULTI_COLUMN_MAX_COLS];
+				// field width for each column
+}
+mc_param_t;
+
+//-----------------------------------------------------------------------------
+
+static void mc_print_sep ( const mc_param_t *p )
+{
+    fprintf(p->f,"%s%*s",p->prefix,p->indent,"");
+
+    const mc_len_t *fw = p->fw_col;
+    for ( int col = 0; col < p->n_cols; col++, fw++ )
+    {
+	if (col)
+	    fputs("-+-",p->f);
+	fprintf(p->f,"%.*s",fw->key+fw->val+p->sep_fw,Minus300);
+    }
+    fputs(p->eol,p->f);
+}
+
+//-----------------------------------------------------------------------------
+
+static void mc_print_line1 ( const mc_param_t *p, ccp template )
+{
+    fprintf(p->f,"%s%*s%s%.3s",
+		p->prefix, p->indent,"",
+		p->colset->heading, template );
+
+    const mc_len_t *fw = p->fw_col;
+    for ( int col = 0; col < p->n_cols; col++, fw++ )
+    {
+	if (col)
+	    fprintf(p->f,"%.3s",template+3);
+	fprintf(p->f,"%.*s", 3*(fw->key+fw->val+p->sep_fw+2), ThinLine300_3 );
+    }
+
+    fprintf(p->f,"%.3s%s%s",template+6,p->colset->reset,p->eol);
+}
+
+//-----------------------------------------------------------------------------
+
+static void mc_print_line2 ( const mc_param_t *p, ccp template )
+{
+    fprintf(p->f,"%s%*s%s%.3s",
+		p->prefix, p->indent,"",
+		p->colset->heading, template );
+
+    const mc_len_t *fw = p->fw_col;
+    for ( int col = 0; col < p->n_cols; col++, fw++ )
+    {
+	if (col)
+	    fprintf(p->f,"%.3s",template+6);
+	fprintf(p->f,"%.*s%.3s%.*s",
+		3*(fw->key+2), DoubleLine300_3,
+		template+3,
+		3*(fw->val+2), DoubleLine300_3 );
+    }
+
+    fprintf(p->f,"%.3s%s%s",template+9,p->colset->reset,p->eol);
+}
+
+//-----------------------------------------------------------------------------
+
+int PrintMultiColumn ( const MultiColumn_t *mc )
+{
+    const u_usec_t start_time = GetTimerUSec();
+    if ( !mc || !mc->list.used )
+	return -1;
+
+
+    //--- setup
+
+    mc_param_t p = {0};
+    p.f		= mc->f ? mc->f : stdout;
+    p.colset	= mc->colset ? mc->colset : GetColorSet0();
+    p.debug	= mc->debug;
+    p.indent	= NormalizeIndent(mc->indent);
+
+    p.prefix = mc->prefix;
+    if (p.prefix)
+	p.prefix_fw = ScanEUTF8Length(p.prefix);
+    else
+    {
+	p.prefix = EmptyString;
+	p.prefix_fw = 0;
+    }
+
+    p.sep	= mc->sep ? mc->sep : " ";
+    p.sep_fw	= ScanEUTF8Length(p.sep);
+    p.eol	= mc->eol ? mc->eol : "\n";
+    p.fw	= !mc->fw ? 79 : mc->fw > 10 ? mc->fw : 10;
+
+    if ( mc->print_header )
+    {
+	p.head_key = mc->head_key ? mc->head_key : "Name";
+	p.head_key_fw = strlene8(p.head_key);
+
+	p.head_val = mc->head_val ? mc->head_val : "Value";
+	p.head_val_fw = strlene8(p.head_val);
+    }
+    else
+    {
+	p.head_key = p.head_val = EmptyString;
+	// p.head_key_fw = p.head_val_fw = 0; // initial value
+    }
+
+    switch (mc->frame_mode)
+    {
+     case 0:
+	p.frame_mode	=  0;
+	p.row_size	= -3;
+	p.col_size	=  3 + p.sep_fw;
+	break;
+
+     case 1:
+	p.frame_mode	= 1;
+	p.row_size	= 1;
+	p.col_size	= 3 + p.sep_fw;
+	break;
+
+     default:
+	p.frame_mode	= 2;
+	p.row_size	= 1;
+	p.col_size	= 6;
+	break;
+    }
+
+    if ( p.debug > 1 )
+	fprintf(p.f,
+		"#> debug=%d, pre=%s, indent=%d, eol=%s, fw=%d,"
+		" print[Fhf]=%d%d%d, min_rows=%d, max_cols=%d%s",
+		p.debug, QuoteStringS(p.prefix,0,CHMD__MODERN),
+		p.indent, QuoteStringS(p.eol,0,CHMD__MODERN), p.fw,
+		p.frame_mode, mc->print_header, mc->print_footer,
+		mc->min_rows, mc->max_cols, p.eol );
+
+
+    //--- find min width
+
+    p.len_list = MALLOC( mc->list.used * sizeof(*p.len_list) );
+    mc_len_t *len_ptr = p.len_list;
+
+    int min_fw = INT_MAX;
+    const exmem_key_t *list_end = mc->list.list + mc->list.used;
+    for ( const exmem_key_t *ptr = mc->list.list; ptr < list_end; ptr++ )
+    {
+	len_ptr->key = strlene8(ptr->key);
+	len_ptr->val = strlene8(ptr->data.data.ptr);
+	const int len = len_ptr->key + len_ptr->val;
+	if ( min_fw > len )
+	     min_fw = len;
+	len_ptr++;
+    }
+    min_fw += p.col_size;
+
+    const int avail_chars = p.fw - p.prefix_fw - p.indent - p.row_size;
+    int max_cols = ( avail_chars + p.col_size - 1 ) / min_fw;
+    if ( max_cols > MULTI_COLUMN_MAX_COLS )
+	 max_cols = MULTI_COLUMN_MAX_COLS;
+
+    const int min_rows = mc->min_rows > 1 ? mc->min_rows : 1;
+    const int temp = ( mc->list.used + min_rows - 1 ) / min_rows + 1;
+    if ( temp > 0 && max_cols > temp )
+	max_cols = temp;
+
+    if ( p.debug > 1 )
+	fprintf(p.f,
+		"#> src-lines=%d, min-fw=%d, min-rows=%d, max-cols=%d/%d%s",
+		mc->list.used, min_fw,
+		min_rows, max_cols, MULTI_COLUMN_MAX_COLS, p.eol );
+
+
+    //--- evaluate number of columns
+
+    for ( p.n_cols = max_cols; p.n_cols > 0; p.n_cols-- )
+    {
+	memset(p.fw_col,0,sizeof(p.fw_col));
+	mc_len_t len = { p.head_key_fw, p.head_val_fw };
+
+	p.n_rows = ( mc->list.used - 1 ) / p.n_cols + 1;
+	p.n_cols = ( mc->list.used - 1 ) / p.n_rows + 1;
+	if ( p.debug > 1 )
+	    fprintf(p.f, "#> … try %2u columns and %3u rows, %3u cells total%s",
+			p.n_cols, p.n_rows, p.n_cols*p.n_rows, p.eol );
+
+	int idx, row, col, total_fw = 0;
+	len_ptr = p.len_list;
+	for ( idx = row = col = 0; idx < mc->list.used; idx++, len_ptr++ )
+	{
+	    if ( len.key < len_ptr->key )
+		 len.key = len_ptr->key;
+	    if ( len.val < len_ptr->val )
+		 len.val = len_ptr->val;
+
+	    if ( ++row >= p.n_rows )
+	    {
+		total_fw += len.key + len.val + p.col_size;
+		if ( total_fw > avail_chars )
+		    break;
+		p.fw_col[col] = len;
+
+		len.key = p.head_key_fw;
+		len.val = p.head_val_fw;
+		row = 0;
+		col++;
+	    }
+	}
+	if ( col < p.n_cols )
+	{
+	    p.fw_col[col] = len;
+	    total_fw += len.key + len.val + p.col_size;
+	}
+	if ( total_fw <= avail_chars )
+	    break;
+    }
+
+    if ( p.n_cols < 1 )
+    {
+	p.n_rows = mc->list.used;
+	p.n_cols = 1;
+    }
+
+    if ( p.debug > 1 )
+    {
+	fprintf(p.f,"#> cols=%d, rows=%d, fw", p.n_cols, p.n_rows );
+	int total = 0;
+	const mc_len_t *fw = p.fw_col;
+	for ( int col = 0; col < p.n_cols; col++, fw++ )
+	{
+	    fprintf( p.f, "%c%u+%u", col ? ',' : '=', fw->key, fw->val );
+	    total += fw->key + fw->val + p.col_size;
+	}
+	fprintf(p.f," = %d/%d%s",total,avail_chars,p.eol);
+    }
+
+    //--- print columns
+
+    const u_usec_t output_time = GetTimerUSec();
+
+    uint out_lines = p.n_rows;
+    //----------------------
+    if ( p.frame_mode >= 2 )
+    //----------------------
+    {
+	mc_print_line2(&p,"╔╤╦╗");
+	out_lines++;
+
+	if (mc->print_header)
+	{
+	    fprintf(p.f,"%s%*s%s║%s",p.prefix,p.indent,"",p.colset->heading,p.colset->reset);
+	    const mc_len_t *fw = p.fw_col;
+	    for ( int col = 0; col < p.n_cols; col++, fw++ )
+		 fprintf(p.f," %s %s│%s %s %s║%s",
+				AlignEUTF8ToCircBuf(p.head_key,-fw->key,fw->key),
+				p.colset->heading, p.colset->reset,
+				AlignEUTF8ToCircBuf(p.head_val,-fw->val,fw->val),
+				p.colset->heading, p.colset->reset );
+	    fputs(p.eol,p.f);
+
+	    mc_print_line2(&p,"╠╪╬╣");
+	    out_lines += 2;
+	}
+
+	for ( int row = 0; row < p.n_rows; row++ )
+	{
+	    fprintf(p.f,"%s%*s%s║%s",p.prefix,p.indent,"",p.colset->heading,p.colset->reset);
+	    const exmem_key_t *ptr = mc->list.list + row;
+	    const mc_len_t *fw = p.fw_col;
+	    for ( int col = 0; col < p.n_cols; col++, ptr += p.n_rows, fw++ )
+	    {
+		if ( ptr < list_end )
+		{
+		    fprintf(p.f," %s %s│%s ",
+				AlignEUTF8ToCircBuf(ptr->key,-fw->key,fw->key),
+				p.colset->heading, p.colset->reset );
+
+		    if ( ptr->data.attrib > 1 )
+		    {
+			const int fw_attrib = ptr->data.attrib < fw->val ? ptr->data.attrib : fw->val;
+			const int fw_val = p.len_list[ptr-mc->list.list].val;
+			if ( fw_attrib <= fw_val )
+			    goto std2;
+			fprintf(p.f,"%s%*s %s║%s",
+				AlignEUTF8ToCircBuf(ptr->data.data.ptr,fw_attrib,fw_attrib),
+				fw_attrib - fw->val, "",
+				p.colset->heading, p.colset->reset );
+		    }
+		    else
+		    {
+		     std2:;
+			const int fw_val = ptr->data.attrib ? -fw->val : fw->val;
+			fprintf(p.f,"%s %s║%s",
+				AlignEUTF8ToCircBuf(ptr->data.data.ptr,fw_val,fw->val),
+				p.colset->heading, p.colset->reset );
+		    }
+		}
+		else
+		    fprintf(p.f," %*s %s│%s %*s %s║%s",
+				fw->key, "", p.colset->heading, p.colset->reset,
+				fw->val, "", p.colset->heading, p.colset->reset );
+	    }
+	    fputs(p.eol,p.f);
+	}
+
+	mc_print_line2(&p,"╚╧╩╝");
+	out_lines++;
+    }
+    //---------------------------
+    else if ( p.frame_mode >= 1 )
+    //---------------------------
+    {
+	mc_print_line1(&p,"┌┬┐");
+	out_lines++;
+
+	if (mc->print_header)
+	{
+	    fprintf(p.f,"%s%*s%s│%s",p.prefix,p.indent,"",p.colset->heading,p.colset->reset);
+	    const mc_len_t *fw = p.fw_col;
+	    for ( int col = 0; col < p.n_cols; col++, fw++ )
+		 fprintf(p.f," %s%s%s %s│%s",
+				AlignEUTF8ToCircBuf(p.head_key,-fw->key,fw->key),
+				p.sep,
+				AlignEUTF8ToCircBuf(p.head_val,-fw->val,fw->val),
+				p.colset->heading, p.colset->reset );
+
+	    fputs(p.eol,p.f);
+
+	    mc_print_line1(&p,"├┼┤");
+	    out_lines += 2;
+	}
+
+	for ( int row = 0; row < p.n_rows; row++ )
+	{
+	    fprintf(p.f,"%s%*s%s│%s",p.prefix,p.indent,"",p.colset->heading,p.colset->reset);
+	    const exmem_key_t *ptr = mc->list.list + row;
+	    const mc_len_t *fw = p.fw_col;
+	    for ( int col = 0; col < p.n_cols; col++, ptr += p.n_rows, fw++ )
+	    {
+		if ( ptr < list_end )
+		{
+		    fprintf(p.f," %s%s",
+				AlignEUTF8ToCircBuf(ptr->key,-fw->key,fw->key),
+				p.sep );
+
+		    if ( ptr->data.attrib > 1 )
+		    {
+			const int fw_attrib = ptr->data.attrib < fw->val ? ptr->data.attrib : fw->val;
+			const int fw_val = p.len_list[ptr-mc->list.list].val;
+			if ( fw_attrib <= fw_val )
+			    goto std1;
+			fprintf(p.f,"%s%*s %s│%s",
+				AlignEUTF8ToCircBuf(ptr->data.data.ptr,fw_attrib,fw_attrib),
+				fw_attrib - fw->val, "",
+				p.colset->heading, p.colset->reset );
+		    }
+		    else
+		    {
+		     std1:;
+			const int fw_val = ptr->data.attrib ? -fw->val : fw->val;
+			fprintf(p.f,"%s %s│%s",
+				AlignEUTF8ToCircBuf(ptr->data.data.ptr,fw_val,fw->val),
+				p.colset->heading, p.colset->reset );
+		    }
+		}
+		else
+		    fprintf(p.f," %*s %s│%s",
+				fw->key + fw->val + p.sep_fw, "",
+				p.colset->heading, p.colset->reset );
+	    }
+	    fputs(p.eol,p.f);
+	}
+
+	mc_print_line1(&p,"└┴┘");
+	out_lines++;
+    }
+    //-------------------
+    else // !p.frame_mode
+    //-------------------
+    {
+	if (mc->print_header)
+	{
+	    mc_print_sep(&p);
+
+	    fprintf(p.f,"%s%*s",p.prefix,p.indent,"");
+	    const mc_len_t *fw = p.fw_col;
+	    for ( int col = 0; col < p.n_cols; col++, fw++ )
+	    {
+		if (col)
+		    fputs(" | ",p.f);
+		fprintf(p.f,"%s%s%s",
+				AlignEUTF8ToCircBuf(p.head_key,-fw->key,fw->key),
+				p.sep,
+				AlignEUTF8ToCircBuf(p.head_val,-fw->val,fw->val) );
+	    }
+	    fputs(p.eol,p.f);
+	    out_lines += 2;
+	}
+
+	if ( mc->print_header || mc->print_footer )
+	{
+	    mc_print_sep(&p);
+	    out_lines++;
+	}
+
+	for ( int row = 0; row < p.n_rows; row++ )
+	{
+	    fprintf(p.f,"%s%*s",p.prefix,p.indent,"");
+	    const exmem_key_t *ptr = mc->list.list + row;
+	    const mc_len_t *fw = p.fw_col;
+	    for ( int col = 0; col < p.n_cols; col++, ptr += p.n_rows, fw++ )
+	    {
+		if (col)
+		    fputs(" | ",p.f);
+		if ( ptr < list_end )
+		{
+		    fprintf(p.f,"%s%s",
+				AlignEUTF8ToCircBuf(ptr->key,-fw->key,fw->key),
+				p.sep );
+
+
+		    if ( ptr->data.attrib > 1 )
+		    {
+			const int fw_attrib = ptr->data.attrib < fw->val ? ptr->data.attrib : fw->val;
+			const int fw_val = p.len_list[ptr-mc->list.list].val;
+			if ( fw_attrib <= fw_val )
+			    goto std0;
+			fprintf(p.f,"%s%*s",
+				AlignEUTF8ToCircBuf(ptr->data.data.ptr,fw_attrib,fw_attrib),
+				fw_attrib - fw->val, "" );
+		    }
+		    else
+		    {
+		     std0:;
+			const int fw_val = ptr->data.attrib ? -fw->val : fw->val;
+			fputs(AlignEUTF8ToCircBuf(ptr->data.data.ptr,fw_val,fw->val),p.f);
+		    }
+		}
+	    }
+	    fputs(p.eol,p.f);
+	}
+
+	if (mc->print_footer)
+	{
+	    mc_print_sep(&p);
+	    out_lines++;
+	}
+    }
+    //---------------------
+    // end-if !p.frame_mode
+    //---------------------
+
+
+    //--- terminate
+
+    if ( p.debug > 0 )
+    {
+	const u_usec_t now = GetTimerUSec();
+	fprintf(p.f,"#> setup in %llu us, %u ouput lines in %llu us, total %llu us%s",
+		output_time - start_time,
+		out_lines, now - output_time,
+		now - start_time,
+		p.eol );
+    }
+
+    FREE(p.len_list);
+    return out_lines;
 }
 
 //
@@ -8620,6 +10871,84 @@ void RestoreStateGrowBuffer
 ///////////////////////////////////////////////////////////////////////////////
 
 int opt_new = 0;
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetIpModeName ( IpMode_t ipm )
+{
+    switch (ipm)
+    {
+	case IPV4_ONLY:  return "IPv4 only";
+	case IPV6_ONLY:  return "IPv6 only";
+	case IPV4_FIRST: return "IPv4 first";
+	case IPV6_FIRST: return "IPv6 first";
+    }
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ipv4_t GetIP4Mask ( int bits )
+{
+    return bits > 0 && bits < 32
+	? htonl( 0xffffffffu << (32-bits) )
+	: bits ? 0xffffffffu : 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ipv6_t GetIP6Mask ( int bits )
+{
+    ipv6_t ip6;
+    memset(&ip6,~0,sizeof(ip6));
+    if ( bits >= 0 && bits < 128 )
+    {
+	int idx = bits/32;
+	bits -= idx*32;
+	const u32 mask = htonl( bits ? 0xffffffffu << (32-bits) : 0 );
+	ip6.v32[idx++] &= mask;
+	while ( idx < 4 )
+	    ip6.v32[idx++] = 0;
+    }
+    return ip6;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int GetBitsByMask4 ( ipv4_t ip4_nbo )
+{
+    const int res = FindHighest0BitBE(&ip4_nbo,4);
+    return 31-res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int GetBitsByMask6 ( ipv6_t ip6_nbo )
+{
+    const int res = FindHighest0BitBE(&ip6_nbo,16);
+    return 127-res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int GetBitsBySA ( sockaddr_t *sa, int return_on_error )
+{
+    if (sa)
+    {
+	if ( sa->sa_family == AF_INET )
+	{
+	    sockaddr_in4_t *sa4 = (sockaddr_in4_t*)sa;
+	    return GetBitsByMask4(sa4->sin_addr.s_addr);
+	}
+
+	if ( sa->sa_family == AF_INET6 )
+	{
+	    sockaddr_in6_t *sa6 = (sockaddr_in6_t*)sa;
+	    return GetBitsByMask6(*(ipv6_t*)&sa6->sin6_addr);
+	}
+    }
+    return return_on_error;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 

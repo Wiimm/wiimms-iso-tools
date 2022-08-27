@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -47,11 +47,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #ifndef SUPPORT_36_COLORS
-  #if NEW_FEATURES
-    #define SUPPORT_36_COLORS 1
-  #else
-    #define SUPPORT_36_COLORS 0
-  #endif
+  #define SUPPORT_36_COLORS 1
 #endif
 
 //-----------------------------------------------------------------------------
@@ -106,6 +102,10 @@ ColorMode_t GetPrevColorMode ( ColorMode_t col_mode );
 ///////////////			terminal & colors		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+#define N_COLORSET_GREY    10
+#define N_COLORSET_HL_LINE  4
+#define N_COLORSET_ORDER    9
+
 extern int termios_valid; // valid if >0
 
 void ResetTermios(void);
@@ -153,7 +153,25 @@ extern uint auto_term_size_dirty;	// >0: SIGWINCH received, auto_term_size is di
 bool GetAutoTermSize(void);		// return true if changed
 void EnableAutoTermSize(void);
 
-//-----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
+// [[good_term_width_t]]
+
+typedef struct good_term_width_t
+{
+    int  def_width;
+    int  min_width;
+    int  max_width;
+    int  good_width;
+    bool setup_done;
+}
+good_term_width_t;
+
+extern good_term_width_t good_term_width;
+
+// If !gtw: Use good_term_width
+int GetGoodTermWidth ( good_term_width_t *gtw, bool recalc );
+
+///////////////////////////////////////////////////////////////////////////////
 
 //----- some basic terminal codes
 
@@ -179,6 +197,7 @@ void EnableAutoTermSize(void);
 #define TERM_RESET_WRAP		"\e[?7l"	// disable line wrapping
 
 #define TERM_TEXT_MODE_BEG	"\e["		// begin of text mode sequence
+#define TERM_TEXT_MODE_BEG0	"\e[0;"		// begin of text mode sequence with reset
 #define TERM_TEXT_MODE_END	"m"		// end of text mode sequence
 #define TERM_TEXT_MODE_RESET	"\e[m"		// reset text mode
 
@@ -206,6 +225,7 @@ extern ccp TermSetWrap;		// enabled line wrapping
 extern ccp TermResetWrap;	// disable line wrapping
 
 extern ccp TermTextModeBeg;	// begin of text mode sequence
+extern ccp TermTextModeBeg0;	// begin of text mode sequence with reset
 extern ccp TermTextModeEnd;	// end of text mode sequence
 extern ccp TermTextModeReset;	// reset text mode
 
@@ -276,53 +296,69 @@ typedef enum TermTextMode_t
 	//--- these Colors are also used to setup 'ColorSet_t'
 	// [[new-color]]
 
-	TTM_COL_SETUP		= TTM_BOLD	| TTM_BLUE	| TTM_BG_BLACK,
-	TTM_COL_RUN		= TTM_BOLD	| TTM_WHITE	| TTM_BG_BLACK,
-	TTM_COL_ABORT		= TTM_BOLD	| TTM_MAGENTA	| TTM_BG_BLACK,
-	TTM_COL_FINISH		= TTM_BOLD	| TTM_CYAN	| TTM_BG_BLACK,
-	TTM_COL_SCRIPT		= TTM_NO_BOLD	| TTM_BLACK	| TTM_BG_WHITE,
-	TTM_COL_OPEN		= TTM_NO_BOLD	| TTM_RED	| TTM_BG_BLACK,
-	TTM_COL_CLOSE		= TTM_NO_BOLD	| TTM_RED	| TTM_BG_BLACK,
-	TTM_COL_FILE		= TTM_NO_BOLD	| TTM_YELLOW	| TTM_BG_BLACK,
-	TTM_COL_JOB		= TTM_BOLD	| TTM_BLUE	| TTM_BG_BLACK,
+	TTM_COL_SETUP		= TTM_RESET | TTM_BOLD    | TTM_BLUE,
+	TTM_COL_RUN		= TTM_RESET | TTM_BOLD    | TTM_WHITE,
+	TTM_COL_ABORT		= TTM_RESET | TTM_BOLD    | TTM_MAGENTA,
+	TTM_COL_FINISH		= TTM_RESET | TTM_BOLD    | TTM_CYAN,
+	TTM_COL_SCRIPT		= TTM_RESET | TTM_NO_BOLD | TTM_BLACK | TTM_BG_WHITE,
+	TTM_COL_OPEN		= TTM_RESET | TTM_NO_BOLD | TTM_RED,
+	TTM_COL_CLOSE		= TTM_RESET | TTM_NO_BOLD | TTM_RED,
+	TTM_COL_FILE		= TTM_RESET | TTM_NO_BOLD | TTM_YELLOW,
+	TTM_COL_JOB		= TTM_RESET | TTM_BOLD    | TTM_BLUE,
+	TTM_COL_DEBUG		= TTM_RESET | TTM_BOLD    | TTM_RED,
+	TTM_COL_LOG		= TTM_RESET | TTM_BOLD    | TTM_WHITE	| TTM_BG_BLUE,
 
-	TTM_COL_INFO		= TTM_BOLD	| TTM_CYAN	| TTM_BG_BLACK,
-	TTM_COL_HINT		= TTM_BOLD	| TTM_YELLOW	| TTM_BG_BLACK,
-	TTM_COL_WARN		= TTM_BOLD	| TTM_RED	| TTM_BG_BLACK,
-	TTM_COL_DEBUG		= TTM_BOLD	| TTM_RED	| TTM_BG_BLACK,
-	TTM_COL_LOG		= TTM_BOLD	| TTM_WHITE	| TTM_BG_BLUE,
+	TTM_COL_MARK		= TTM_RESET | TTM_BOLD    | TTM_WHITE,
+	TTM_COL_INFO		= TTM_RESET | TTM_BOLD    | TTM_CYAN,
+	TTM_COL_HINT		= TTM_RESET | TTM_BOLD    | TTM_YELLOW,
+	TTM_COL_WARN		= TTM_RESET | TTM_BOLD    | TTM_RED,
+	TTM_COL_ERR		= TTM_RESET | TTM_BOLD    | TTM_MAGENTA,
+	TTM_COL_BAD		= TTM_RESET | TTM_BOLD    | TTM_MAGENTA,
 
-	TTM_COL_NAME		= TTM_NO_BOLD	| TTM_CYAN	| TTM_BG_BLACK,
-	TTM_COL_OP		= TTM_BOLD	| TTM_WHITE	| TTM_BG_BLACK,
-	TTM_COL_VALUE		= TTM_NO_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
-	TTM_COL_SUCCESS		= TTM_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
-	TTM_COL_ERROR		= TTM_NO_BOLD	| TTM_BLACK	|  TTM_BG_YELLOW,
-	TTM_COL_FAIL		= TTM_NO_BOLD	| TTM_WHITE	|  TTM_BG_RED,
-	TTM_COL_FAIL2		= TTM_BOLD	| TTM_WHITE	|  TTM_BG_RED,
-	TTM_COL_FATAL		= TTM_BOLD	| TTM_WHITE	|  TTM_BG_MAGENTA,
-	TTM_COL_MARK		= TTM_BOLD	| TTM_WHITE	| TTM_BG_BLACK,
-	TTM_COL_BAD		= TTM_BOLD	| TTM_MAGENTA	| TTM_BG_BLACK,
+	TTM_COL_NAME		= TTM_RESET | TTM_NO_BOLD | TTM_CYAN,
+	TTM_COL_OP		= TTM_RESET | TTM_BOLD    | TTM_WHITE,
+	TTM_COL_VALUE		= TTM_RESET | TTM_NO_BOLD | TTM_GREEN,
+	TTM_COL_SUCCESS		= TTM_RESET | TTM_BOLD    | TTM_GREEN,
+	TTM_COL_ERROR		= TTM_RESET | TTM_NO_BOLD | TTM_BLACK	| TTM_BG_YELLOW,
+	TTM_COL_FAIL		= TTM_RESET | TTM_NO_BOLD | TTM_WHITE	| TTM_BG_RED,
+	TTM_COL_FAIL2		= TTM_RESET | TTM_BOLD    | TTM_WHITE	| TTM_BG_RED,
+	TTM_COL_FATAL		= TTM_RESET | TTM_BOLD    | TTM_WHITE	| TTM_BG_MAGENTA,
 
-	TTM_COL_SELECT		= TTM_NO_BOLD	| TTM_YELLOW	| TTM_BG_BLACK,
-	TTM_COL_DIFFER		= TTM_BOLD	| TTM_YELLOW	|  TTM_BG_BLUE,
-	TTM_COL_STAT_LINE	= TTM_BOLD	| TTM_WHITE	|  TTM_BG_BLUE,
-	TTM_COL_WARN_LINE	= TTM_BOLD	| TTM_RED	|  TTM_BG_BLUE,
-	TTM_COL_PROC_LINE	= TTM_BOLD	| TTM_WHITE	|  TTM_BG_MAGENTA,
-	TTM_COL_CITE		= TTM_NO_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
-	TTM_COL_STATUS		= TTM_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
-	TTM_COL_HIGHLIGHT	= TTM_BOLD	| TTM_YELLOW	| TTM_BG_BLACK,
-	TTM_COL_HIDE		= TTM_BOLD	| TTM_BLACK	| TTM_BG_BLACK,
+	TTM_COL_SELECT		= TTM_RESET | TTM_NO_BOLD | TTM_YELLOW,
+	TTM_COL_DIFFER		= TTM_RESET | TTM_BOLD    | TTM_YELLOW	| TTM_BG_BLUE,
+	TTM_COL_HL_LINE0	= TTM_RESET | TTM_NO_BOLD | TTM_WHITE,
+	TTM_COL_HL_LINE1	= TTM_RESET | TTM_BOLD    | TTM_CYAN,
+	TTM_COL_HL_LINE2	= TTM_RESET | TTM_BOLD    | TTM_GREEN,
+	TTM_COL_HL_LINE3	= TTM_RESET | TTM_BOLD    | TTM_MAGENTA,
 
-	TTM_COL_HEADING		= TTM_BOLD	| TTM_BLUE	| TTM_BG_BLACK,
-	TTM_COL_CAPTION		= TTM_BOLD	| TTM_CYAN	| TTM_BG_BLACK,
-	TTM_COL_SECTION		= TTM_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
-	TTM_COL_SYNTAX		= TTM_BOLD	| TTM_WHITE	| TTM_BG_BLACK,
-	TTM_COL_CMD		= TTM_NO_BOLD	| TTM_CYAN	| TTM_BG_BLACK,
-	TTM_COL_OPTION		= TTM_NO_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
-	TTM_COL_PARAM		= TTM_NO_BOLD	| TTM_YELLOW	| TTM_BG_BLACK,
+	TTM_COL_ORDER0		= TTM_RESET | TTM_NO_BOLD | TTM_WHITE,
+	TTM_COL_ORDER1		= TTM_RESET | TTM_BOLD    | TTM_BLUE,
+	TTM_COL_ORDER2		= TTM_RESET | TTM_BOLD    | TTM_CYAN,
+	TTM_COL_ORDER3		= TTM_RESET | TTM_BOLD    | TTM_GREEN,
+	TTM_COL_ORDER4		= TTM_RESET | TTM_BOLD    | TTM_YELLOW,
+	TTM_COL_ORDER5		= TTM_RESET | TTM_BOLD    | TTM_RED,
+	TTM_COL_ORDER6		= TTM_RESET | TTM_BOLD    | TTM_MAGENTA,
+	TTM_COL_ORDER7		= TTM_RESET | TTM_BOLD    | TTM_WHITE,
+	TTM_COL_ORDER8		= TTM_RESET | TTM_BOLD    | TTM_WHITE,
 
-	TTM_COL_ON		= TTM_BOLD	| TTM_GREEN	| TTM_BG_BLACK,
-	TTM_COL_OFF		= TTM_BOLD	| TTM_RED	| TTM_BG_BLACK,
+	TTM_COL_STAT_LINE	= TTM_RESET | TTM_BOLD    | TTM_WHITE	| TTM_BG_BLUE,
+	TTM_COL_WARN_LINE	= TTM_RESET | TTM_BOLD    | TTM_RED	| TTM_BG_BLUE,
+	TTM_COL_PROC_LINE	= TTM_RESET | TTM_BOLD    | TTM_WHITE	| TTM_BG_MAGENTA,
+	TTM_COL_CITE		= TTM_RESET | TTM_NO_BOLD | TTM_GREEN,
+	TTM_COL_STATUS		= TTM_RESET | TTM_BOLD    | TTM_GREEN,
+	TTM_COL_HIGHLIGHT	= TTM_RESET | TTM_BOLD    | TTM_YELLOW,
+	TTM_COL_HIDE		= TTM_RESET | TTM_BOLD    | TTM_BLACK,
+
+	TTM_COL_HEADING		= TTM_RESET | TTM_BOLD    | TTM_BLUE,
+	TTM_COL_CAPTION		= TTM_RESET | TTM_BOLD    | TTM_CYAN,
+	TTM_COL_SECTION		= TTM_RESET | TTM_BOLD    | TTM_GREEN,
+	TTM_COL_SYNTAX		= TTM_RESET | TTM_BOLD    | TTM_WHITE,
+	TTM_COL_CMD		= TTM_RESET | TTM_NO_BOLD | TTM_CYAN,
+	TTM_COL_OPTION		= TTM_RESET | TTM_NO_BOLD | TTM_GREEN,
+	TTM_COL_PARAM		= TTM_RESET | TTM_NO_BOLD | TTM_YELLOW,
+
+	TTM_COL_ON		= TTM_RESET | TTM_BOLD    | TTM_GREEN,
+	TTM_COL_OFF		= TTM_RESET | TTM_BOLD    | TTM_RED,
 }
 TermTextMode_t;
 
@@ -386,6 +422,7 @@ typedef enum TermColorIndex_t
     TCI__N	= TCI__IGNORE,	// number of supported colors
     TCI__N_FONT	= TCI_B_RED,	// number of recommended font colors
     TCI__N_BG	= TCI__N,	// number of recommended background colors
+    TCI__N_GREY = TCI_RED,	// number of gray tones
 
  #else // !SUPPORT_36_COLORS
 
@@ -417,6 +454,7 @@ typedef enum TermColorIndex_t
     TCI__N	= TCI__IGNORE,	// number of supported colors
     TCI__N_FONT	= TCI_B_RED,	// number of recommended font colors
     TCI__N_BG	= TCI__N,	// number of recommended background colors
+    TCI__N_GREY = TCI_RED,	// number of gray tones
 
  #endif // !SUPPORT_36_COLORS
 }
@@ -431,6 +469,107 @@ TermColorIndex_t;
 extern const int Color18Index[18+1]; // 18 elements + -1 as terminator
 
 //-----------------------------------------------------------------------------
+// [[TermColorIndexEx_t]]
+
+typedef enum TermColorIndexEx_t
+{
+    TCE_GREY0,
+    TCE_GREY1,
+    TCE_GREY2,
+    TCE_GREY3,
+    TCE_GREY4,
+    TCE_GREY5,
+    TCE_GREY6,
+    TCE_GREY7,
+    TCE_GREY8,
+    TCE_GREY9,
+
+    TCE_RED_MAGENTA,
+    TCE_RED,
+    TCE_RED_ORANGE,
+     TCE_ORANGE_RED,
+     TCE_ORANGE,
+     TCE_ORANGE_YELLOW,
+    TCE_YELLOW_ORANGE,
+    TCE_YELLOW,
+    TCE_YELLOW_GREEN,
+     TCE_GREEN_YELLOW,
+     TCE_GREEN,
+     TCE_GREEN_CYAN,
+    TCE_CYAN_GREEN,
+    TCE_CYAN,
+    TCE_CYAN_BLUE,
+     TCE_BLUE_CYAN,
+     TCE_BLUE,
+     TCE_BLUE_MAGENTA,
+    TCE_MAGENTA_BLUE,
+    TCE_MAGENTA,
+    TCE_MAGENTA_RED,
+
+    TCE_B_RED_MAGENTA,
+    TCE_B_RED,
+    TCE_B_RED_ORANGE,
+     TCE_B_ORANGE_RED,
+     TCE_B_ORANGE,
+     TCE_B_ORANGE_YELLOW,
+    TCE_B_YELLOW_ORANGE,
+    TCE_B_YELLOW,
+    TCE_B_YELLOW_GREEN,
+     TCE_B_GREEN_YELLOW,
+     TCE_B_GREEN,
+     TCE_B_GREEN_CYAN,
+    TCE_B_CYAN_GREEN,
+    TCE_B_CYAN,
+    TCE_B_CYAN_BLUE,
+     TCE_B_BLUE_CYAN,
+     TCE_B_BLUE,
+     TCE_B_BLUE_MAGENTA,
+    TCE_B_MAGENTA_BLUE,
+    TCE_B_MAGENTA,
+    TCE_B_MAGENTA_RED,
+
+    TCE__N,
+
+    TCE_BLACK = TCE_GREY0,
+    TCE_WHITE = TCE_GREY9,
+}
+TermColorIndexEx_t;
+
+//-----------------------------------------------------------------------------
+// [[TermColorWarn_t]]
+
+typedef enum TermColorWarn_t
+{
+    TCW_MARK,
+    TCW_INFO,
+    TCW_HINT,
+    TCW_WARN,
+    TCW_ERR,
+    TCW_BAD,
+    TCW__N,
+}
+TermColorWarn_t;
+
+//-----------------------------------------------------------------------------
+// [[TermColorId_t]]
+
+typedef struct TermColorId_t
+{
+    union
+    {
+	u8 col[TCE__N];
+	u8 gray[N_COLORSET_GREY];
+    };
+}
+TermColorId_t;
+
+// values 0x00-0x07 for standard, 0x10-0x17 for bold
+extern const TermColorId_t color8id;
+
+// values for 38;5;x or 48;5;x
+extern const TermColorId_t color256id;
+
+//-----------------------------------------------------------------------------
 // [[ColorSet_t]]
 
 typedef struct ColorSet_t
@@ -441,11 +580,13 @@ typedef struct ColorSet_t
     u8		colorize;
     u16		n_colors;
 
+
     //--- some strings for formatted output if colors active
 
     ccp space;	    // pointer to 'EmptyString' or to 'Space200';
     ccp tab;	    // pointer to 'EmptyString' or to 'TAB20';
     ccp lf;	    // pointer to 'EmptyString' or to 'LF20';
+
 
     //--- data, always begins with 'reset'
     // [[new-color]]
@@ -461,12 +602,22 @@ typedef struct ColorSet_t
     ccp close;
     ccp file;
     ccp job;
-
-    ccp info;
-    ccp hint;
-    ccp warn;
     ccp debug;
     ccp log;
+
+    union
+    {
+	ccp warn_level[TCW__N];
+	struct
+	{
+	    ccp mark;
+	    ccp info;
+	    ccp hint;
+	    ccp warn;
+	    ccp err;
+	    ccp bad;
+	};
+    };
 
     ccp name;
     ccp op;
@@ -476,9 +627,9 @@ typedef struct ColorSet_t
     ccp fail;
     ccp fail2;
     ccp fatal;
-    ccp mark;
-    ccp bad;
 
+    ccp hl_line[N_COLORSET_HL_LINE];
+    ccp order[N_COLORSET_ORDER];
     ccp select;
     ccp differ;
     ccp stat_line;
@@ -504,6 +655,8 @@ typedef struct ColorSet_t
     ccp	b_black;
     ccp	white;
     ccp	b_white;
+
+    ccp grey[N_COLORSET_GREY];
 
     ccp	red_magenta;
     ccp	red;
@@ -550,8 +703,37 @@ typedef struct ColorSet_t
     ccp	b_magenta_red;
 
     ccp matrix[TCI__N_FONT][TCI__N_BG];
+
+
+    //--- line support (mutable)
+
+    ccp line_begin;	// use this at beginning of line
+    ccp line_reset;	// use this in line to reset line color
+    ccp line_end;	// use this at end of line
 }
 ColorSet_t;
+
+//-----------------------------------------------------------------------------
+// [[ColorSelect_t]]
+
+typedef enum ColorSelect_t
+{
+    COLSEL_COLOR	= 0x01,  // standard colors
+    COLSEL_B_COLOR	= 0x02,  // bold colors
+    COLSEL_GREY		= 0x04,  // grey scale
+
+    COLSEL_NAME1	= 0x08,  // semantic color names, part 1
+    COLSEL_NAME2	= 0x10,  // semantic color names, part 2
+    COLSEL_NAME		= 0x18,  // semantic color names, both parts
+
+    COLSEL_F_ALT	= 0x20,
+
+    COLSEL_M_COLOR	= COLSEL_COLOR|COLSEL_B_COLOR,
+    COLSEL_M_NONAME	= COLSEL_COLOR|COLSEL_B_COLOR|COLSEL_GREY,
+    COLSEL_M_MODE	= 0x0f,
+    COLSEL_M_ALL	= 0x1f,
+}
+ColorSelect_t;
 
 //-----------------------------------------------------------------------------
 
@@ -605,21 +787,29 @@ const ColorSet_t * GetColorSetAuto ( bool force_on );
 
 const ColorSet_t * GetFileColorSet ( FILE *f );
 bool SetupColorSet ( ColorSet_t *cc, FILE *f );
+int GetColorOffsetByName ( ccp name ); // returns -1 if not found
+
+// returns EmptyString[] if not found
 ccp GetColorByName ( const ColorSet_t *colset, ccp name );
+ccp GetColorByOffsetOrName ( const ColorSet_t *colset, int * offset, ccp name );
+
+extern const char EmptyString[];
+static inline ccp GetColorByOffset ( const ColorSet_t *colset, int offset )
+	{ return offset > 0 ? *(ccp*)((u8*)colset+offset) : EmptyString; }
+
+static inline ccp GetColorByValidOffset ( const ColorSet_t *colset, int offset )
+	{ return *(ccp*)((u8*)colset+offset); }
+
+// both will change line_col & line_reset
+void ResetLineColor ( const ColorSet_t *colset );
+void SetLineColor ( const ColorSet_t *colset, int level );
 
 void PrintColorSet
 (
     FILE		*f,		// valid output file
     int			indent,		// indention of output
-    const ColorSet_t	*cs		// valid color set; if NULL: use std colors
-);
-
-void PrintColorSetEx
-(
-    FILE		*f,		// valid output file
-    int			indent,		// indention of output
     const ColorSet_t	*cs,		// valid color set; if NULL: use std colors
-    uint		mode,		// output mode => see PrintColorSetHelper()
+    ColorSelect_t	select,		// select color groups
     uint		format		// output format
 					//   0: colored list
 					//   1: shell definitions
@@ -631,13 +821,8 @@ void PrintColorSetHelper
     int			indent,		// indention of output
     const ColorSet_t	*cs,		// valid color set; if NULL: use std colors
     PrintColorFunc	func,		// output function, never NULL
-    uint		mode,		// output mode (bit field, NULL=default):
-					//   1: print normal colors (e.g. RED)
-					//   2: print bold colors (e.g. B_RED)
-					//   4: print background (e.g. BLUE_RED)
-					//   8: print color names (e.g. HIGHLIGHT)
-					//  16: include alternative names too (e.g. HL)
-    bool		multi_assign	// TRUE: Allow A=B="...";
+    ColorSelect_t	select,		// select color groups
+    int			multi_assign	// >0: Allow A=B="...";  >1: reorder records too
 );
 
 //
@@ -676,6 +861,8 @@ typedef struct ColorView_t
     int			order;		// 0|'r' | 1|'g' | 2|'b'
     GetColorOption_t	col_option;	// color option
     uint		mode;		// function specific mode (modulo 60)
+    bool		print_alt;	// print alternative names
+    bool		allow_sep;	// allow separator lines
 
     void		*user_ptr;	// any pointer
     int			user_int;	// any number or id
@@ -695,7 +882,10 @@ void ViewColorsCombi8	( ColorView_t *cv );
 void ViewColors18	( ColorView_t *cv );
 void ViewColorsDC	( ColorView_t *cv, bool optimized );
 void ViewColors256	( ColorView_t *cv );
-void ViewColorsPredef	( ColorView_t *cv, uint mode ); // mode: 1=name, 2=colors
+void ViewColorsPredef	( ColorView_t *cv, ColorSelect_t select );
+
+#define VIEW_COLOR_PAGES 10
+void ViewColorsPage	( ColorView_t *cv, uint page );
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////

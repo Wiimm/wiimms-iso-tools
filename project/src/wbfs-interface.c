@@ -1262,7 +1262,7 @@ enumError RecoverWBFS ( WBFS_t * wbfs, ccp fname, bool testmode )
 			wd_header_t * inode
 			    = (wd_header_t*)( first_sector + w->hd_sec_sz
 						+ slot * w->disc_info_sz );
-			ccp id6 = &inode->disc_id;
+			ccp id6 = inode->id6.id6;
 			printf("   - slot #%03u [%.6s] %s\n",
 				slot, id6, GetTitle(id6,(ccp)inode->disc_title) );
 		    }
@@ -1594,7 +1594,7 @@ uint GetIdWBFS ( WBFS_t * wbfs, IdField_t * idf )
 		const time_t mtime = wbfs_is_inode_info_valid(w,&head.iinfo)
 					? ntoh64(head.iinfo.mtime) : 0;
 		snprintf(slot_name,sizeof(slot_name),"#%0*u",slot_fw,slot);
-		InsertIdField(idf,&head.disc_id,0,mtime,slot_name);
+		InsertIdField(idf,head.id6.id6,0,mtime,slot_name);
 	    }
     }
 
@@ -3405,7 +3405,7 @@ enumError FindWDiscInfo ( WBFS_t * w, WDiscInfo_t * dinfo, ccp id6 )
     for ( i = 0; i < w->used_discs; i++ )
     {
 	if ( GetWDiscInfo(w,dinfo,i) == ERR_OK
-	    && !memcmp(id6,&dinfo->dhead.disc_id,6) )
+	    && !memcmp(id6,dinfo->dhead.id6.id6,6) )
 		return ERR_OK;
     }
     return ERR_WDISC_NOT_FOUND;
@@ -3472,7 +3472,7 @@ void CalcWDiscInfo ( WDiscInfo_t * dinfo, SuperFile_t * sf )
 	    ReadSF(sf,0,&dinfo->dhead,sizeof(dinfo->dhead));
     }
 
-    memcpy(dinfo->id6,&dinfo->dhead.disc_id,6);
+    memcpy(dinfo->id6,dinfo->dhead.id6.id6,6);
     dinfo->id6[6]	= 0;
     dinfo->used_blocks	= 0;
     dinfo->disc_index	= 0;
@@ -3490,7 +3490,7 @@ void CopyWDiscInfo ( WDiscListItem_t * item, WDiscInfo_t * dinfo )
 
     memset(item,0,sizeof(*item));
 
-    memcpy(item->id6,&dinfo->dhead.disc_id,6);
+    memcpy(item->id6,dinfo->dhead.id6.id6,6);
     item->size_mib = (u32)(( dinfo->size + MiB/2 ) / MiB );
     memcpy(item->name64,dinfo->dhead.disc_title,64);
     memcpy(item->part_info,dinfo->part_info,sizeof(item->part_info));
@@ -3533,23 +3533,23 @@ enumError DumpWDiscInfo
 		magic == WII_MAGIC ? " (=WII-DISC)"
 			: magic == WII_MAGIC_DELETED ? " (=DELETED)" : "" );
 
-    fprintf(f,"%*swbfs name:  %6s, %.64s\n",
-		indent, "", &di->dhead.disc_id, di->dhead.disc_title );
+    fprintf(f,"%*swbfs name:  %.6s, %.64s\n",
+		indent, "", di->dhead.id6.id6, di->dhead.disc_title );
     if (ih)
-	fprintf(f,"%*siso name:   %6s, %.64s\n",
-		indent, "", &ih->disc_id, ih->disc_title );
-    if ( ih && strcmp(&di->dhead.disc_id,&ih->disc_id) )
+	fprintf(f,"%*siso name:   %.6s, %.64s\n",
+		indent, "", ih->id6.id6, ih->disc_title );
+    if ( ih && strncmp(di->dhead.id6.id6,ih->id6.id6,6) )
     {
 	if (di->title)
 	    fprintf(f,"%*swbfs title: %s\n", indent, "", (ccp)di->title );
-	ccp title = GetTitle(&ih->disc_id,0);
+	ccp title = GetTitle(ih->id6.id6,0);
 	if (title)
 	    fprintf(f,"%*siso title:  %s\n", indent, "", (ccp)di->title );
     }
     else if (di->title)
 	fprintf(f,"%*stitle:      %s\n", indent, "", (ccp)di->title );
 
-    const RegionInfo_t * rinfo = GetRegionInfo(di->dhead.region_code);
+    const RegionInfo_t * rinfo = GetRegionInfo(di->dhead.id6.region_code);
     fprintf(f,"%*sregion:     %s [%s]\n", indent, "", rinfo->name, rinfo->name4 );
 
     if (di->size)
@@ -3587,7 +3587,7 @@ WDiscList_t * GenerateWDiscList ( WBFS_t * w, int part_index )
     {
 	if ( GetWDiscInfoBySlot(w,&dinfo,slot) == ERR_OK )
 	{
-	    memcpy(item->id6,&dinfo.dhead.disc_id,6);
+	    memcpy(item->id6,dinfo.dhead.id6.id6,6);
 	    if (!IsExcluded(item->id6))
 	    {
 		CopyWDiscInfo(item,&dinfo);
@@ -4256,7 +4256,7 @@ enumError AddWDisc ( WBFS_t * w, SuperFile_t * sf, const wd_select_t * psel )
     if (*sf->wbfs_id6)
 	CopyPatchWbfsId( par.wbfs_id6, sf->wbfs_id6 );
     else if (par.wd_disc)
-	CopyPatchWbfsId( par.wbfs_id6, &par.wd_disc->dhead.disc_id );
+	CopyPatchWbfsId( par.wbfs_id6, par.wd_disc->dhead.id6.id6 );
 
     const int wbfs_stat = wbfs_add_disc_param(w->wbfs,&par);
 
@@ -4393,7 +4393,7 @@ enumError RenameWDisc
     wd_header_t * whead = (wd_header_t*)wbfs->disc->header;
     char w_id6[7], n_id6[7];
     memset(w_id6,0,sizeof(w_id6));
-    StringCopyS(w_id6,sizeof(w_id6),&whead->disc_id);
+    StringCopyS(w_id6,sizeof(w_id6),whead->id6.id6);
     memcpy(n_id6,w_id6,sizeof(n_id6));
 
     if ( testmode || verbose >= 0 )
@@ -4421,7 +4421,7 @@ enumError RenameWDisc
 	LoadIsoHeader(wbfs,&ihead,0);
 
 	char w_name[0x40], i_id6[7], i_name[0x40];
-	StringCopyS(i_id6,sizeof(i_id6),&ihead.disc_id);
+	StringCopyS(i_id6,sizeof(i_id6),ihead.id6.id6);
 	StringCopyS(w_name,sizeof(w_name),whead->disc_title);
 	StringCopyS(i_name,sizeof(i_name),ihead.disc_title);
 

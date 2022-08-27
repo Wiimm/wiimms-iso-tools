@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -41,6 +41,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <ctype.h>
 
 #ifndef WIN_DCLIB
@@ -122,7 +123,7 @@ __attribute__ ((packed)) dcEndian_t;
 #define PiB (1024ull*1024*1024*1024*1024)
 #define EiB (1024ull*1024*1024*1024*1024*1024)
 
-// specal '-1' support
+// special '-1' support
 #define M1(a) ( (typeof(a))~0 )
 #define IS_M1(a) ( (a) == (typeof(a))~0 )
 
@@ -340,37 +341,84 @@ typedef float float32; // float as 32 bit binary data, endian is file dependent
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#define U8_MIN     (0)
-#define U8_MAX  (0xff)
-#define S8_MIN (-0x80)
-#define S8_MAX  (0x7f)
+#define U8_MIN  (0u)
+#define U8_MAX  UINT8_MAX
+#define S8_MIN  INT8_MIN
+#define S8_MAX  INT8_MAX
 
-#define U16_MIN       (0)
-#define U16_MAX  (0xffff)
-#define S16_MIN (-0x8000)
-#define S16_MAX  (0x7fff)
+#define U16_MIN  (0u)
+#define U16_MAX  UINT16_MAX
+#define S16_MIN  INT16_MIN
+#define S16_MAX  INT16_MAX
 
-#define U32_MIN           (0u)
-#define U32_MAX  (0xffffffffu)
-#define S32_MIN (-0x80000000)
-#define S32_MAX  (0x7fffffff)
+#define U32_MIN  (0u)
+#define U32_MAX  UINT32_MAX
+#define S32_MIN  INT32_MIN
+#define S32_MAX  INT32_MAX
 
-#define U64_MIN                   (0ull)
-#define U64_MAX  (0xffffffffffffffffull)
-#define S64_MIN (-0x8000000000000000ll)
-#define S64_MAX  (0x7fffffffffffffffll)
+#define U64_MIN  (0ull)
+#define U64_MAX  UINT64_MAX
+#define S64_MIN  INT64_MIN
+#define S64_MAX  INT64_MAX
+
+///////////////////////////////////////////////////////////////////////////////
+// int128 support
+
+#undef HAVE_INT128
+#ifdef __SIZEOF_INT128__
+
+    #define HAVE_INT128 1
+
+    typedef __int128_t	s128;
+    typedef __uint128_t	u128;
+
+#else
+
+  #define HAVE_INT128 0
+
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
+// [[intx_t]]
+
+typedef union intx_t
+{
+    s8 s8[16];
+    u8 u8[16];
+
+    s16	s16[8];
+    u16	u16[8];
+
+    s32	s32[4];
+    u32	u32[4];
+
+    s64	s64[2];
+    u64 u64[2];
+
+ #if HAVE_INT128
+    s128 s128[1];
+    u128 u128[1];
+ #endif
+}
+intx_t;
 
 ///////////////////////////////////////////////////////////////////////////////
 
 #ifndef DCLIB_BASIC_TYPES
   #define DCLIB_BASIC_TYPES 1
-  typedef unsigned char uchar;
-  typedef unsigned int  uint;
-  typedef unsigned long ulong;
-  typedef const void *  cvp;
-  typedef const char *  ccp;
-  typedef const uchar * cucp;
+  typedef unsigned char	uchar;
+  typedef unsigned int	uint;
+  typedef unsigned long	ulong;
+  typedef const void	*  cvp;
+  typedef const void	** cvpp;
+  typedef const char	*  ccp;
+  typedef const char	** ccpp;
+  typedef const uchar	*  cucp;
+  typedef const uchar	** cucpp;
 #endif
+
+struct mem_t;
+typedef struct mem_t mem_t;
 
 // [[sha1_hash_t]] [[sha1_hex_t]] [[sha1_id_t]]
 typedef u8   sha1_hash_t[20];
@@ -383,6 +431,84 @@ typedef char uuid_text_t[37];	// "12345678-1234-1234-1234-123456789012" + NULL
 
 typedef int (*qsort_func)( const void *, const void * );
 typedef int (*qsort_r_func)( const void *, const void *, void * );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////		    sockaddr + IPv* support		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[sockaddr_t]] [[sockaddr_in_t]]
+// [[sockaddr_in4_t]] [[sockaddr_in6_t]] [[sockaddr_un_t]]
+
+typedef struct sockaddr     sockaddr_t;
+typedef struct sockaddr_in  sockaddr_in_t;
+typedef struct sockaddr_in  sockaddr_in4_t;
+typedef struct sockaddr_in6 sockaddr_in6_t;
+typedef struct sockaddr_un  sockaddr_un_t;
+
+typedef struct sockaddr_in46_t sockaddr_in46_t;
+typedef struct sockaddr_dclib_t sockaddr_dclib_t;
+
+///////////////////////////////////////////////////////////////////////////////
+// [[ipv4_t]] [[ipv4x_t]] [[ipv6_t]]
+
+typedef u32 ipv4_t;
+
+typedef struct ipv4x_t
+{
+    union
+    {
+	u8	v8[4];
+	u16	v16[2];
+	ipv4_t	ip4;
+    };
+}
+__attribute__ ((packed)) ipv4x_t;
+
+typedef struct ipv6_t
+{
+    union
+    {
+	u8  v8[16];
+	u16 v16[8];
+	u32 v32[4];
+	u64 v64[2];
+    };
+}
+__attribute__ ((packed)) ipv6_t;
+
+//-----------------------------------------------------------------------------
+// [[IpMode_t]]
+
+typedef enum IpMode_t
+{
+    // flags
+    IPVF_IPV6 = 1,			// IPv6 only/first, otherwise IPv4
+    IPVF_BOTH = 2,			// try both variants (IPv4+IPv6)
+
+    IPV4_ONLY  = 0,			// resolve only a IPv4 address
+    IPV6_ONLY  = IPVF_IPV6,		// resolve only a IPv6 address
+    IPV4_FIRST = IPVF_BOTH,		// resolve a IPv4 first, and a IPv6 as fallback
+    IPV6_FIRST = IPVF_BOTH|IPVF_IPV6,	// resolve a IPv6 first, and a IPv4 as fallback
+}
+IpMode_t;
+
+ccp GetIpModeName ( IpMode_t ipm );
+
+//-----------------------------------------------------------------------------
+
+ipv4_t GetIP4Mask ( int bits );
+ipv6_t GetIP6Mask ( int bits );
+
+int GetBitsByMask4 ( ipv4_t ip4_nbo );
+int GetBitsByMask6 ( ipv6_t ip6_nbo );
+int GetBitsBySA    ( sockaddr_t *sa, int return_on_error );
+
+static inline int GetBitsByIN ( sockaddr_in_t *sa, int return_on_error )
+	{ return GetBitsBySA((sockaddr_t*)sa,return_on_error); }
+static inline int GetBitsByIN4 ( sockaddr_in4_t *sa, int return_on_error )
+	{ return GetBitsBySA((sockaddr_t*)sa,return_on_error); }
+static inline int GetBitsByIN6 ( sockaddr_in6_t *sa, int return_on_error )
+	{ return GetBitsBySA((sockaddr_t*)sa,return_on_error); }
 
 //
 ///////////////////////////////////////////////////////////////////////////////

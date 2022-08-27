@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -819,7 +819,12 @@ static inline s64 double2int64 ( double d ) { return (s64) trunc (d+0.5); }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// all values are multiple of 26*26*100 = 67600 = 0x10810
+u64 MulDivU64 ( u64 factor1, u64 factor2, u64 divisor );
+s64 MulDivS64 ( s64 factor1, s64 factor2, s64 divisor );
+
+///////////////////////////////////////////////////////////////////////////////
+
+// all values are multiple of 26*26*100 = 67600 = 0x00010810
 #define GOOD_MAX_NICE4_5      67600  //     1 * 67600
 #define GOOD_MAX_NICE4_6     946400  //    14 * 67600
 #define GOOD_MAX_NICE4_7    9937200  //   147 * 67600
@@ -829,6 +834,28 @@ static inline s64 double2int64 ( double d ) { return (s64) trunc (d+0.5); }
 
 ccp PrintNiceID4 ( uint nice_gid );
 char * ScanNiceID4 ( int * res, ccp arg );
+
+///////////////////////////////////////////////////////////////////////////////
+
+// all values are multiple of 26*26*1000 = 676000 = 0x000a50a0
+#define GOOD_MAX_NICE5_6     676000  //    1 * 676000
+#define GOOD_MAX_NICE5_7    9464000  //   14 * 676000
+#define GOOD_MAX_NICE5_8   99372000  //  147 * 676000
+#define GOOD_MAX_NICE5_9  999804000  // 1479 * 676000
+#define GOOD_MAX_NICE5   4294628000  // 6353 * 676000 = 0xfffad2a0 = -339296
+
+ccp PrintNiceID5 ( uint nice_gid );
+char * ScanNiceID5 ( int * res, ccp arg );
+
+///////////////////////////////////////////////////////////////////////////////
+
+// all values are multiple of 26*26*26*1000 = 17576000 = 0x010c3040
+#define GOOD_MAX_NICE6_8   87880000  //   5 * 17576000
+#define GOOD_MAX_NICE6_9  984256000  //  56 * 17576000
+#define GOOD_MAX_NICE6   4288544000  // 244 * 17576000 = 0xff9dfd00 = -6423296
+
+ccp PrintNiceID6 ( uint nice_gid );
+char * ScanNiceID6 ( int * res, ccp arg );
 
 //
 ///////////////////////////////////////////////////////////////////////////////

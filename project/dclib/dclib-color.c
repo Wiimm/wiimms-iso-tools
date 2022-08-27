@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -380,7 +380,7 @@ uint PutColoredLines
     int  cont_indent = -1;
     uint n_lines = 0, n_space = 0;
     uint column = 0;
-    //ccp col_begin = "";
+    ccp  next_col = 0;
 
     enum { GB_NONE, GB_SIGN, GB_COMMA, GB_SPACE } gb_mode = GB_NONE;
 
@@ -476,7 +476,8 @@ uint PutColoredLines
 
 		if (*col)
 		{
-		    cur.dest = StringCopyE(cur.dest,buf+sizeof(buf),col);
+		    //cur.dest = StringCopyE(cur.dest,buf+sizeof(buf),col);
+		    next_col = col;
 		    if ( *text == '}' )
 			cur.col_active = col;
 		    else
@@ -602,6 +603,12 @@ uint PutColoredLines
 
 	    while ( n_space > 0 )
 		*cur.dest++ = ' ', n_space--;
+	    if (next_col)
+	    {
+		cur.dest = StringCopyE(cur.dest,buf+sizeof(buf),next_col);
+		next_col = 0;
+	    }
+
 	    cur.dest = PrintUTF8Char(cur.dest,code);
 	    if ( cur.dest > buf_end )
 		goto new_line; // should never happen!
@@ -821,7 +828,8 @@ static void PrintColorInfo ( FILE *f, color_info_t *ci )
 enumError Command_TESTCOLORS ( int argc, char ** argv )
 {
  #if HAVE_PRINT
-    GetColorByName(colout,"blue");
+    // to force an order-check
+    GetColorOffsetByName("blue");
  #endif
 
     printf("TEST COLORS: %u arguments:\n",argc);
@@ -1093,7 +1101,6 @@ term_size_t GetTermSize ( int default_width, int default_height )
     else
     {
 	ts = GetTermSizeFD(STDOUT_FILENO,default_width,default_height);
-
 	if ( opt_width > 0 )
 	    ts.width = opt_width;
 	else if ( opt_max_width > 0 && ts.width > opt_max_width )
@@ -1253,6 +1260,45 @@ void EnableAutoTermSize()
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+good_term_width_t good_term_width =
+{
+	.min_width  =  40,
+	.def_width  = 100,
+	.max_width  = 120,
+	.good_width = 120
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+int GetGoodTermWidth ( good_term_width_t *gtw, bool force )
+{
+    if (!gtw)
+	gtw = &good_term_width;
+
+    if ( force || !gtw->setup_done )
+    {
+	gtw->setup_done = true;
+	int good_width = opt_width;
+	if (!good_width)
+	{
+	    good_width = GetTermWidth(gtw->def_width,gtw->min_width);
+	    const int max = opt_max_width ? opt_max_width : gtw->max_width;
+	    if ( good_width > max )
+		good_width = max;
+	}
+
+	if ( good_width < gtw->min_width )
+	     good_width = gtw->min_width;
+
+	gtw->good_width = good_width;
+    }
+    return gtw->good_width;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
 ccp TermCursorUp	= TERM_CURSOR_UP;	// move cursor up
 ccp TermCursorDown	= TERM_CURSOR_DOWN;	// move cursor down
 ccp TermCursorRight	= TERM_CURSOR_RIGHT;	// move cursor right
@@ -1275,6 +1321,7 @@ ccp TermSetWrap		= TERM_SET_WRAP;	// enabled line wrapping
 ccp TermResetWrap	= TERM_RESET_WRAP;	// disable line wrapping
 
 ccp TermTextModeBeg	= TERM_TEXT_MODE_BEG;	// begin of text mode sequence
+ccp TermTextModeBeg0	= TERM_TEXT_MODE_BEG;	// begin of text mode sequence with reset
 ccp TermTextModeEnd	= TERM_TEXT_MODE_END;	// end of text mode sequence
 ccp TermTextModeReset	= TERM_TEXT_MODE_RESET;	// reset text mode
 
@@ -1285,12 +1332,12 @@ static uint grayscale_tab[4] = {0,8,7,15};
  const char ColorIndexName[TCI__N][16] =
  {
 	"black",
-	"dark_gray_1",
-	"dark_gray_2",
-	"dark_gray_3",
-	"light_gray_1",
-	"light_gray_2",
-	"light_gray_3",
+	"grey1",
+	"grey2",
+	"grey3",
+	"grey4",
+	"grey5",
+	"grey6",
 	"white",
 
 	"red",
@@ -1382,7 +1429,7 @@ const int Color18Index[18+1] = // 18 elements + -1 as terminator
 
 static char * GetColorCircBuf ( uint len )
 {
-    static char  circ_buf[1024];
+    static char  circ_buf[2048];
     static char *circ_ptr = circ_buf;
     DASSERT( circ_ptr >= circ_buf && circ_ptr <= circ_buf + sizeof(circ_buf) );
 
@@ -2622,7 +2669,7 @@ ccp GetTextMode
     //--- output
 
     char buf[100], *end = buf + sizeof(buf);
-    char *dest = StringCopyE(buf,end,TermTextModeBeg);
+    char *dest = StringCopyE(buf,end,TermTextModeBeg0);
 
     const uint bg = (uint)bg_index < TCI__IGNORE ? color_index[bg_index] : ~0;
 
@@ -3028,7 +3075,7 @@ ccp GetTextMode
     //--- output
 
     char buf[100], *end = buf + sizeof(buf);
-    char *dest = StringCopyE(buf,end,TermTextModeBeg);
+    char *dest = StringCopyE(buf,end,TermTextModeBeg0);
 
     ccp sep = "";
     if ( (uint)font_index < TCI__IGNORE )
@@ -3060,6 +3107,422 @@ ccp GetTextMode
  }
 
 #endif // !SUPPORT_36_COLORS
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			   color ids			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[color_helper_tab_t]]
+
+const TermColorId_t color8id = { .col =
+{
+	0x00,  // TCE_GREY0,
+	0x00,  // TCE_GREY1,
+	0x10,  // TCE_GREY2,
+	0x10,  // TCE_GREY3,
+	0x10,  // TCE_GREY4,
+	0x07,  // TCE_GREY5,
+	0x07,  // TCE_GREY6,
+	0x07,  // TCE_GREY7,
+	0x17,  // TCE_GREY8,
+	0x17,  // TCE_GREY9,
+
+	0x01,  // TCE_RED_MAGENTA,
+	0x01,  // TCE_RED,
+	0x01,  // TCE_RED_ORANGE,
+	0x01,  // TCE_ORANGE_RED,
+	0x01,  // TCE_ORANGE,
+	0x03,  // TCE_ORANGE_YELLOW,
+	0x03,  // TCE_YELLOW_ORANGE,
+	0x03,  // TCE_YELLOW,
+	0x03,  // TCE_YELLOW_GREEN,
+	0x02,  // TCE_GREEN_YELLOW,
+	0x02,  // TCE_GREEN,
+	0x02,  // TCE_GREEN_CYAN,
+	0x06,  // TCE_CYAN_GREEN,
+	0x06,  // TCE_CYAN,
+	0x06,  // TCE_CYAN_BLUE,
+	0x04,  // TCE_BLUE_CYAN,
+	0x04,  // TCE_BLUE,
+	0x04,  // TCE_BLUE_MAGENTA,
+	0x05,  // TCE_MAGENTA_BLUE,
+	0x05,  // TCE_MAGENTA,
+	0x05,  // TCE_MAGENTA_RED,
+
+	0x11,  // TCE_B_RED_MAGENTA,
+	0x11,  // TCE_B_RED,
+	0x11,  // TCE_B_RED_ORANGE,
+	0x11,  // TCE_B_ORANGE_RED,
+	0x11,  // TCE_B_ORANGE,
+	0x13,  // TCE_B_ORANGE_YELLOW,
+	0x13,  // TCE_B_YELLOW_ORANGE,
+	0x13,  // TCE_B_YELLOW,
+	0x13,  // TCE_B_YELLOW_GREEN,
+	0x12,  // TCE_B_GREEN_YELLOW,
+	0x12,  // TCE_B_GREEN,
+	0x12,  // TCE_B_GREEN_CYAN,
+	0x16,  // TCE_B_CYAN_GREEN,
+	0x16,  // TCE_B_CYAN,
+	0x16,  // TCE_B_CYAN_BLUE,
+	0x14,  // TCE_B_BLUE_CYAN,
+	0x14,  // TCE_B_BLUE,
+	0x14,  // TCE_B_BLUE_MAGENTA,
+	0x15,  // TCE_B_MAGENTA_BLUE,
+	0x15,  // TCE_B_MAGENTA,
+	0x15,  // TCE_B_MAGENTA_RED,
+}};
+
+// values for 38;5;x or 48;5;x
+const TermColorId_t color256id = { .col =
+{
+	232,  // TCE_GREY0,
+	235,  // TCE_GREY1,
+	237,  // TCE_GREY2,
+	240,  // TCE_GREY3,
+	242,  // TCE_GREY4,
+	245,  // TCE_GREY5,
+	247,  // TCE_GREY6,
+	250,  // TCE_GREY7,
+	252,  // TCE_GREY8,
+	255,  // TCE_GREY9,
+
+	161,  // TCE_RED_MAGENTA,
+	160,  // TCE_RED,
+	166,  // TCE_RED_ORANGE,
+	166,  // TCE_ORANGE_RED,
+	172,  // TCE_ORANGE,
+	136,  // TCE_ORANGE_YELLOW,
+	136,  // TCE_YELLOW_ORANGE,
+	142,  // TCE_YELLOW,
+	106,  // TCE_YELLOW_GREEN,
+	 70,  // TCE_GREEN_YELLOW,
+	 34,  // TCE_GREEN,
+	 35,  // TCE_GREEN_CYAN,
+	 36,  // TCE_CYAN_GREEN,
+	 37,  // TCE_CYAN,
+	 32,  // TCE_CYAN_BLUE,
+	 27,  // TCE_BLUE_CYAN,
+	 21,  // TCE_BLUE,
+	 92,  // TCE_BLUE_MAGENTA,
+	128,  // TCE_MAGENTA_BLUE,
+	164,  // TCE_MAGENTA,
+	162,  // TCE_MAGENTA_RED,
+
+	198,  // TCE_B_RED_MAGENTA,
+	196,  // TCE_B_RED,
+	202,  // TCE_B_RED_ORANGE,
+	202,  // TCE_B_ORANGE_RED,
+	208,  // TCE_B_ORANGE,
+	214,  // TCE_B_ORANGE_YELLOW,
+	220,  // TCE_B_YELLOW_ORANGE,
+	226,  // TCE_B_YELLOW,
+	154,  // TCE_B_YELLOW_GREEN,
+	118,  // TCE_B_GREEN_YELLOW,
+	 46,  // TCE_B_GREEN,
+	 49,  // TCE_B_GREEN_CYAN,
+	 50,  // TCE_B_CYAN_GREEN,
+	 51,  // TCE_B_CYAN,
+	 75,  // TCE_B_CYAN_BLUE,
+	111,  // TCE_B_BLUE_CYAN,
+	105,  // TCE_B_BLUE,
+	141,  // TCE_B_BLUE_MAGENTA,
+	177,  // TCE_B_MAGENTA_BLUE,
+	207,  // TCE_B_MAGENTA,
+	205,  // TCE_B_MAGENTA_RED,
+}};
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			   color tables			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[color_helper_tab_t]]
+
+typedef struct color_helper_tab_t
+{
+    ccp  name;
+    uint offset;
+    bool is_alt;
+}
+color_helper_tab_t;
+
+//-----------------------------------------------------------------------------
+
+#undef JOB0
+#undef JOB1
+#undef JOB2
+#undef SEP1
+
+#define JOB0		{0,0,0}
+#define JOB1(n)		{ #n, offsetof(ColorSet_t,n), 0 },
+#define JOB2(t,n,a)	{ #t, offsetof(ColorSet_t,n), a },
+#define SEP1		{ EmptyString, 0, 0 },
+
+//-----------------------------------------------------------------------------
+
+static const color_helper_tab_t ch_tab_color[] =
+{
+	SEP1
+	JOB1(red_magenta)
+	JOB1(red)
+	JOB1(red_orange)
+	JOB1(orange_red)
+	JOB1(orange)
+	JOB1(orange_yellow)
+	JOB1(yellow_orange)
+	JOB1(yellow)
+	JOB1(yellow_green)
+	JOB1(green_yellow)
+	JOB1(green)
+	JOB1(green_cyan)
+	JOB1(cyan_green)
+	JOB1(cyan)
+	JOB1(cyan_blue)
+	JOB1(blue_cyan)
+	JOB1(blue)
+	JOB1(blue_magenta)
+	JOB1(magenta_blue)
+	JOB1(magenta)
+	JOB1(magenta_red)
+	JOB0
+};
+
+//-----------------------------------------------------------------------------
+
+static const color_helper_tab_t ch_tab_bcolor[] =
+{
+	// [[new-color]]
+
+	SEP1
+	JOB1(b_red_magenta)
+	JOB1(b_red)
+	JOB1(b_red_orange)
+	JOB1(b_orange_red)
+	JOB1(b_orange)
+	JOB1(b_orange_yellow)
+	JOB1(b_yellow_orange)
+	JOB1(b_yellow)
+	JOB1(b_yellow_green)
+	JOB1(b_green_yellow)
+	JOB1(b_green)
+	JOB1(b_green_cyan)
+	JOB1(b_cyan_green)
+	JOB1(b_cyan)
+	JOB1(b_cyan_blue)
+	JOB1(b_blue_cyan)
+	JOB1(b_blue)
+	JOB1(b_blue_magenta)
+	JOB1(b_magenta_blue)
+	JOB1(b_magenta)
+	JOB1(b_magenta_red)
+	JOB0
+};
+
+//-----------------------------------------------------------------------------
+_Static_assert( N_COLORSET_GREY == 10, "wrong N_COLORSET_GREY" );
+
+static const color_helper_tab_t ch_tab_grey[] =
+{
+	// [[new-color]]
+
+	SEP1
+	JOB1(black)
+	JOB1(b_black)
+	JOB1(white)
+	JOB1(b_white)
+
+	SEP1
+	JOB2(grey0,grey[0],0)
+	JOB2(grey1,grey[1],0)
+	JOB2(grey2,grey[2],0)
+	JOB2(grey3,grey[3],0)
+	JOB2(grey4,grey[4],0)
+	JOB2(grey5,grey[5],0)
+	JOB2(grey6,grey[6],0)
+	JOB2(grey7,grey[7],0)
+	JOB2(grey8,grey[8],0)
+	JOB2(grey9,grey[9],0)
+
+	JOB0
+};
+
+//-----------------------------------------------------------------------------
+
+static const color_helper_tab_t ch_tab_name1[] =
+{
+	// [[new-color]]
+
+	SEP1
+
+	JOB1(setup)
+	JOB1(run)
+	JOB1(abort)
+	JOB1(finish)
+	JOB1(script)
+	JOB1(open)
+	JOB1(close)
+	JOB1(file)
+	JOB1(job)
+	JOB1(debug)
+	JOB1(log)
+
+	JOB1(mark)
+	JOB1(info)
+	JOB1(hint)
+	JOB1(warn)
+	JOB1(err)
+	JOB1(bad)
+
+	JOB1(name)
+	JOB1(op)
+	JOB1(value)
+	 JOB2(val,value,1)
+	JOB1(success)
+	JOB1(error)
+	JOB1(fail)
+	JOB1(fail2)
+	JOB1(fatal)
+
+	JOB1(select)
+	JOB1(differ)
+	JOB1(stat_line)
+	JOB1(warn_line)
+	JOB1(proc_line)
+
+	JOB0
+};
+
+//-----------------------------------------------------------------------------
+_Static_assert( N_COLORSET_HL_LINE == 4, "wrong N_COLORSET_HL_LINE" );
+_Static_assert( N_COLORSET_ORDER == 9, "wrong N_COLORSET_ORDER" );
+
+static const color_helper_tab_t ch_tab_name2[] =
+{
+	// [[new-color]]
+
+	SEP1
+
+	JOB2(hl_line0,hl_line[0],0)
+	JOB2(hl_line1,hl_line[1],0)
+	JOB2(hl_line2,hl_line[2],0)
+	JOB2(hl_line3,hl_line[3],0)
+	JOB2(order0,order[0],0)
+	JOB2(order1,order[1],0)
+	JOB2(order2,order[2],0)
+	JOB2(order3,order[3],0)
+	JOB2(order4,order[4],0)
+	JOB2(order5,order[5],0)
+	JOB2(order6,order[6],0)
+	JOB2(order7,order[7],0)
+	JOB2(order8,order[8],0)
+	JOB1(cite)
+	JOB1(status)
+	JOB1(highlight)
+	 JOB2(hl,highlight,1)
+	JOB1(hide)
+
+	JOB1(heading)
+	 JOB2(head,heading,1)
+	JOB1(caption)
+	JOB1(section)
+	JOB1(syntax)
+	JOB1(cmd)
+	JOB1(option)
+	 JOB2(opt,option,1)
+	JOB1(param)
+	 JOB2(par,param,1)
+
+	JOB1(off)
+	JOB1(on)
+
+	JOB0
+};
+
+//-----------------------------------------------------------------------------
+_Static_assert( N_COLORSET_HL_LINE == 4, "wrong N_COLORSET_HL_LINE" );
+_Static_assert( N_COLORSET_ORDER == 9, "wrong N_COLORSET_ORDER" );
+
+static const color_helper_tab_t ch_tab_name[] =
+{
+	// [[new-color]]
+
+	SEP1
+
+	JOB1(setup)
+	JOB1(run)
+	JOB1(abort)
+	JOB1(finish)
+	JOB1(script)
+	JOB1(open)
+	JOB1(close)
+	JOB1(file)
+	JOB1(job)
+	JOB1(debug)
+	JOB1(log)
+
+	JOB1(mark)
+	JOB1(info)
+	JOB1(hint)
+	JOB1(warn)
+	JOB1(err)
+	JOB1(bad)
+
+	JOB1(name)
+	JOB1(op)
+	JOB1(value)
+	 JOB2(val,value,1)
+	JOB1(success)
+	JOB1(error)
+	JOB1(fail)
+	JOB1(fail2)
+	JOB1(fatal)
+
+	JOB1(select)
+	JOB1(differ)
+	JOB1(stat_line)
+	JOB1(warn_line)
+	JOB1(proc_line)
+	JOB2(hl_line0,hl_line[0],0)
+	JOB2(hl_line1,hl_line[1],0)
+	JOB2(hl_line2,hl_line[2],0)
+	JOB2(hl_line3,hl_line[3],0)
+	JOB2(order0,order[0],0)
+	JOB2(order1,order[1],0)
+	JOB2(order2,order[2],0)
+	JOB2(order3,order[3],0)
+	JOB2(order4,order[4],0)
+	JOB2(order5,order[5],0)
+	JOB2(order6,order[6],0)
+	JOB2(order7,order[7],0)
+	JOB2(order8,order[8],0)
+	JOB1(cite)
+	JOB1(status)
+	JOB1(highlight)
+	 JOB2(hl,highlight,1)
+	JOB1(hide)
+
+	JOB1(heading)
+	 JOB2(head,heading,1)
+	JOB1(caption)
+	JOB1(section)
+	JOB1(syntax)
+	JOB1(cmd)
+	JOB1(option)
+	 JOB2(opt,option,1)
+	JOB1(param)
+	 JOB2(par,param,1)
+
+	JOB1(off)
+	JOB1(on)
+
+	JOB0
+};
+
+//-----------------------------------------------------------------------------
+
+#undef JOB0
+#undef JOB1
+#undef JOB2
+#undef SEP1
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -3114,11 +3577,14 @@ const ColorSet_t * GetColorSet8()
 	col.close		= STRDUP(GetTextMode(1,TTM_COL_CLOSE));
 	col.file		= STRDUP(GetTextMode(1,TTM_COL_FILE));
 	col.job			= STRDUP(GetTextMode(1,TTM_COL_JOB));
+	col.debug		= STRDUP(GetTextMode(1,TTM_COL_DEBUG));
+	col.log			= STRDUP(GetTextMode(1,TTM_COL_LOG));
+	 col.mark		= STRDUP(GetTextMode(1,TTM_COL_MARK));
 	 col.info		= STRDUP(GetTextMode(1,TTM_COL_INFO));
 	 col.hint		= STRDUP(GetTextMode(1,TTM_COL_HINT));
 	 col.warn		= STRDUP(GetTextMode(1,TTM_COL_WARN));
-	 col.debug		= STRDUP(GetTextMode(1,TTM_COL_DEBUG));
-	 col.log		= STRDUP(GetTextMode(1,TTM_COL_LOG));
+	 col.err		= STRDUP(GetTextMode(1,TTM_COL_ERR));
+	 col.bad		= STRDUP(GetTextMode(1,TTM_COL_BAD));
 	col.name		= STRDUP(GetTextMode(1,TTM_COL_NAME));
 	col.op			= STRDUP(GetTextMode(1,TTM_COL_OP));
 	col.value		= STRDUP(GetTextMode(1,TTM_COL_VALUE));
@@ -3127,8 +3593,6 @@ const ColorSet_t * GetColorSet8()
 	col.fail		= STRDUP(GetTextMode(1,TTM_COL_FAIL));
 	col.fail2		= STRDUP(GetTextMode(1,TTM_COL_FAIL2));
 	col.fatal		= STRDUP(GetTextMode(1,TTM_COL_FATAL));
-	col.mark		= STRDUP(GetTextMode(1,TTM_COL_MARK));
-	col.bad			= STRDUP(GetTextMode(1,TTM_COL_BAD));
 	 col.select		= STRDUP(GetTextMode(1,TTM_COL_SELECT));
 	 col.differ		= STRDUP(GetTextMode(1,TTM_COL_DIFFER));
 	 col.stat_line		= STRDUP(GetTextMode(1,TTM_COL_STAT_LINE));
@@ -3148,17 +3612,48 @@ const ColorSet_t * GetColorSet8()
 	 col.on			= STRDUP(GetTextMode(1,TTM_COL_ON));
 	 col.off		= STRDUP(GetTextMode(1,TTM_COL_OFF));
 
+	_Static_assert( N_COLORSET_HL_LINE == 4, "wrong N_COLORSET_HL_LINE" );
+
+	 col.hl_line[0]		= STRDUP(GetTextMode(1,TTM_COL_HL_LINE0));
+	 col.hl_line[1]		= STRDUP(GetTextMode(1,TTM_COL_HL_LINE1));
+	 col.hl_line[2]		= STRDUP(GetTextMode(1,TTM_COL_HL_LINE2));
+	 col.hl_line[3]		= STRDUP(GetTextMode(1,TTM_COL_HL_LINE3));
+
+	_Static_assert( N_COLORSET_ORDER == 9, "wrong N_COLORSET_ORDER" );
+
+	 col.order[0]		= STRDUP(GetTextMode(1,TTM_COL_ORDER0));
+	 col.order[1]		= STRDUP(GetTextMode(1,TTM_COL_ORDER1));
+	 col.order[2]		= STRDUP(GetTextMode(1,TTM_COL_ORDER2));
+	 col.order[3]		= STRDUP(GetTextMode(1,TTM_COL_ORDER3));
+	 col.order[4]		= STRDUP(GetTextMode(1,TTM_COL_ORDER4));
+	 col.order[5]		= STRDUP(GetTextMode(1,TTM_COL_ORDER5));
+	 col.order[6]		= STRDUP(GetTextMode(1,TTM_COL_ORDER6));
+	 col.order[7]		= STRDUP(GetTextMode(1,TTM_COL_ORDER7));
+	 col.order[8]		= STRDUP(GetTextMode(1,TTM_COL_ORDER8));
+
+	_Static_assert( N_COLORSET_GREY == 10, "wrong N_COLORSET_GREY" );
+
+	col.grey[0]		=
+	col.grey[1]		=
 	col.black		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_BLACK));
+	col.grey[2]		=
+	col.grey[3]		=
+	col.grey[4]		=
 	col.b_black		= STRDUP(GetTextMode(1,TTM_BOLD|TTM_BLACK));
+	col.grey[5]		=
+	col.grey[6]		=
+	col.grey[7]		=
 	col.white		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_WHITE));
+	col.grey[8]		=
+	col.grey[9]		=
 	col.b_white		= STRDUP(GetTextMode(1,TTM_BOLD|TTM_WHITE));
 
 	col.red_magenta		=
 	col.red			=
 	col.red_orange		=
 	col.orange_red		=
-	col.orange		=
-	col.orange_yellow	= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_RED));
+	col.orange		= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_RED));
+	col.orange_yellow	=
 	col.yellow_orange	=
 	col.yellow		=
 	col.yellow_green	= STRDUP(GetTextMode(1,TTM_NO_BOLD|TTM_YELLOW));
@@ -3179,8 +3674,8 @@ const ColorSet_t * GetColorSet8()
 	col.b_red		=
 	col.b_red_orange	=
 	col.b_orange_red	=
-	col.b_orange		=
-	col.b_orange_yellow	= STRDUP(GetTextMode(1,TTM_BOLD|TTM_RED));
+	col.b_orange		= STRDUP(GetTextMode(1,TTM_BOLD|TTM_RED));
+	col.b_orange_yellow	=
 	col.b_yellow_orange	=
 	col.b_yellow		=
 	col.b_yellow_green	= STRDUP(GetTextMode(1,TTM_BOLD|TTM_YELLOW));
@@ -3225,33 +3720,55 @@ const ColorSet_t * GetColorSet256()
 
 	//--- special settings
 
-	col.setup	= "\e[38;5;86;40m";
-	col.run		= "\e[38;5;229;40m";
-	col.abort	= "\e[38;5;198;40m";
-	col.finish	= "\e[38;5;154;40m";
-	col.script	= "\e[0;30;48;5;219m";
-	col.open	= "\e[38;5;225;40m";
-	col.close	= "\e[38;5;219;40m";
-	col.heading	= "\e[38;5;111;40m";
-	col.info	= "\e[38;5;49;40m";
-	col.hint	= "\e[38;5;220;40m";
-	col.warn	= "\e[38;5;208;40m";
-	col.debug	= "\e[38;5;210;40m";
-	col.error	= "\e[38;5;255;48;5;130m";
-	col.fail	= "\e[38;5;251;48;5;88m";
-	col.fail2	= "\e[38;5;255;48;5;88m";
-	col.fatal	= "\e[38;5;255;48;5;129m";
-	col.differ	= "\e[38;5;226;48;5;19m";
-	col.stat_line	= "\e[38;5;231;48;5;19m";
-	col.warn_line	= "\e[38;5;215;48;5;19m";
-	col.hide	= "\e[38;5;245;40m";
+	col.setup	= "\e[0;38;5;86m";
+	col.run		= "\e[0;38;5;229m";
+	col.abort	= "\e[0;38;5;198m";
+	col.finish	= "\e[0;38;5;154m";
+	col.script	= "\e[0;0;30;48;5;219m";
+	col.open	= "\e[0;38;5;225m";
+	col.close	= "\e[0;38;5;219m";
+	col.file	= "\e[0;38;5;223m";
+	col.heading	= "\e[0;38;5;111m";
+	col.cmd		= "\e[0;38;5;123m";
+	col.info	= "\e[0;38;5;49m";
+	col.hint	= "\e[0;38;5;220m";
+	col.warn	= "\e[0;38;5;208m";
+	col.err		= "\e[0;38;5;198m";
+	col.debug	= "\e[0;38;5;210m";
+	col.error	= "\e[0;38;5;255;48;5;130m";
+	col.fail	= "\e[0;38;5;251;48;5;88m";
+	col.fail2	= "\e[0;38;5;255;48;5;88m";
+	col.fatal	= "\e[0;38;5;255;48;5;129m";
+	col.differ	= "\e[0;38;5;226;48;5;18m";
+	col.stat_line	= "\e[0;38;5;231;48;5;18m";
+	col.warn_line	= "\e[0;38;5;214;48;5;18m";
+	col.hide	= "\e[0;38;5;245m";
+
+	_Static_assert( N_COLORSET_HL_LINE == 4, "wrong N_COLORSET_HL_LINE" );
+
+	col.hl_line[0]	= "\e[0;38;5;145m";
+	col.hl_line[1]	= "\e[0;38;5;159m";
+	col.hl_line[2]	= "\e[0;38;5;157m";
+	col.hl_line[3]	= "\e[0;38;5;217m";
+
+	_Static_assert( N_COLORSET_ORDER == 9, "wrong N_COLORSET_ORDER" );
+
+	//col.order[0]	=
+	col.order[1]	= "\e[0;38;5;39m";
+	//col.order[2]	=
+	//col.order[3]	=
+	//col.order[4]	=
+	col.order[5]	= "\e[0;38;5;214m";
+	col.order[6]	= "\e[0;38;5;197m";
+	col.order[7]	= "\e[0;38;5;213m";
+	col.order[8]	= "\e[0;38;5;141m";
 
 
 	//--- special settings: color names
 
 	// dark:
 	// ./mkw-ana testcol 400-420  420-330  330-030  030-033  033-005  005-404  404-400
-	// ./mkw-ana testcol 400 410 420 320 330 230 030 032 033 024 005 204 404 402 400
+	// ./mkw-ana testcol 401 400 410 420 320 330 230 130 030 031 032 033 024 015 005 204 304 404 402 401
 
 	col.red_magenta		= "\e[38;5;161m";
 	col.red			= "\e[38;5;160m";
@@ -3261,45 +3778,57 @@ const ColorSet_t * GetColorSet256()
 	col.orange_yellow	=
 	col.yellow_orange	= "\e[38;5;136m";
 	col.yellow		= "\e[38;5;142m";
-	col.yellow_green	=
-	col.green_yellow	= "\e[38;5;106m";
+	col.yellow_green	= "\e[38;5;106m";
+	col.green_yellow	= "\e[38;5;70m";
 	col.green		= "\e[38;5;34m";
-	col.green_cyan		=
+	col.green_cyan		= "\e[38;5;35m";
 	col.cyan_green		= "\e[38;5;36m";
 	col.cyan		= "\e[38;5;37m";
-	col.cyan_blue		=
-	col.blue_cyan		= "\e[38;5;32m";
+	col.cyan_blue		= "\e[38;5;32m";
+	col.blue_cyan		= "\e[38;5;27m";
 	col.blue		= "\e[38;5;21m";
-	col.blue_magenta	=
-	col.magenta_blue	= "\e[38;5;92m";
+	col.blue_magenta	= "\e[38;5;92m";
+	col.magenta_blue	= "\e[38;5;128m";
 	col.magenta		= "\e[38;5;164m";
 	col.magenta_red		= "\e[38;5;162m";
 
 	// bold:
 	// ./mkw-ana testcol 500-520  520-550  550-050  050-055  055-225  225-515  515-500
-	// ./mkw-ana testcol 500 510 520 530 550 350 050 053 055 135 225 425 515 512 500
+	// ./mkw-ana testcol 502 500 510 520 530 540 550 350 250 050 053 054 055 135 235 225 325 425 515 513 502
 
 	col.b_red_magenta	= "\e[38;5;198m";
 	col.b_red		= "\e[38;5;196m";
 	col.b_red_orange	=
 	col.b_orange_red	= "\e[38;5;202m";
 	col.b_orange		= "\e[38;5;208m";
-	col.b_orange_yellow	=
-	col.b_yellow_orange	= "\e[38;5;214m";
+	col.b_orange_yellow	= "\e[38;5;214m";
+	col.b_yellow_orange	= "\e[38;5;220m";
 	col.b_yellow		= "\e[38;5;226m";
-	col.b_yellow_green	=
-	col.b_green_yellow	= "\e[38;5;154m";
+	col.b_yellow_green	= "\e[38;5;154m";
+	col.b_green_yellow	= "\e[38;5;118m";
 	col.b_green		= "\e[38;5;46m";
-	col.b_green_cyan	=
+	col.b_green_cyan	= "\e[38;5;49m";
 	col.b_cyan_green	= "\e[38;5;50m";
 	col.b_cyan		= "\e[38;5;51m";
-	col.b_cyan_blue		=
-	col.b_blue_cyan		= "\e[38;5;75m";
+	col.b_cyan_blue		= "\e[38;5;75m";
+	col.b_blue_cyan		= "\e[38;5;111m";
 	col.b_blue		= "\e[38;5;105m";
-	col.b_blue_magenta	=
+	col.b_blue_magenta	= "\e[38;5;141m";
 	col.b_magenta_blue	= "\e[38;5;177m";
 	col.b_magenta		= "\e[38;5;207m";
-	col.b_magenta_red	= "\e[38;5;204m";
+	col.b_magenta_red	= "\e[38;5;205m";
+
+	_Static_assert( N_COLORSET_GREY == 10, "wrong N_COLORSET_GREY" );
+	col.grey[0]		= "\e[38;5;232m";
+	col.grey[1]		= "\e[38;5;235m";
+	col.grey[2]		= "\e[38;5;237m";
+	col.grey[3]		= "\e[38;5;240m";
+	col.grey[4]		= "\e[38;5;242m";
+	col.grey[5]		= "\e[38;5;245m";
+	col.grey[6]		= "\e[38;5;247m";
+	col.grey[7]		= "\e[38;5;250m";
+	col.grey[8]		= "\e[38;5;252m";
+	col.grey[9]		= "\e[38;5;255m";
 
 	TermColorIndex_t font, bg;
 	for ( font = 0; font < TCI__N_FONT; font++ )
@@ -3309,22 +3838,6 @@ const ColorSet_t * GetColorSet256()
     }
 
     return &col;
-
-//---------- old definitions ----------
-//
-//	col.differ	= STRDUP(GetColorMode(COLMD_256_COLORS,
-//				TCI_YELLOW, TCI_BLUE, GCM_ALT|GCM_SHORT ));
-//	col.stat_line	= STRDUP(GetColorMode(COLMD_256_COLORS,
-//				TCI_WHITE, TCI_BLUE, GCM_ALT|GCM_SHORT ));
-//	col.warn_line	= STRDUP(GetColorMode(COLMD_256_COLORS,
-//				TCI_ORANGE, TCI_BLUE, GCM_ALT|GCM_SHORT ));
-//
-//	col.orange	= STRDUP(GetColorMode(COLMD_256_COLORS,
-//				TCI_ORANGE, TCI__IGNORE, GCM_ALT|GCM_SHORT ));
-//	col.b_orange	= STRDUP(GetColorMode(COLMD_256_COLORS,
-//				TCI_B_ORANGE, TCI__IGNORE, GCM_ALT|GCM_SHORT ));
-//
-//-------------------------------------
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3426,7 +3939,7 @@ bool SetupColorSet ( ColorSet_t *cs, FILE *f )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-ccp GetColorByName ( const ColorSet_t *colset, ccp name )
+int GetColorOffsetByName ( ccp name )
 {
     struct cdef_t
     {
@@ -3439,9 +3952,14 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
     #define DEF1(n)   { offsetof(ColorSet_t,n), #n },
     #define DEF2(t,n) { offsetof(ColorSet_t,n), #t },
 
+    _Static_assert( N_COLORSET_HL_LINE == 4, "wrong N_COLORSET_HL_LINE" );
+    _Static_assert( N_COLORSET_ORDER   == 9, "wrong N_COLORSET_ORDER" );
+    _Static_assert( N_COLORSET_GREY    == 10, "wrong N_COLORSET_GREY" );
+
     static const struct cdef_t tab[] =
     {
-	// [[new-color]]
+	// [[new-color]] order by name
+
 	DEF1(abort)
 	DEF1(b_black)
 	DEF1(b_blue)
@@ -3480,21 +3998,46 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
 	DEF1(cyan_green)
 	DEF1(debug)
 	DEF1(differ)
+	DEF1(err)
 	DEF1(error)
 	DEF1(fail)
 	DEF1(fail2)
 	DEF1(fatal)
 	DEF1(file)
 	DEF1(finish)
+	DEF2(gray0,grey[0])
+	DEF2(gray1,grey[1])
+	DEF2(gray2,grey[2])
+	DEF2(gray3,grey[3])
+	DEF2(gray4,grey[4])
+	DEF2(gray5,grey[5])
+	DEF2(gray6,grey[6])
+	DEF2(gray7,grey[7])
+	DEF2(gray8,grey[8])
+	DEF2(gray9,grey[9])
 	DEF1(green)
 	DEF1(green_cyan)
 	DEF1(green_yellow)
+	DEF2(grey0,grey[0])
+	DEF2(grey1,grey[1])
+	DEF2(grey2,grey[2])
+	DEF2(grey3,grey[3])
+	DEF2(grey4,grey[4])
+	DEF2(grey5,grey[5])
+	DEF2(grey6,grey[6])
+	DEF2(grey7,grey[7])
+	DEF2(grey8,grey[8])
+	DEF2(grey9,grey[9])
 	DEF2(head,heading)
 	DEF1(heading)
 	DEF1(hide)
 	DEF1(highlight)
 	DEF1(hint)
 	DEF2(hl,highlight)
+ 	DEF2(hl_line0,hl_line[0])
+ 	DEF2(hl_line1,hl_line[1])
+ 	DEF2(hl_line2,hl_line[2])
+ 	DEF2(hl_line3,hl_line[3])
 	DEF1(info)
 	DEF1(job)
 	DEF1(log)
@@ -3512,6 +4055,15 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
 	DEF1(orange)
 	DEF1(orange_red)
 	DEF1(orange_yellow)
+ 	DEF2(order0,order[0])
+ 	DEF2(order1,order[1])
+ 	DEF2(order2,order[2])
+ 	DEF2(order3,order[3])
+ 	DEF2(order4,order[4])
+ 	DEF2(order5,order[5])
+ 	DEF2(order6,order[6])
+ 	DEF2(order7,order[7])
+ 	DEF2(order8,order[8])
 	DEF2(par,param)
 	DEF1(param)
 	DEF1(proc_line)
@@ -3553,7 +4105,7 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
 	    if ( i > 0 && strcmp(cd[-1].name,cd->name) >= 0 )
 	    {
 		err_count++;
-		PRINT("WRONG COL ORDER: %s > %s\n", cd[-1].name, cd->name);
+		PRINT("\e[1;35mWRONG COL ORDER: %s > %s \e[0m\n", cd[-1].name, cd->name);
 	    }
 	}
 
@@ -3568,7 +4120,7 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
 
     //--- search the name
 
-    if ( colset && name )
+    if (name)
     {
 	int beg = 0;
 	int end = sizeof(tab)/sizeof(*tab) - 1;
@@ -3581,11 +4133,71 @@ ccp GetColorByName ( const ColorSet_t *colset, ccp name )
 	    else if ( stat > 0 )
 		beg = idx + 1;
 	    else
-		return *(ccp*)((u8*)colset+tab[idx].delta);
+		return tab[idx].delta;
 	}
+    }
+    return -1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetColorByName ( const ColorSet_t *colset, ccp name )
+{
+    if ( colset && name )
+    {
+	const int offset = GetColorOffsetByName(name);
+	if ( offset > 0 )
+	    return GetColorByValidOffset(colset,offset);
     }
     return EmptyString;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetColorByOffsetOrName ( const ColorSet_t *colset, int * offset, ccp name )
+{
+    if (!offset)
+	return GetColorByName(colset,name);
+
+    if (!*offset)
+	*offset = GetColorOffsetByName(name);
+    return *offset > 0 ? GetColorByValidOffset(colset,*offset) : EmptyString;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void ResetLineColor ( const ColorSet_t *colset )
+{
+    ColorSet_t *cs = (ColorSet_t*)colset;
+    cs->line_begin =
+    cs->line_end   = EmptyString;
+    cs->line_reset = cs->reset;
+}
+
+//-----------------------------------------------------------------------------
+
+void SetLineColor ( const ColorSet_t *colset, int level )
+{
+    _Static_assert( N_COLORSET_HL_LINE == 4, "wrong N_COLORSET_HL_LINE" );
+
+    ColorSet_t *cs = (ColorSet_t*)colset;
+    if ( level <= 0 )
+    {
+	cs->line_begin = EmptyString;
+	cs->line_reset = cs->reset;
+	cs->line_end   = EmptyString;
+    }
+    else
+    {
+	cs->line_begin =
+	cs->line_reset = cs->hl_line[ level < N_COLORSET_HL_LINE ? level : N_COLORSET_HL_LINE-1 ];
+	cs->line_end   = cs->reset;
+    }
+}
+
+_Static_assert( N_COLORSET_ORDER == 9, "wrong N_COLORSET_ORDER" );
+// [[col-order]]
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -3597,58 +4209,90 @@ typedef struct color_helper_t
     int			indent;		// indention of output
     const ColorSet_t	*cs;		// valid color set; if NULL: use std colors
     PrintColorFunc	func;		// output function, never NULL
-    uint		mode;		// output mode (bit field, NULL=default):
-					//   1: print normal colors (e.g. RED)
-					//   2: print bold colors (e.g. B_RED)
-					//   4: print background (e.g. BLUE_RED)
-					//   8: print color names (e.g. HIGHLIGHT)
-					//  16: include alternative names too (e.g. HL)
-    bool		multi_assign;	// TRUE: Allow A=B="...";
+    ColorSelect_t	select;		// select color groups
+    int			multi_assign;	// >0: Allow A=B="...";  >1: reorder records too
     bool		print_alt;	// print alternative names
+    bool		allow_sep;	// allow separator lines
+
+    StringField_t	sf;		// collect strings hre if multi_assign>1
 }
 color_helper_t;
-
-//-----------------------------------------------------------------------------
-// [[color_helper_tab_t]]
-
-typedef struct color_helper_tab_t
-{
-    ccp  name;
-    uint offset;
-    bool is_alt;
-}
-color_helper_tab_t;
 
 //-----------------------------------------------------------------------------
 
 static void print_by_helper_tab
 (
-    const color_helper_t	*ch,	// valid param
+    color_helper_t		*ch,	// valid param
     const color_helper_tab_t	*tab	// valid color list
 )
 {
-    const ColorSet_t *col = ch->cs;
-    ch->func(ch->f,ch->indent,col,0,0);
+    DASSERT(ch);
+    DASSERT(tab);
 
-    if (!ch->multi_assign)
+    const ColorSet_t *col = ch->cs;
+    if ( ch->multi_assign <= 0 )
     {
 	for ( ; tab->name; tab++ )
+	{
 	    if ( !tab->is_alt || ch->print_alt )
-		ch->func( ch->f, ch->indent, col,
+	    {
+		if (tab->offset)
+		{
+		    ch->allow_sep = true;
+		    ch->func( ch->f, ch->indent, col,
 			tab->name, *(ccp*)((u8*)col+tab->offset) );
+		}
+		else if (ch->allow_sep)
+		{
+		    ch->allow_sep = false;
+		    ch->func(ch->f,ch->indent,col,0,0);
+		}
+	    }
+	}
 	return;
     }
 
+    //-------------------------------------------------------------------------
+
+    if ( ch->multi_assign > 1 )
+    {
+	char key[100];
+	for ( ; tab->name; tab++ )
+	{
+	    if ( tab->offset && ( !tab->is_alt || ch->print_alt ))
+	    {
+		snprintf(key,sizeof(key),"%s\1%s",*(ccp*)((u8*)col+tab->offset),tab->name);
+		InsertStringField(&ch->sf,key,false);
+	    }
+	}
+	return;
+    }
+
+    //-------------------------------------------------------------------------
+    // ch->multi_assign == 1
+
+    // skip separators
+    while ( tab->name && ( !tab->offset || !( !tab->is_alt || ch->print_alt )))
+	tab++;
+
     while (tab->name)
     {
+	bool have_next = false;
 	const color_helper_tab_t *next = tab+1;
-	while ( next->name && next->is_alt && !ch->print_alt )
-	    next++;
-
+	for ( ; next->name; next++ )
+	{
+	    if ( next->offset && ( !next->is_alt || ch->print_alt ))
+	    {
+		have_next = true;
+		break;
+	    }
+	}
 	ccp val = *(ccp*)((u8*)col+tab->offset);
-	if ( next->name && !strcmp(val,*(ccp*)((u8*)col+next->offset)) )
+	if ( have_next && !strcmp(val,*(ccp*)((u8*)col+next->offset)) )
 	    val = 0;
 	ch->func( ch->f, ch->indent, col, tab->name, val );
+	if (!have_next)
+	    break;
 	tab = next;
     }
 };
@@ -3669,145 +4313,46 @@ void PrintColorSetHelper2
     if (!ch->cs)
 	ch->cs = GetColorSet(COLMD_ON);
     ch->indent = NormalizeIndent(ch->indent) + 15; // 15 is max name width
-    if (!ch->mode)
-	ch->mode = 15;
 
-    #undef JOB0
-    #undef JOB1
-    #undef JOB2
-    #define JOB0	{0,0,0}
-    #define JOB1(n)	{ #n, offsetof(ColorSet_t,n), 0 },
-    #define JOB2(t,n)	{ #t, offsetof(ColorSet_t,n), 1 },
+    if ( !ch->select )
+	ch->select = COLSEL_M_MODE;
+    ch->print_alt = ( ch->select & COLSEL_F_ALT ) != 0;
+    ch->allow_sep = true;
 
-    static const color_helper_tab_t tab_m1[] =
+    if ( ch->multi_assign > 1 )
+	InitializeStringField(&ch->sf);
+
+    if ( ch->select & COLSEL_COLOR )
+	print_by_helper_tab(ch,ch_tab_color);
+
+    if ( ch->select & COLSEL_B_COLOR )
+	print_by_helper_tab(ch,ch_tab_bcolor);
+
+    if ( ch->select & COLSEL_GREY )
+	print_by_helper_tab(ch,ch_tab_grey);
+
+    if ( (ch->select & COLSEL_NAME) == COLSEL_NAME )
+	print_by_helper_tab(ch,ch_tab_name);
+    else if ( ch->select & COLSEL_NAME1 )
+	print_by_helper_tab(ch,ch_tab_name1);
+    else if ( ch->select & COLSEL_NAME2 )
+	print_by_helper_tab(ch,ch_tab_name2);
+
+    if ( ch->multi_assign > 1 )
     {
-	JOB1(black)
-	JOB1(red_magenta)
-	JOB1(red)
-	JOB1(red_orange)
-	JOB1(orange_red)
-	JOB1(orange)
-	JOB1(orange_yellow)
-	JOB1(yellow_orange)
-	JOB1(yellow)
-	JOB1(yellow_green)
-	JOB1(green_yellow)
-	JOB1(green)
-	JOB1(green_cyan)
-	JOB1(cyan_green)
-	JOB1(cyan)
-	JOB1(cyan_blue)
-	JOB1(blue_cyan)
-	JOB1(blue)
-	JOB1(blue_magenta)
-	JOB1(magenta_blue)
-	JOB1(magenta)
-	JOB1(magenta_red)
-	JOB1(white)
-	JOB0
-    };
-
-    static const color_helper_tab_t tab_m2[] =
-    {
-	JOB1(b_black)
-	JOB1(b_red_magenta)
-	JOB1(b_red)
-	JOB1(b_red_orange)
-	JOB1(b_orange_red)
-	JOB1(b_orange)
-	JOB1(b_orange_yellow)
-	JOB1(b_yellow_orange)
-	JOB1(b_yellow)
-	JOB1(b_yellow_green)
-	JOB1(b_green_yellow)
-	JOB1(b_green)
-	JOB1(b_green_cyan)
-	JOB1(b_cyan_green)
-	JOB1(b_cyan)
-	JOB1(b_cyan_blue)
-	JOB1(b_blue_cyan)
-	JOB1(b_blue)
-	JOB1(b_blue_magenta)
-	JOB1(b_magenta_blue)
-	JOB1(b_magenta)
-	JOB1(b_magenta_red)
-	JOB1(b_white)
-	JOB0
-    };
-
-    static const color_helper_tab_t tab_m8[] =
-    {
-	JOB1(setup)
-	JOB1(run)
-	JOB1(abort)
-	JOB1(finish)
-	JOB1(script)
-	JOB1(open)
-	JOB1(close)
-	JOB1(file)
-	JOB1(job)
-
-	JOB1(info)
-	JOB1(hint)
-	JOB1(warn)
-	JOB1(debug)
-	JOB1(log)
-
-	JOB1(name)
-	JOB1(op)
-	JOB1(value)
-	 JOB2(val,value)
-	JOB1(success)
-	JOB1(error)
-	JOB1(fail)
-	JOB1(fail2)
-	JOB1(fatal)
-	JOB1(mark)
-	JOB1(bad)
-
-	JOB1(select)
-	JOB1(differ)
-	JOB1(stat_line)
-	JOB1(warn_line)
-	JOB1(proc_line)
-	JOB1(cite)
-	JOB1(status)
-	JOB1(highlight)
-	 JOB2(hl,highlight)
-	JOB1(hide)
-
-	JOB1(heading)
-	 JOB2(head,heading)
-	JOB1(caption)
-	JOB1(section)
-	JOB1(syntax)
-	JOB1(cmd)
-	JOB1(option)
-	 JOB2(opt,option)
-	JOB1(param)
-	 JOB2(par,param)
-
-	JOB1(off)
-	JOB1(on)
-
-	JOB0
-    };
-
-    if ( ch->mode & 1 )
-	print_by_helper_tab(ch,tab_m1);
-
-    if ( ch->mode & 2 )
-	print_by_helper_tab(ch,tab_m2);
-
-    if ( ch->mode & 8 )
-    {
-	ch->print_alt = ( ch->mode & 16 ) != 0;
-	print_by_helper_tab(ch,tab_m8);
+	ccp *ptr, *end = ch->sf.field + ch->sf.used;
+	for ( ptr = ch->sf.field; ptr < end; ptr++ )
+	{
+	    ccp val = *ptr;
+	    char *name = strchr(val,'\1');
+	    if (!name) continue; // this may never happen!!
+	    if ( ptr+1 < end && !memcmp(val,ptr[1],name-val+1) )
+		val = 0;
+	    *name++ = 0;
+	    ch->func( ch->f, ch->indent, ch->cs, name, val );
+	}
+	ResetStringField(&ch->sf);
     }
-
-    #undef JOB0
-    #undef JOB1
-    #undef JOB2
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3819,13 +4364,8 @@ void PrintColorSetHelper
     int			indent,		// indention of output
     const ColorSet_t	*cs,		// valid color set; if NULL: use std colors
     PrintColorFunc	func,		// output function, never NULL
-    uint		mode,		// output mode (bit field, NULL=default):
-					//   1: print normal colors (e.g. RED)
-					//   2: print bold colors (e.g. B_RED)
-					//   4: print background (e.g. BLUE_RED)
-					//   8: print color names (e.g. HIGHLIGHT)
-					//  16: include alternative names too (e.g. HL)
-    bool		multi_assign	// TRUE: Allow A=B="...";
+    ColorSelect_t	select,		// select color groups
+    int			multi_assign	// >0: Allow A=B="...";  >1: reorder records too
 )
 {
     color_helper_t ch =
@@ -3834,7 +4374,7 @@ void PrintColorSetHelper
 	.indent		= indent,
 	.cs		= cs,
 	.func		= func,
-	.mode		= mode,
+	.select		= select,
 	.multi_assign	= multi_assign,
     };
     PrintColorSetHelper2(&ch);
@@ -3894,9 +4434,9 @@ static void PrintColorSetSH
 
 	PrintEscapedString(buf,sizeof(buf),col_string,-1,CHMD_ESC,0,0);
 	if (memcmp(buf,"\\x1B",4))
-	    fprintf(f,"COL_%s=$'%s'\n",name,buf);
+	    fprintf(f,"    COL_%s=$'%s'\n",name,buf);
 	else
-	    fprintf(f,"COL_%s='\\033%s'\n",name,buf+4);
+	    fprintf(f,"    COL_%s='\\033%s'\n",name,buf+4);
     }
 }
 
@@ -3913,7 +4453,7 @@ static void PrintColorSetPHP
     ccp			col_string	// escape string for the color
 )
 {
-    if (col_name)
+    if ( col_name )
     {
 	fprintf(f,"    $COL->%s%.*s=", col_name, (29-(int)strlen(col_name))/8, Tabs20 );
 
@@ -3937,22 +4477,8 @@ void PrintColorSet
 (
     FILE		*f,		// valid output file
     int			indent,		// indention of output
-    const ColorSet_t	*cs		// valid color set; if NULL: use std colors
-)
-{
-    DASSERT(f);
-    PrintColorSetHelper(f,indent,cs,PrintColorSetCOL,4,false);
-    fputc('\n',f);
-}
-
-//-----------------------------------------------------------------------------
-
-void PrintColorSetEx
-(
-    FILE		*f,		// valid output file
-    int			indent,		// indention of output
     const ColorSet_t	*cs,		// valid color set; if NULL: use std colors
-    uint		mode,		// output mode => see PrintColorSetHelper()
+    ColorSelect_t	select,		// select color groups
     uint		format		// output format
 					//   0: colored list
 					//   1: shell definitions
@@ -3967,22 +4493,22 @@ void PrintColorSetEx
 	case 1:
 	    if (!cs)
 		cs = GetColorSet(COLMD_ON);
-	    PrintColorSetHelper(f,indent,cs,PrintColorSetSH,mode,false);
 	    PrintEscapedString(buf,sizeof(buf),cs->reset,-1,CHMD_ESC,0,0);
 	    if (memcmp(buf,"\\x1B",4))
-		fprintf(f,"COL0=$'%s'\n",buf);
+		fprintf(f,"    COL0=$'%s'\n",buf);
 	    else
-		fprintf(f,"COL0=$'\\033%s'\n",buf+4);
+		fprintf(f,"    COL0=$'\\033%s'\n",buf+4);
+	    PrintColorSetHelper(f,indent,cs,PrintColorSetSH,select,0);
 	    break;
 
 	case 2:
 	    if (!cs)
 		cs = GetColorSet(COLMD_ON);
-	    PrintColorSetHelper(f,indent,cs,PrintColorSetPHP,mode,true);
+	    PrintColorSetHelper(f,indent,cs,PrintColorSetPHP,select,2);
 	    break;
 
 	default:
-	    PrintColorSetHelper(f,indent,cs,PrintColorSetCOL,mode,false);
+	    PrintColorSetHelper(f,indent,cs,PrintColorSetCOL,select,0);
 	    fputc('\n',f);
 	    break;
     }
@@ -4001,16 +4527,16 @@ void SetupColorView ( ColorView_t *cv )
 	cv->f = stdout;
     cv->indent = NormalizeIndent(cv->indent);
 
-#ifdef DCLIB_TERMINAL
+ #ifdef DCLIB_TERMINAL
     cv->col_mode = cv->colset
 			? cv->colset->col_mode
 			: NormalizeColorMode(cv->col_mode,
 						cv->term ? cv->term->colors : 8 );
-#else
+ #else
     cv->col_mode = cv->colset
 			? cv->colset->col_mode
 			: NormalizeColorMode(cv->col_mode,8);
-#endif
+ #endif
     if (!cv->colset)
 	cv->colset = GetColorSet(cv->col_mode);
 
@@ -4020,6 +4546,8 @@ void SetupColorView ( ColorView_t *cv )
 	case 'g': case 'G': cv->order = 1; break;
 	case 'b': case 'B': cv->order = 2; break;
     }
+
+    cv->allow_sep = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -4294,11 +4822,17 @@ static void ViewColors256_helper
  #endif
     else
     {
-	const int mode = cv->mode & 1 ? 48 : 38;
+	int mode;
+	if ( cv->mode & 1 )
+	{
+	    mode = 48;
+	    fputs("\e[38;5;0m",cv->f);
+	}
+	else
+	    mode = 38;
 
-	uint i;
-	for ( i = beg; i < end; i += step )
-		fprintf(cv->f,"\e[%u;5;%um %03u ",mode,i,i);
+	for ( uint i = beg; i < end; i += step )
+	    fprintf(cv->f,"\e[%u;5;%um %03u ",mode,i,i);
 	fputs("\e[0m",cv->f);
     }
 }
@@ -4384,26 +4918,43 @@ void ViewColors256 ( ColorView_t *cv )
 
 static void ViewColorsPredef_helper
 (
-    ColorView_t		*cv,		// basic data
-    ccp			col_name,	// name of color
-    ccp			col_string	// escape string for the color
+    ColorView_t			*cv,	// basic data
+    const color_helper_tab_t	*tab	// valid color list
 )
 {
     DASSERT(cv);
-    DASSERT(col_string);
+    DASSERT(tab);
 
-    if ( col_string && *col_string )
-	fprintf(cv->f,"%*s %s %-15s %s \\e%s\n",
-		cv->indent, col_name, col_string, col_name,
-		cv->colset->reset, col_string+1 );
-    else
-	fprintf(cv->f,"%*s  %s\n",
-		cv->indent, col_name, col_name );
+    const ColorSet_t *col = cv->colset;
+    const int indent = cv->indent + 15; // 15 is max name width
+
+    for ( ; tab->name; tab++ )
+    {
+	if ( !tab->is_alt || cv->print_alt )
+	{
+	    if (tab->offset)
+	    {
+		cv->allow_sep = true;
+		ccp val = *(ccp*)((u8*)col+tab->offset);
+		if (*val)
+		    fprintf(cv->f,"%*s %s %-15s %s \\e%s\n",
+			indent, tab->name, val, tab->name, col->reset, val+1 );
+		else
+		    fprintf(cv->f,"%*s %s %-15s %s\n",
+			indent, tab->name, val, tab->name, col->reset );
+	    }
+	    else if (cv->allow_sep)
+	    {
+		cv->allow_sep = false;
+		fputc('\n',cv->f);
+	    }
+	}
+    }
 }
 
 //-----------------------------------------------------------------------------
 
-void ViewColorsPredef ( ColorView_t *cv, uint mode )
+void ViewColorsPredef ( ColorView_t *cv, ColorSelect_t colsel )
 {
     // [[new-color]]
 
@@ -4411,144 +4962,52 @@ void ViewColorsPredef ( ColorView_t *cv, uint mode )
     SetupColorView(cv);
     DASSERT(cv->colset);
 
- #ifdef TEST
-    fprintf(cv->f,"%*s%s() %s, %u colors, mode %d, stdcol %d, order %d\n",
-	cv->indent,"", __FUNCTION__,
-	GetColorModeName(cv->colset->col_mode,0),
-	cv->colset->n_colors, cv->mode, cv->std_col, cv->order );
- #endif
+    if ( !colsel )
+	colsel = COLSEL_M_MODE;
+    cv->print_alt = ( colsel & COLSEL_F_ALT ) != 0;
 
     fprintf(cv->f,
 	"%s\n%*sPredefined%s color names for mode %s:\n\n",
 	cv->colset->reset, cv->indent, "",
-	( mode & 3 ) == 1 ? " semantic" : "",
+	colsel & COLSEL_NAME ? " semantic" : "",
 	GetColorModeName(cv->col_mode,0) );
 
-    cv->indent += 14;
+    if ( (colsel & COLSEL_NAME) == COLSEL_NAME )
+	ViewColorsPredef_helper(cv,ch_tab_name);
+    else if ( colsel & COLSEL_NAME1 )
+	ViewColorsPredef_helper(cv,ch_tab_name1);
+    else if ( colsel & COLSEL_NAME2 )
+	ViewColorsPredef_helper(cv,ch_tab_name2);
 
-    #undef JOB1
-    #undef JOB2
-    #define JOB1(n)   ViewColorsPredef_helper(cv,#n,cv->colset->n)
-    #define JOB2(n,c) ViewColorsPredef_helper(cv,#n,cv->colset->c)
+    if ( colsel & COLSEL_COLOR )
+	ViewColorsPredef_helper(cv,ch_tab_color);
 
-    if ( mode & 1 )
+    if ( colsel & COLSEL_B_COLOR )
+	ViewColorsPredef_helper(cv,ch_tab_bcolor);
+
+    if ( colsel & COLSEL_GREY )
+	ViewColorsPredef_helper(cv,ch_tab_grey);
+}
+
+//-----------------------------------------------------------------------------
+
+void ViewColorsPage ( ColorView_t *cv, uint page )
+{
+    const typeof(cv->mode) saved_mode = cv->mode;
+    switch(page)
     {
-	const bool alt = cv->mode & 1;
-
-	JOB1(setup);
-	JOB1(run);
-	JOB1(abort);
-	JOB1(finish);
-	JOB1(script);
-	JOB1(open);
-	JOB1(close);
-	JOB1(file);
-	JOB1(job);
-
-	JOB1(info);
-	JOB1(hint);
-	JOB1(warn);
-	JOB1(debug);
-	JOB1(log);
-
-	JOB1(name);
-	JOB1(op);
-	JOB1(value);	if (alt) JOB2(val,value);
-	JOB1(success);
-	JOB1(error);
-	JOB1(fail);
-	JOB1(fail2);
-	JOB1(fatal);
-	JOB1(mark);
-	JOB1(bad);
-
-	JOB1(select);
-	JOB1(differ);
-	JOB1(stat_line);
-	JOB1(warn_line);
-	JOB1(proc_line);
-	JOB1(cite);
-	JOB1(status);
-	JOB1(highlight); if (alt) JOB2(hl,highlight);
-	JOB1(hide);
-
-	JOB1(heading);
-	JOB1(caption);
-	JOB1(section);
-	JOB1(syntax);
-	JOB1(cmd);
-	JOB1(option);	if (alt) JOB2(opt,option);
-	JOB1(param);	if (alt) JOB2(par,param);
-
-	JOB1(off);
-	JOB1(on);
+	case 0: ViewColorsAttrib8(cv); ViewColorsCombi8(cv); break;
+	case 1: ViewColors18(cv); break;
+	case 2: ViewColorsDC(cv,false); break;
+	case 3: ViewColorsDC(cv,true); break;
+	case 4: cv->mode=0; ViewColors256(cv); break;
+	case 5: cv->mode=1; ViewColors256(cv); break;
+	case 6: ViewColorsPredef(cv,COLSEL_GREY); break;
+	case 7: ViewColorsPredef(cv,COLSEL_M_COLOR); break;
+	case 8: ViewColorsPredef(cv,COLSEL_NAME1|COLSEL_F_ALT); break;
+	case 9: ViewColorsPredef(cv,COLSEL_NAME2|COLSEL_F_ALT); break;
     }
-
-    if ( mode & 2 )
-    {
-	if ( mode & 1 )
-	    fputc('\n',cv->f);
-	JOB1(black);
-	JOB1(b_black);
-	JOB1(white);
-	JOB1(b_white);
-
-	if ( !(mode & 1) )
-	    fputc('\n',cv->f);
-
-	JOB1(red_magenta);
-	JOB1(red);
-	JOB1(red_orange);
-	JOB1(orange_red);
-	JOB1(orange);
-	JOB1(orange_yellow);
-	JOB1(yellow_orange);
-	JOB1(yellow);
-	JOB1(yellow_green);
-	JOB1(green_yellow);
-	JOB1(green);
-	JOB1(green_cyan);
-	JOB1(cyan_green);
-	JOB1(cyan);
-	JOB1(cyan_blue);
-	JOB1(blue_cyan);
-	JOB1(blue);
-	JOB1(blue_magenta);
-	JOB1(magenta_blue);
-	JOB1(magenta);
-	JOB1(magenta_red);
-	JOB1(red_magenta);
-
-	if ( !(mode & 1) )
-	    fputc('\n',cv->f);
-
-	JOB1(b_red_magenta);
-	JOB1(b_red);
-	JOB1(b_red_orange);
-	JOB1(b_orange_red);
-	JOB1(b_orange);
-	JOB1(b_orange_yellow);
-	JOB1(b_yellow_orange);
-	JOB1(b_yellow);
-	JOB1(b_yellow_green);
-	JOB1(b_green_yellow);
-	JOB1(b_green);
-	JOB1(b_green_cyan);
-	JOB1(b_cyan_green);
-	JOB1(b_cyan);
-	JOB1(b_cyan_blue);
-	JOB1(b_blue_cyan);
-	JOB1(b_blue);
-	JOB1(b_blue_magenta);
-	JOB1(b_magenta_blue);
-	JOB1(b_magenta);
-	JOB1(b_magenta_red);
-	JOB1(b_red_magenta);
-    }
-
-    #undef JOB1
-    #undef JOB2
-    cv->indent -= 14;
+    cv->mode = saved_mode;
 }
 
 //

@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -113,10 +113,10 @@ void AddGenericOpt
 		{
 		    go->sopt_id[ch] = gp->id;
 		    *sopt_ptr++ = ch;
-		    if ( gp->arg )
+		    if ( gp->arg == 1 || gp->arg == 2 )
 		    {
 			*sopt_ptr++ = ':';
-			if ( gp->arg > 1 )
+			if ( gp->arg == 2 )
 			    *sopt_ptr++ = ':';
 		    }
 		}
@@ -142,7 +142,7 @@ void AddGenericOpt
 
 		struct option *opt = go->lopt + go->lopt_used++;
 		opt->name	= StrDupMemPool(&go->str_pool,name_buf);
-		opt->has_arg	= gp->arg;
+		opt->has_arg	= gp->arg < 2 ? gp->arg : 2;
 		opt->flag	= 0;
 		opt->val	= gp->id;
 
@@ -446,7 +446,7 @@ GetGParam_t GetGParamDBL ( const GParam_t *par, double *return_val )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GetGParam_t GetGParamSTR ( const GParam_t *par, ccp *return_val )
+GetGParam_t GetGParamCCP ( const GParam_t *par, ccp *return_val )
 {
     DASSERT( !par || par->vtype == GetGParamValueType(par->ptype) );
     if ( par && par->vtype == GPT_STR )
@@ -573,13 +573,15 @@ ccp PrintGParam ( const GParam_t *par )
 
 const GenericOptParm_t StandardGOptions[] =
 {
-	{ GOPT_O_TEST_OPT,	0, "_opt" },
+	{ GOPT_O_TEST_OPT,	0, "@opt" },
 	{ GOPT_O_HELP,		0, "h|help" },
 	{ GOPT_O_CLEAR,		0, "c|clear" },
 	{ GOPT_O_PAGER,		0, "p|pager" },
+	{ GOPT_O_WIDTH,		1, "w|width" },
 	{ GOPT_O_QUIT,		0, "Q|quit" },
 	{ GOPT_O_QUIET,		0, "q|quiet" },
-	{ GOPT_O_VERBOSE,	0, "v|verbose" },
+	{ GOPT_O_VERBOSE,	3, "v|verbose" },
+	{ GOPT_O_DEBUG,		3, "D|d|debug" },
 	{0,0,0}
 };
 
@@ -660,7 +662,7 @@ enumError ScanGOptionsHelper
 
     //--- check options
 
-    InitializeGOptions(gopt);
+    InitializeGOptions(gopt,gopt->max_width);
 
     int err = 0, test_opt = 0;
     enumError stat = ERR_OK;
@@ -876,7 +878,7 @@ enumError ScanGOptionsHelper
 
 	 case GOPT_IDX_DURATION:
 	    par->ptype = GOPT_IDX_DURATION;
-	    ScanDuration(&par->d,optarg,1,SDUMD_M_ALL); break;
+	    ScanDuration(&par->d,optarg,1,SDUMD_M_DEFAULT); break;
 	    break;
 
 	 case GOPT_IDX_STRING:
@@ -923,8 +925,28 @@ enumError ScanGOptionsHelper
 	case GOPT_O_QUIET:
 	    gopt->verbose = gopt->verbose > -1 ? -1 : gopt->verbose - 1;
 	    break;
+
 	case GOPT_O_VERBOSE:
-	    gopt->verbose = gopt->verbose <  0 ?  0 : gopt->verbose + 1;
+	    if (optarg)
+		gopt->verbose = str2l(optarg,0,10);
+	    else
+		gopt->verbose = gopt->verbose < 0 ?  0 : gopt->verbose + 1;
+	    break;
+
+	case GOPT_O_DEBUG:
+	    if (optarg)
+		gopt->debug = str2l(optarg,0,10);
+	    else
+		gopt->debug++;
+	    break;
+
+	case GOPT_O_WIDTH:
+	    {
+		char *end;
+		int num = str2l(optarg,&end,10);
+		if ( num > 0 && !*end )
+		    gopt->width = num < 40 ? 40 : num <= gopt->max_width ? num : gopt->max_width;
+	    }
 	    break;
 
 	case GOPT_O_HELP:	gopt->help++; scan_opt |= SGO_PAGER; break;
@@ -954,10 +976,15 @@ enumError ScanGOptionsHelper
 
     if (test_opt)
     {
-	printf("\nOPTIONS [N=%u/%u]: %s\n",go->lopt_used,go->lopt_size,go->sopt);
-	const struct option *opt;
-	for ( opt = go->lopt; opt->name; opt++ )
-	    printf("  %04x %u %s\n", opt->val, opt->has_arg, opt->name );
+	printf("\n## %sShort options:%s %s\n## %sLong options (%u/%u):%s\n",
+		colout->caption, colout->reset, go->sopt,
+		colout->caption, go->lopt_used, go->lopt_size, colout->reset );
+
+	for ( const struct option *opt = go->lopt; opt->name; opt++ )
+	    printf("## %6x %c %s\n", opt->val,
+			opt->has_arg ? '0'+opt->has_arg : '-',
+			opt->name );
+	putchar('\n');
     }
 
     char **dest = argv + optind;
@@ -1001,7 +1028,7 @@ enumError ScanGOptionsHelper
  abort:
     ResetGenericOpt(go);
     if (stat)
-	InitializeGOptions(gopt);
+	InitializeGOptions(gopt,gopt->max_width);
     return stat;
 }
 

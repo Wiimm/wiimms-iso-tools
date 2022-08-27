@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -378,7 +378,11 @@ void ListErrorCodes
 ///////////////			error handling			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-ProgInfo_t ProgInfo = {0};
+#ifdef EXTENDED_ERRORS
+  ProgInfo_t ProgInfo = { .error_level = ERRLEV_EXTENDED };
+#else
+  ProgInfo_t ProgInfo = { .error_level = ERRLEV_MINIMAL };
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -409,6 +413,15 @@ enumError PrintErrorFile ( ccp func, ccp file, uint line, struct File_t *F,
 enumError PrintErrorArg ( ccp func, ccp file, unsigned int line,
 		int syserr, enumError err_code, ccp format, va_list arg )
 {
+    if ( err_code > ERR_OK )
+    {
+	ProgInfo.error_count++;
+
+	ProgInfo.last_error = err_code;
+	if ( ProgInfo.max_error < err_code )
+	    ProgInfo.max_error = err_code;
+    }
+
     fflush(stdout);
     if (!stdwrn)
     {
@@ -457,23 +470,22 @@ enumError PrintErrorArg ( ccp func, ccp file, unsigned int line,
     fflush(TRACE_FILE);
  #endif
 
- #if defined(EXTENDED_ERRORS)
-    if ( err_code > ERR_WARNING )
- #else
-    if ( err_code >= ERR_NOT_IMPLEMENTED )
- #endif
+    ccp coln, col1, col0;
+    if (IsFileColorized(stdwrn))
     {
-	ccp coln = EmptyString;
-	ccp col1 = EmptyString;
-	ccp col0 = EmptyString;
-	if (IsFileColorized(stdwrn))
-	{
-	    coln = GetTextMode(1,TTM_COL_INFO);
-	    col1 = GetTextMode(1, err_code > ERR_WARNING ? TTM_COL_WARN : TTM_COL_HINT );
-	    col0 = TermTextModeReset;
-	}
+	coln = GetTextMode(1,TTM_COL_INFO);
+	col1 = GetTextMode(1, err_code > ERR_WARNING ? TTM_COL_WARN : TTM_COL_HINT );
+	col0 = TermTextModeReset;
+    }
+    else
+	coln = col1 = col0 = EmptyString;
+	
 
-	if ( stdwrn == stderr )
+    if ( err_code >= ERR_NOT_IMPLEMENTED
+		|| ProgInfo.error_level >= ERRLEV_HEADING && err_code > ERR_WARNING )
+    {
+
+	if ( err_code >= ERR_NOT_IMPLEMENTED || ProgInfo.error_level >= ERRLEV_EXTENDED )
 	{
 	    if ( err_code > ERR_WARNING )
 		fprintf(stdwrn,"%s%s%s:%s ERROR #%d [%s] in %s() @ %s#%d%s\n",
@@ -494,17 +506,23 @@ enumError PrintErrorArg ( ccp func, ccp file, unsigned int line,
 		    prefix, coln, ProgInfo.progname, col1, col0 );
 	}
 
-     #if defined(EXTENDED_ERRORS) && EXTENDED_ERRORS > 1
-	fprintf(stdwrn,"%s -> %s/%s?annotate=%d#l%d\n",
-		prefix, URI_VIEWVC, file, REVISION_NEXT, line );
-     #endif
+	if ( ProgInfo.error_level >= ERRLEV_ANNOTATE )
+	{
+	 #ifdef SVN_NEXT
+	    fprintf(stdwrn,"%s -> %s/%s?annotate=%d#l%d\n",
+		    prefix, URI_VIEWVC, file, SVN_NEXT, line );
+	 #elif defined(REVISION_NEXT)
+	    fprintf(stdwrn,"%s -> %s/%s?annotate=%d#l%d\n",
+		    prefix, URI_VIEWVC, file, REVISION_NEXT, line );
+	 #endif
+	}
 
 	fputs(prefix,stdwrn);
 	PutLines(stdwrn,plen,fw,0,prefix,msg,0);
     }
     else
     {
-	fprintf(stdwrn,"%s%s:",prefix,ProgInfo.progname);
+	fprintf(stdwrn,"%s%s%s:%s",prefix,coln,ProgInfo.progname,col0);
 	PutLines(stdwrn,plen,fw,strlen(ProgInfo.progname)+1,prefix,msg,0);
     }
 
@@ -516,18 +534,8 @@ enumError PrintErrorArg ( ccp func, ccp file, unsigned int line,
     }
     fflush(stdwrn);
 
-    if ( err_code > ERR_OK )
-    {
-	ProgInfo.error_count++;
-
-	ProgInfo.last_error = err_code;
-	if ( ProgInfo.max_error < err_code )
-	    ProgInfo.max_error = err_code;
-
-	if ( err_code > ERR_NOT_IMPLEMENTED )
-	    exit(err_code);
-    }
-
+    if ( err_code > ERR_NOT_IMPLEMENTED )
+	exit(err_code);
     return err_code;
 }
 
@@ -620,7 +628,151 @@ uint HexDump ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
     return stat < 0 ? 0 : stat;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
+uint HexDump16BE2 ( FILE * f, int indent, u64 addr,
+		 const void * data, size_t count )
+{
+    // return the number of printed lines
+    return HexDumpBE2(f,indent,addr,4,16,data,count);
+}
+
 //-----------------------------------------------------------------------------
+
+uint HexDump20BE2 ( FILE * f, int indent, u64 addr,
+		 const void * data, size_t count )
+{
+    // return the number of printed lines
+    return HexDumpBE2(f,indent,addr,4,20,data,count);
+}
+
+//-----------------------------------------------------------------------------
+
+uint HexDumpBE2 ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
+		const void * p_data, size_t count )
+{
+    // return the number of printed lines
+    if ( !f || !p_data || !count )
+	return 0;
+
+    XDump_t xd;
+    InitializeXDumpEx(&xd,f,indent,addr,addr_fw,row_len);
+    xd.format = XDUMPF_INT_2;
+    xd.endian = DC_BIG_ENDIAN;
+
+    const int stat = XDump(&xd,p_data,count,true);
+    return stat < 0 ? 0 : stat;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint HexDump16LE2 ( FILE * f, int indent, u64 addr,
+		 const void * data, size_t count )
+{
+    // return the number of printed lines
+    return HexDumpLE2(f,indent,addr,4,16,data,count);
+}
+
+//-----------------------------------------------------------------------------
+
+uint HexDump20LE2 ( FILE * f, int indent, u64 addr,
+		 const void * data, size_t count )
+{
+    // return the number of printed lines
+    return HexDumpLE2(f,indent,addr,4,20,data,count);
+}
+
+//-----------------------------------------------------------------------------
+
+uint HexDumpLE2 ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
+		const void * p_data, size_t count )
+{
+    // return the number of printed lines
+    if ( !f || !p_data || !count )
+	return 0;
+
+    XDump_t xd;
+    InitializeXDumpEx(&xd,f,indent,addr,addr_fw,row_len);
+    xd.format = XDUMPF_INT_2;
+    xd.endian = DC_LITTLE_ENDIAN;
+
+    const int stat = XDump(&xd,p_data,count,true);
+    return stat < 0 ? 0 : stat;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint HexDump16BE4 ( FILE * f, int indent, u64 addr,
+		 const void * data, size_t count )
+{
+    // return the number of printed lines
+    return HexDumpBE4(f,indent,addr,4,16,data,count);
+}
+
+//-----------------------------------------------------------------------------
+
+uint HexDump20BE4 ( FILE * f, int indent, u64 addr,
+		 const void * data, size_t count )
+{
+    // return the number of printed lines
+    return HexDumpBE4(f,indent,addr,4,20,data,count);
+}
+
+//-----------------------------------------------------------------------------
+
+uint HexDumpBE4 ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
+		const void * p_data, size_t count )
+{
+    // return the number of printed lines
+    if ( !f || !p_data || !count )
+	return 0;
+
+    XDump_t xd;
+    InitializeXDumpEx(&xd,f,indent,addr,addr_fw,row_len);
+    xd.format = XDUMPF_INT_4;
+    xd.endian = DC_BIG_ENDIAN;
+
+    const int stat = XDump(&xd,p_data,count,true);
+    return stat < 0 ? 0 : stat;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+uint HexDump16LE4 ( FILE * f, int indent, u64 addr,
+		 const void * data, size_t count )
+{
+    // return the number of printed lines
+    return HexDumpLE4(f,indent,addr,4,16,data,count);
+}
+
+//-----------------------------------------------------------------------------
+
+uint HexDump20LE4 ( FILE * f, int indent, u64 addr,
+		 const void * data, size_t count )
+{
+    // return the number of printed lines
+    return HexDumpLE4(f,indent,addr,4,20,data,count);
+}
+
+//-----------------------------------------------------------------------------
+
+uint HexDumpLE4 ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
+		const void * p_data, size_t count )
+{
+    // return the number of printed lines
+    if ( !f || !p_data || !count )
+	return 0;
+
+    XDump_t xd;
+    InitializeXDumpEx(&xd,f,indent,addr,addr_fw,row_len);
+    xd.format = XDUMPF_INT_4;
+    xd.endian = DC_LITTLE_ENDIAN;
+
+    const int stat = XDump(&xd,p_data,count,true);
+    return stat < 0 ? 0 : stat;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 
 uint HexDump016 ( FILE * f, int indent, u64 addr,
 		 const void * data, size_t count )
@@ -645,7 +797,7 @@ uint HexDump0 ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
     return stat < 0 ? 0 : stat;
 }
 
-//-----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
 
 void HexDiff16 ( FILE * f, int indent, u64 addr,
 		 const void * data1, size_t count1,
@@ -674,14 +826,10 @@ void HexDiff ( FILE * f, int indent, u64 addr, int addr_fw, int row_len,
 ///////////////			 trace functions		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-u_msec_t GetTimerMSec();
-
-///////////////////////////////////////////////////////////////////////////////
-
 static void trace_helper ( int print_stderr, ccp format, va_list arg )
 {
     static uint last_day = 0;
-    DayTime_t dt = GetDayTime(true);
+    DayTime_t dt = GetDayTime(false);
 
     if (!TRACE_FILE)
     {
@@ -713,7 +861,7 @@ static void trace_helper ( int print_stderr, ccp format, va_list arg )
     if ( last_day != dt.day )
     {
 	SetupTimezone(true);
-	dt = GetDayTime(true);
+	dt = GetDayTime(false);
 	last_day = dt.day;
 	snprintf(pre,sizeof(pre),
 		"\n#DAY: %s, pid=%d\n%02u:%02u:%02u.%03u ",

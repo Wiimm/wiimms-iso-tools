@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -500,7 +500,7 @@ uint PrintString16BMG
 	xd.indent	= 2;
 	xd.assumed_size	= mem.len;
 	XDiff( &xd, buf,dest-buf,true, mem.ptr,mem.len,true, 5,false );
-    }    
+    }
     ResetFastBuf(&fb.b);
   #endif
 
@@ -542,7 +542,7 @@ uint PrintFastBuf16BMG
 
     char buf[1300];
     char *dest		= buf;
-    char *dest_term	= dest + sizeof(buf) - 1; 
+    char *dest_term	= dest + sizeof(buf) - 1;
     char *dest_end	= dest_term - 270; // escape sequence with 256 bytes possible
     char *last_u	= 0;
 
@@ -3664,8 +3664,36 @@ enumError SaveRawBMG
     SetFileAttrib(&F.fatt,&bmg->fatt,0);
 
     if ( fwrite(bmg->raw_data,1,bmg->raw_data_size,F.f) != bmg->raw_data_size )
-	FILEERROR1(&F,ERR_WRITE_FAILED,"Write failed: %s\n",fname);
+	err = FILEERROR1(&F,ERR_WRITE_FAILED,"Write failed: %s\n",fname);
     return ResetFile(&F,set_time);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enumError SaveRawFileBMG
+(
+    bmg_t		* bmg,		// pointer to valid bmg
+    FILE		* f,		// valid output file
+    ccp			fname		// NULL or filename for error messages
+)
+{
+    DASSERT(bmg);
+
+
+    //--- create raw data
+
+    enumError err = CreateRawBMG(bmg);
+    if (err)
+	return err;
+    DASSERT(bmg->raw_data);
+    DASSERT(bmg->raw_data_size);
+
+
+    //--- write to file
+
+    if ( fwrite(bmg->raw_data,1,bmg->raw_data_size,f) != bmg->raw_data_size )
+	err = ERROR1(ERR_WRITE_FAILED,"Write failed: %s\n",fname?fname:"?");
+    return err;
 }
 
 //
@@ -3741,15 +3769,16 @@ char * PrintAttribBMG
 ///////////////////////////////////////////////////////////////////////////////
 
 static void print_message
-	( File_t *F, bmg_t *bmg, const bmg_item_t *bi, ccp mid_name )
+	( FILE *f, bmg_t *bmg, const bmg_item_t *bi, ccp mid_name )
 {
+    DASSERT(f);
     DASSERT(bmg);
     DASSERT(bi);
 
     if ( bmg->active_cond != bi->cond )
     {
 	bmg->active_cond = bi->cond;
-	fprintf(F->f,"@? %x\n",bmg->active_cond);
+	fprintf(f,"@? %x\n",bmg->active_cond);
     }
 
     ccp slot;
@@ -3779,14 +3808,14 @@ static void print_message
 	if ( bmg->attrib_used == 4 )
 	{
 	    // classic, compatible with all versions
-	    fprintf(F->f,"%s\t~%s 0x%08x\r\n",mid_name,slot,be32(bi->attrib));
+	    fprintf(f,"%s\t~%s 0x%08x\r\n",mid_name,slot,be32(bi->attrib));
 	}
 	else
 	{
 	    // use new attrib vector
 	    PrintAttribBMG( attrib, sizeof(attrib),
 				bi->attrib, bi->attrib_used, bmg->attrib, true );
-	    fprintf(F->f,"%s\t~%s %s\r\n",mid_name,slot,attrib);
+	    fprintf(f,"%s\t~%s %s\r\n",mid_name,slot,attrib);
 	}
     }
 
@@ -3806,10 +3835,10 @@ static void print_message
 	    snprintf(attrib,sizeof(attrib),"%s\t",mid_name);
 
     if ( bi->text == bmg_null_entry )
-	fprintf(F->f,"%s/\r\n",attrib);
+	fprintf(f,"%s/\r\n",attrib);
     else if ( bi->text )
     {
-	fputs(attrib,F->f);
+	fputs(attrib,f);
 	const int use_colors = opt_bmg_colors != 1
 				? opt_bmg_colors
 				: bmg->use_color_names > 0;
@@ -3870,7 +3899,7 @@ static void print_message
 	    if ( good_break && good_break < end - 8 )
 		ptr = good_break;
 
-	    fprintf(F->f,"%s %.*s\r\n", sep, (int)(ptr-start), start );
+	    fprintf(f,"%s %.*s\r\n", sep, (int)(ptr-start), start );
 	    sep = "\t+";
 
 	} while ( ptr < end );
@@ -3885,7 +3914,39 @@ enumError SaveTextBMG
     ccp			fname,		// filename of destination
     FileMode_t		fmode,		// create-file mode
     bool		set_time,	// true: set time stamps
-    bool		force_numeric,	// true: force numric MIDs
+    bool		force_numeric,	// true: force numeric MIDs
+    uint		brief_count	// >0: suppress syntax info
+					// >1: suppress all comments
+					// >2: suppress '#BMG' magic
+)
+{
+    DASSERT(bmg);
+    DASSERT(fname);
+    PRINT("SaveTextBMG(%s,%d)\n",fname,set_time);
+
+    //--- open file
+
+    File_t F;
+    enumError err = CreateFile(&F,true,fname,fmode);
+    if ( err > ERR_WARNING || !F.f )
+	return err;
+    SetFileAttrib(&F.fatt,&bmg->fatt,0);
+
+    err = SaveTextFileBMG(bmg,F.f,fname,force_numeric,brief_count);
+
+    ResetFile(&F,set_time);
+    return err;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+
+enumError SaveTextFileBMG
+(
+    bmg_t		* bmg,		// pointer to valid bmg
+    FILE		* f,		// valid output file
+    ccp			fname,		// NULL or filename for error messages
+    bool		force_numeric,	// true: force numeric MIDs
     uint		brief_count	// >0: suppress syntax info
 					// >1: suppress all comments
 					// >2: suppress '#BMG' magic
@@ -3894,8 +3955,6 @@ enumError SaveTextBMG
     // use DOS/Windows line format -> unix can handle it ;)
 
     DASSERT(bmg);
-    DASSERT(fname);
-    PRINT("SaveTextBMG(%s,%d)\n",fname,set_time);
     bmg->active_cond = 0;
 
     enum { BRIEF_ALL, BRIEF_NO_SYNTAX, BRIEF_NO_COMMENT, BRIEF_NO_MAGIC };
@@ -3970,19 +4029,11 @@ enumError SaveTextBMG
     };
 
 
-    //--- open file
-
-    File_t F;
-    enumError err = CreateFile(&F,true,fname,fmode);
-    if ( err > ERR_WARNING || !F.f )
-	return err;
-    SetFileAttrib(&F.fatt,&bmg->fatt,0);
-
     const bool print_full = brief_count == BRIEF_ALL && !opt_bmg_export;
     if (print_full)
-	fwrite(text_head,1,sizeof(text_head)-1,F.f);
+	fwrite(text_head,1,sizeof(text_head)-1,f);
     else if ( brief_count < BRIEF_NO_MAGIC )
-	fprintf(F.f,"%s\r\n\r\n",BMG_TEXT_MAGIC);
+	fprintf(f,"%s\r\n\r\n",BMG_TEXT_MAGIC);
 
     HavePredifinedSlots(bmg);
     bmg->legacy = bmg->legacy != 0;
@@ -4006,7 +4057,7 @@ enumError SaveTextBMG
 	PrintAttribBMG(abuf,sizeof(abuf),bmg->attrib,bmg->attrib_used,0,true);
 	if (print_full)
 	{
-	    fprintf(F.f,text_param,
+	    fprintf(f,text_param,
 			param_announce,
 			endian->is_le, bmg->legacy,
 			encoding, bmg->have_mid, bmg->inf_size, abuf,
@@ -4014,7 +4065,7 @@ enumError SaveTextBMG
 	    param_announce = "";
 	}
 	else if ( brief_count < BRIEF_NO_MAGIC )
-	    fprintf(F.f,"@ENDIAN          = %u\r\n"
+	    fprintf(f,"@ENDIAN          = %u\r\n"
 			"@LEGACY          = %u\r\n"
 			"@ENCODING        = %u\r\n"
 			"@BMG-MID         = %u\r\n"
@@ -4035,12 +4086,12 @@ enumError SaveTextBMG
     )
     {
 	if (print_full)
-	    fprintf(F.f,unknown_param,
+	    fprintf(f,unknown_param,
 			param_announce,
 			bmg->unknown_inf_0c,
 			bmg->unknown_mid_0a, bmg->unknown_mid_0c );
 	else if ( brief_count < BRIEF_NO_MAGIC )
-	    fprintf(F.f,"@UNKNOWN-INF32-0C = %#x\r\n"
+	    fprintf(f,"@UNKNOWN-INF32-0C = %#x\r\n"
 			"@UNKNOWN-MID16-0A = %#x\r\n"
 			"@UNKNOWN-MID32-0C = %#x\r\n"
 			"\r\n",
@@ -4087,14 +4138,14 @@ enumError SaveTextBMG
 			if (!last_cup)
 			{
 			    intro = intro_other;
-			    fprintf(F.f,"\r\n#--- standard track names\r\n\r\n");
+			    fprintf(f,"\r\n#--- standard track names\r\n\r\n");
 			}
 			else
-			    fputs("\r\n",F.f);
+			    fputs("\r\n",f);
 			last_cup = cup;
 		    }
 		    snprintf(mid_name,sizeof(mid_name), "  T%c%c", cup, idx % 4 + '1' );
-		    print_message(&F,bmg,bi1,mid_name);
+		    print_message(f,bmg,bi1,mid_name);
 
 		    already_printed[ bi1->mid - MID__VIP_BEG ] = true;
 		    already_printed[ bi2->mid - MID__VIP_BEG ] = true;
@@ -4137,14 +4188,14 @@ enumError SaveTextBMG
 			if (!last_cup)
 			{
 			    intro = intro_other;
-			    fprintf(F.f,"\r\n#--- battle track names\r\n\r\n");
+			    fprintf(f,"\r\n#--- battle track names\r\n\r\n");
 			}
 			else
-			    fputs("\r\n",F.f);
+			    fputs("\r\n",f);
 			last_cup = cup;
 		    }
 		    snprintf(mid_name,sizeof(mid_name), "  U%c%c", cup, idx % 5 + '1' );
-		    print_message(&F,bmg,bi1,mid_name);
+		    print_message(f,bmg,bi1,mid_name);
 
 		    already_printed[ bi1->mid - MID__VIP_BEG ] = true;
 		    already_printed[ bi2->mid - MID__VIP_BEG ] = true;
@@ -4175,14 +4226,14 @@ enumError SaveTextBMG
 	    if ( brief_count < BRIEF_NO_COMMENT )
 	    {
 		intro = intro_other;
-		fprintf(F.f,"\r\n#--- online chat\r\n\r\n");
+		fprintf(f,"\r\n#--- online chat\r\n\r\n");
 	    }
 
 	    for ( ; bi1 < bi1end; bi1++ )
 	    {
 		DASSERT( bi1->mid >= MID_CHAT_BEG && bi1->mid <= MID_CHAT_END );
 		snprintf(mid_name,sizeof(mid_name),"  M%02u",bi1->mid-MID_CHAT_BEG+1);
-		print_message(&F,bmg,bi1,mid_name);
+		print_message(f,bmg,bi1,mid_name);
 		already_printed[bi1->mid-MID__VIP_BEG] = true;
 	    }
 	}
@@ -4282,22 +4333,22 @@ enumError SaveTextBMG
 		while ( sep->mid && mid >= sep->mid )
 		    sep++;
 		if ( sep > sep_tab+1 && sep[-2].mid == mid && sep[-2].info )
-		    fprintf(F.f,"\r\n#--- [%x] %s\r\n", mid, sep[-2].info );
+		    fprintf(f,"\r\n#--- [%x] %s\r\n", mid, sep[-2].info );
 		else if ( sep[-1].info )
-		    fprintf(F.f,"\r\n#--- [%x:%x] %s\r\n",
+		    fprintf(f,"\r\n#--- [%x:%x] %s\r\n",
 			sep[-1].mid, sep->mid-1,  sep[-1].info );
 		else
-		    fputs("\r\n",F.f);
+		    fputs("\r\n",f);
 		intro = 0;
 	    }
 
 	    if ( brief_count < BRIEF_NO_COMMENT && intro )
 	    {
-		fputs(intro,F.f);
+		fputs(intro,f);
 		intro = 0;
 	    }
 	    snprintf(mid_name,sizeof(mid_name),"%6x",bi->mid);
-	    print_message(&F,bmg,bi,mid_name);
+	    print_message(f,bmg,bi,mid_name);
 	}
     }
 
@@ -4309,7 +4360,7 @@ enumError SaveTextBMG
 	XDump_t xd;
 	InitializeXDump(&xd);
 	SetupXDump(&xd,XDUMPC_DUMP);
-	xd.f		= F.f;
+	xd.f		= f;
 	xd.indent	= 1;
 	xd.prefix	= "@X";
 	xd.eol		= "\r\n";
@@ -4326,7 +4377,7 @@ enumError SaveTextBMG
 			raw->total_size, raw->total_size );
 
 	    char name[20];
-	    fprintf(F.f,"\r\n#\f\r\n#--------------------------------------"
+	    fprintf(f,"\r\n#\f\r\n#--------------------------------------"
 		    "----------------------------------------\r\n\r\n"
 		    "@SECTION \"%s\"\r\n\r\n",
 		    PrintEscapedString( name, sizeof(name),
@@ -4343,8 +4394,7 @@ enumError SaveTextBMG
     //--- terminate
 
     if ( brief_count < 2 )
-	fputs("\r\n",F.f);
-    ResetFile(&F,set_time);
+	fputs("\r\n",f);
     return ERR_OK;
 }
 
@@ -6439,6 +6489,36 @@ void DumpCtBMG ( FILE *f, int indent, ct_bmg_t *ctb )
     DumpCtMidHelper2( f,indent, &ctb->cup_ref,		"  Cup reference:" );
     DumpCtMidHelper1( f,indent, ctb->random.beg,	"  Random text:" );
 }
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			sizeof_info_t: bmg		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[sizeof_info_bmg]]
+
+const sizeof_info_t sizeof_info_bmg[] =
+{
+    SIZEOF_INFO_TITLE("BMG")
+	SIZEOF_INFO_ENTRY(bmg_range_t)
+	SIZEOF_INFO_ENTRY(bmg_section_t)
+	SIZEOF_INFO_ENTRY(bmg_header_t)
+	SIZEOF_INFO_ENTRY(bmg_inf_item_t)
+	SIZEOF_INFO_ENTRY(bmg_inf_t)
+	SIZEOF_INFO_ENTRY(bmg_dat_t)
+	SIZEOF_INFO_ENTRY(bmg_mid_t)
+	SIZEOF_INFO_ENTRY(bmg_flw_t)
+	SIZEOF_INFO_ENTRY(bmg_fli_t)
+	SIZEOF_INFO_ENTRY(bmg_sect_info_t)
+	SIZEOF_INFO_ENTRY(bmg_sect_list_t)
+	SIZEOF_INFO_ENTRY(bmg_raw_section_t)
+	SIZEOF_INFO_ENTRY(bmg_item_t)
+	SIZEOF_INFO_ENTRY(bmg_t)
+	SIZEOF_INFO_ENTRY(bmg_create_t)
+	SIZEOF_INFO_ENTRY(bmg_scan_mid_t)
+	SIZEOF_INFO_ENTRY(ct_bmg_t)
+
+    SIZEOF_INFO_TERM()
+};
 
 //
 ///////////////////////////////////////////////////////////////////////////////

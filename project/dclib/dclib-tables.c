@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -34,16 +34,34 @@
 
 #define _GNU_SOURCE 1
 
-//#include <string.h>
-//#include <unistd.h>
-//#include <time.h>
-//#include <stdio.h>
-//#include <errno.h>
-//#include <sys/time.h>
+#include <time.h>
+#include <utime.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/time.h>
 
 #include "dclib-basics.h"
-//#include "dclib-debug.h"
-//#include "dclib-utf8.h"
+#include "dclib-utf8.h"
+#include "dclib-file.h"
+#include "dclib-option.h"
+#include "dclib-network.h"
+#include "dclib-regex.h"
+#include "dclib-xdump.h"
+#include "dclib-ui.h"
+
+#ifdef DCLIB_MYSQL
+  #include "dclib-mysql.h"
+#endif
+
+#if DCLIB_TERMINAL
+  #include "dclib-terminal.h"
+#endif
+
+#if DCLIB_THREAD
+  #include "dclib-thread.h"
+#endif
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -264,7 +282,7 @@ const u16 TableCP1252_80[0x20] =
 {
     0x20ac,     0,0x201a,0x0192, 0x201e,0x2026,0x2020,0x2021, // 80..87
     0x02c6,0x2030,0x0160,0x2039, 0x0152,     0,0x017d,     0, // 88..8f
-         0,0x2018,0x2019,0x201c, 0x201d,0x2022,0x2013,0x2014, // 90..97
+	 0,0x2018,0x2019,0x201c, 0x201d,0x2022,0x2013,0x2014, // 90..97
     0x02dc,0x2122,0x0161,0x203a, 0x0153,     0,0x017e,0x0178, // 98..9f
 };
 
@@ -408,6 +426,482 @@ const u8 TableAlphabet64[48] =
   0x00,0x10,0x83,0x10, 0x51,0x87,0x20,0x92, 0x8b,0x30,0xd3,0x8f, 0x41,0x14,0x93,0x51,
   0x55,0x97,0x61,0x96, 0x9b,0x71,0xd7,0x9f, 0x82,0x18,0xa3,0x92, 0x59,0xa7,0xa2,0x9a,
   0xab,0xb2,0xdb,0xaf, 0xc3,0x1c,0xb3,0xd3, 0x5d,0xb7,0xe3,0x9e, 0xbb,0xf3,0xdf,0xbf,
+};
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			sizeof_info_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+const sizeof_info_t sizeof_info_linux[] =
+{
+    SIZEOF_INFO_TITLE("Basic C types")
+	SIZEOF_INFO_ENTRY(char)
+	SIZEOF_INFO_ENTRY(wchar_t)
+	SIZEOF_INFO_ENTRY(short)
+	SIZEOF_INFO_ENTRY(int)
+	SIZEOF_INFO_ENTRY(long)
+	SIZEOF_INFO_ENTRY(long long)
+ #ifdef __SIZEOF_INT128__
+	SIZEOF_INFO_ENTRY(__int128_t)
+ #endif
+	SIZEOF_INFO_ENTRY(float)
+	SIZEOF_INFO_ENTRY(double)
+	SIZEOF_INFO_ENTRY(long double)
+	SIZEOF_INFO_ENTRY(void*)
+
+    SIZEOF_INFO_TITLE("Linux C types")
+	SIZEOF_INFO_ENTRY(size_t)
+	SIZEOF_INFO_ENTRY(time_t)
+	SIZEOF_INFO_ENTRY(struct timeval)
+	SIZEOF_INFO_ENTRY(struct timespec)
+	SIZEOF_INFO_ENTRY(struct tm)
+	SIZEOF_INFO_ENTRY(struct timezone)
+	SIZEOF_INFO_ENTRY(struct utimbuf)
+	SIZEOF_INFO_ENTRY(struct stat)
+	SIZEOF_INFO_ENTRY(fd_set)
+
+    SIZEOF_INFO_TERM()
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+const sizeof_info_t sizeof_info_dclib[] =
+{
+    SIZEOF_INFO_TITLE("dcLib basic types")
+	SIZEOF_INFO_ENTRY(bool)
+	SIZEOF_INFO_ENTRY(u8)
+	SIZEOF_INFO_ENTRY(u16)
+	SIZEOF_INFO_ENTRY(u32)
+	SIZEOF_INFO_ENTRY(u64)
+ #if HAVE_INT128
+	SIZEOF_INFO_ENTRY(u128)
+ #endif
+	SIZEOF_INFO_ENTRY(intx_t)
+	SIZEOF_INFO_ENTRY(mem_t)
+	SIZEOF_INFO_ENTRY(exmem_t)
+
+    SIZEOF_INFO_TITLE("dcLib time & timer")
+	SIZEOF_INFO_ENTRY(u_sec_t)
+	SIZEOF_INFO_ENTRY(u_msec_t)
+	SIZEOF_INFO_ENTRY(u_usec_t)
+	SIZEOF_INFO_ENTRY(u_nsec_t)
+	SIZEOF_INFO_ENTRY(DayTime_t)
+	SIZEOF_INFO_ENTRY(CurrentTime_t)
+
+    SIZEOF_INFO_TITLE("dcLib numeric & strings")
+	SIZEOF_INFO_ENTRY(float3)
+	SIZEOF_INFO_ENTRY(float3List_t)
+	SIZEOF_INFO_ENTRY(double3)
+	SIZEOF_INFO_ENTRY(double3List_t)
+	SIZEOF_INFO_ENTRY(float34)
+	SIZEOF_INFO_ENTRY(double34)
+	SIZEOF_INFO_ENTRY(MatrixD_t)
+	SIZEOF_INFO_ENTRY(RegexReplace_t)
+	SIZEOF_INFO_ENTRY(RegexElem_t)
+	SIZEOF_INFO_ENTRY(Regex_t)
+	SIZEOF_INFO_ENTRY(dcUnicodeTripel)
+	SIZEOF_INFO_ENTRY(Escape_t)
+
+    SIZEOF_INFO_TITLE("dcLib buffers")
+	SIZEOF_INFO_ENTRY(exmem_dest_t)
+	SIZEOF_INFO_ENTRY(sha1_hash_t)
+	SIZEOF_INFO_ENTRY(sha1_hex_t)
+	SIZEOF_INFO_ENTRY(sha1_id_t)
+	SIZEOF_INFO_ENTRY(uuid_text_t)
+	SIZEOF_INFO_ENTRY(CircBuf_t)
+	SIZEOF_INFO_ENTRY(FastBuf_t)
+	SIZEOF_INFO_ENTRY(ContainerData_t)
+	SIZEOF_INFO_ENTRY(Container_t)
+	SIZEOF_INFO_ENTRY(DataBuf_t)
+	SIZEOF_INFO_ENTRY(GrowBuffer_t)
+
+    SIZEOF_INFO_TITLE("dcLib lists")
+	SIZEOF_INFO_ENTRY(mem_src_t)
+	SIZEOF_INFO_ENTRY(mem_list_t)
+	SIZEOF_INFO_ENTRY(exmem_key_t)
+	SIZEOF_INFO_ENTRY(exmem_list_t)
+	SIZEOF_INFO_ENTRY(sizeof_info_t)
+	SIZEOF_INFO_ENTRY(PointerList_t)
+	SIZEOF_INFO_ENTRY(KeywordTab_t)
+	SIZEOF_INFO_ENTRY(StringField_t)
+	SIZEOF_INFO_ENTRY(ParamFieldItem_t)
+	SIZEOF_INFO_ENTRY(ParamField_t)
+	SIZEOF_INFO_ENTRY(SplitArg_t)
+	SIZEOF_INFO_ENTRY(ArgManager_t)
+	SIZEOF_INFO_ENTRY(CommandList_t)
+	SIZEOF_INFO_ENTRY(MemMapItem_t)
+	SIZEOF_INFO_ENTRY(MemMap_t)
+	SIZEOF_INFO_ENTRY(DynData_t)
+	SIZEOF_INFO_ENTRY(DynDataList_t)
+	SIZEOF_INFO_ENTRY(MemPoolChunk_t)
+	SIZEOF_INFO_ENTRY(MemPool_t)
+	SIZEOF_INFO_ENTRY(GenericOptParm_t)
+	SIZEOF_INFO_ENTRY(GenericOpt_t)
+	SIZEOF_INFO_ENTRY(GParam_t)
+	SIZEOF_INFO_ENTRY(GOptions_t)
+	SIZEOF_INFO_ENTRY(InfoOption_t)
+	SIZEOF_INFO_ENTRY(InfoCommand_t)
+	SIZEOF_INFO_ENTRY(InfoUI_t)
+
+    SIZEOF_INFO_TITLE("dcLib file")
+	SIZEOF_INFO_ENTRY(LogFile_t)
+	SIZEOF_INFO_ENTRY(FileAttrib_t)
+	SIZEOF_INFO_ENTRY(File_t)
+	SIZEOF_INFO_ENTRY(MemFile_t)
+	SIZEOF_INFO_ENTRY(TraceLog_t)
+ #ifndef __APPLE__
+	SIZEOF_INFO_ENTRY(LineBuffer_t)
+ #endif
+	SIZEOF_INFO_ENTRY(search_file_t)
+	SIZEOF_INFO_ENTRY(search_file_list_t)
+	SIZEOF_INFO_ENTRY(search_paths_stat_t)
+	SIZEOF_INFO_ENTRY(CatchOutput_t)
+	SIZEOF_INFO_ENTRY(SectionInfo_t)
+	SIZEOF_INFO_ENTRY(stat_file_count_t)
+	SIZEOF_INFO_ENTRY(PrintScript_t)
+	SIZEOF_INFO_ENTRY(RestoreState_t)
+	SIZEOF_INFO_ENTRY(RestoreStateTab_t)
+	SIZEOF_INFO_ENTRY(SaveRestoreType_t)
+	SIZEOF_INFO_ENTRY(SaveRestoreTab_t)
+ #ifdef DCLIB_MYSQL
+	SIZEOF_INFO_ENTRY(MySqlStatus_t)
+	SIZEOF_INFO_ENTRY(MySqlResult_t)
+	SIZEOF_INFO_ENTRY(MySql_t)
+	SIZEOF_INFO_ENTRY(MySqlServerStats_t)
+ #endif
+
+    SIZEOF_INFO_TITLE("dcLib network")
+	SIZEOF_INFO_ENTRY(ipv4_t)
+	SIZEOF_INFO_ENTRY(ipv4x_t)
+	SIZEOF_INFO_ENTRY(ipv6_t)
+	SIZEOF_INFO_ENTRY(sockaddr_t)
+	SIZEOF_INFO_ENTRY(sockaddr_in4_t)
+	SIZEOF_INFO_ENTRY(sockaddr_in6_t)
+	SIZEOF_INFO_ENTRY(sockaddr_in46_t)
+	SIZEOF_INFO_ENTRY(sockaddr_un_t)
+	SIZEOF_INFO_ENTRY(sockaddr_dclib_t)
+	SIZEOF_INFO_ENTRY(sockaddr_info_t)
+	SIZEOF_INFO_ENTRY(socket_info_t)
+	SIZEOF_INFO_ENTRY(FDList_t)
+	SIZEOF_INFO_ENTRY(SplitIP_t)
+	SIZEOF_INFO_ENTRY(NamesIP_t)
+	SIZEOF_INFO_ENTRY(BinIP_t)
+	SIZEOF_INFO_ENTRY(BinIPItem_t)
+	SIZEOF_INFO_ENTRY(BinIPList_t)
+	SIZEOF_INFO_ENTRY(BinIPIterate_t)
+	SIZEOF_INFO_ENTRY(ManageIP_t)
+	SIZEOF_INFO_ENTRY(ResolveIP_t)
+	SIZEOF_INFO_ENTRY(NetworkHost_t)
+	SIZEOF_INFO_ENTRY(AllowIP4Item_t)
+	SIZEOF_INFO_ENTRY(AllowIP4_t)
+	SIZEOF_INFO_ENTRY(ether_head_t)
+	SIZEOF_INFO_ENTRY(ether_head_vlan_t)
+	SIZEOF_INFO_ENTRY(arp_head_t)
+	SIZEOF_INFO_ENTRY(ip4_head_t)
+	SIZEOF_INFO_ENTRY(udp_head_t)
+	SIZEOF_INFO_ENTRY(udp_packet_t)
+	SIZEOF_INFO_ENTRY(tcp_head_t)
+	SIZEOF_INFO_ENTRY(TransferStats_t)
+	SIZEOF_INFO_ENTRY(Socket_t)
+	SIZEOF_INFO_ENTRY(TCPStream_t)
+	SIZEOF_INFO_ENTRY(TCPHandler_t)
+	SIZEOF_INFO_ENTRY(CommandTCPInfo_t)
+ #if defined(SYSTEM_LINUX) || defined(__CYGWIN__)
+	SIZEOF_INFO_ENTRY(RouteIP4_t)
+ #endif
+
+ #if DCLIB_TERMINAL
+    SIZEOF_INFO_TITLE("dcLib terminal & colors")
+ #else
+    SIZEOF_INFO_TITLE("dcLib colors")
+ #endif
+	SIZEOF_INFO_ENTRY(term_size_t)
+	SIZEOF_INFO_ENTRY(good_term_width_t)
+	SIZEOF_INFO_ENTRY(TermColorId_t)
+	SIZEOF_INFO_ENTRY(ColorSet_t)
+	SIZEOF_INFO_ENTRY(ColorView_t)
+	SIZEOF_INFO_ENTRY(SavedStdFiles_t)
+ #if DCLIB_TERMINAL
+	SIZEOF_INFO_ENTRY(History_t)
+	SIZEOF_INFO_ENTRY(TelnetRepeat_t)
+	SIZEOF_INFO_ENTRY(TelnetParam_t)
+	SIZEOF_INFO_ENTRY(TelnetTCPInfo_t)
+	SIZEOF_INFO_ENTRY(TelnetClient_t)
+	SIZEOF_INFO_ENTRY(TerminalKey_t)
+	SIZEOF_INFO_ENTRY(TerminalInfo_t)
+	SIZEOF_INFO_ENTRY(TerminalNameList_t)
+	SIZEOF_INFO_ENTRY(Keyboard_t)
+ #endif
+
+ #if DCLIB_THREAD
+    SIZEOF_INFO_TITLE("dcLib threads")
+	SIZEOF_INFO_ENTRY(WatchdogThread_t)
+ #endif
+
+    SIZEOF_INFO_TITLE("dcLib statistics")
+	SIZEOF_INFO_ENTRY(UsageParam_t)
+	SIZEOF_INFO_ENTRY(UsageCountEntry_t)
+	SIZEOF_INFO_ENTRY(UsageCount_t)
+	SIZEOF_INFO_ENTRY(UsageDurationEntry_t)
+	SIZEOF_INFO_ENTRY(UsageDuration_t)
+	SIZEOF_INFO_ENTRY(CpuUsageEntry_t)
+	SIZEOF_INFO_ENTRY(CpuUsage_t)
+	SIZEOF_INFO_ENTRY(UsageCtrl_t)
+	SIZEOF_INFO_ENTRY(usage_count_mgr)
+	SIZEOF_INFO_ENTRY(CpuStatus_t)
+	SIZEOF_INFO_ENTRY(MemoryStatus_t)
+
+    SIZEOF_INFO_TITLE("dcLib misc")
+	SIZEOF_INFO_ENTRY(ProgInfo_t)
+	SIZEOF_INFO_ENTRY(IntervalInfo_t)
+	SIZEOF_INFO_ENTRY(MultiColumn_t)
+	SIZEOF_INFO_ENTRY(ScanAddr_t)
+	SIZEOF_INFO_ENTRY(ResizeElement_t)
+	SIZEOF_INFO_ENTRY(ResizeHelper_t)
+	SIZEOF_INFO_ENTRY(XDump_t)
+
+    SIZEOF_INFO_TERM()
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+const sizeof_info_t *sizeof_info_default[] =
+{
+	sizeof_info_linux,
+	sizeof_info_dclib,
+	0
+};
+
+PointerList_t SizeofInfoMgr = {0};
+
+///////////////////////////////////////////////////////////////////////////////
+
+static int compare_sizeof_size
+	( const sizeof_info_t *a, const sizeof_info_t *b )
+{
+    DASSERT( a && b );
+    const int stat = a->size - b->size;
+    return stat ? stat : strcasecmp(a->name,b->name);
+}
+
+//-----------------------------------------------------------------------------
+
+static int compare_sizeof_name
+	( const sizeof_info_t *a, const sizeof_info_t *b )
+{
+    DASSERT( a && b );
+    return strcasecmp(a->name,b->name);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ListSizeofInfo
+(
+    const PrintMode_t	*p_pm,		// NULL or print mode
+    const sizeof_info_t	**si_list,	// list of list of entries
+    ArgManager_t	*p_filter,	// NULL or filter arguments, LOUP_LOWER recommended
+    sizeof_info_order_t	order		// kind of order
+)
+{
+    if ( !si_list || !*si_list )
+	return;
+
+
+    //--- setup
+
+    PrintMode_t pm = {0};
+    if (p_pm)
+	pm = *p_pm;
+    SetupPrintMode(&pm);
+
+    if (!si_list)
+    {
+	si_list = GetSizeofInfoMgrList();
+	if (!si_list)
+	    si_list = sizeof_info_default;
+    }
+
+    int n_tabs = 0, n_records = 0, n_elem = 0, n_cat = 0, str_size = 0;;
+    for ( const sizeof_info_t **si_ptr = si_list; *si_ptr; si_ptr++ )
+    {
+	n_tabs++;
+	for ( const sizeof_info_t *si = *si_ptr; si->size != -9; si++ )
+	{
+	    n_records++;
+	    if ( si->size >= 0 )
+		n_elem++;
+	    else if ( si->size == -1 )
+		n_cat++;
+	    if (si->name)
+		str_size += strlen(si->name) + 1;
+	}
+    }
+
+    if ( pm.debug > 0 )
+	fprintf(pm.flog,"\n%s> %u source list%s with %u record%s, %u categorie%s"
+		" and %u element%s, %zu bytes total%s%s",
+		pm.clog->info,
+		n_tabs, n_tabs == 1 ? "" : "s",
+		n_records, n_records == 1 ? "" : "s",
+		n_cat, n_cat == 1 ? "" : "s",
+		n_elem, n_elem == 1 ? "" : "s",
+		(n_records+n_tabs) * sizeof(sizeof_info_t) + str_size,
+		pm.clog->reset, pm.eol );
+
+    ArgManager_t my_filter = {0}, *filter = &my_filter;
+
+    if (p_filter)
+    {
+	if ( p_filter->force_case == LOUP_LOWER )
+	    filter = p_filter;
+	else
+	{
+	    for ( int i = 0; i < p_filter->argc; i++ )
+		AppendArgManager(&my_filter,p_filter->argv[i],0,false);
+
+	    for ( int i = 0; i < my_filter.argc; i++ )
+	    {
+		char *arg = my_filter.argv[i];
+		StringLowerS(arg,strlen(arg)+1,arg);
+	    }
+	}
+    }
+
+    sizeof_info_t *list = 0, *list_end = 0;
+    if (order)
+	list_end = list = MALLOC( n_elem * sizeof(*list) );
+
+
+    //--- get field widths
+
+    int max_size = 0;
+    for ( const sizeof_info_t **si_ptr = si_list; *si_ptr; si_ptr++ )
+    {
+	for ( const sizeof_info_t *si = *si_ptr; si->size != -9; si++ )
+	{
+	    if ( max_size < si->size && CheckFilterArgManager(filter,si->name) )
+		max_size = si->size;
+	}
+    }
+
+    char buf[100];
+    const int fw_hex = snprintf(buf,sizeof(buf),"%#x",max_size);
+    const int fw_dec = snprintf(buf,sizeof(buf),"%u",max_size);
+
+
+    //--- print or collect
+
+    ccp head = 0;
+    int n_head = 0, n_sizeof = 0;
+
+    for ( const sizeof_info_t **si_ptr = si_list; *si_ptr; si_ptr++ )
+    {
+	for ( const sizeof_info_t *si = *si_ptr; si->size != -9; si++ )
+	{
+	    if ( si->size >= 0 )
+	    {
+		if (CheckFilterArgManager(filter,si->name))
+		{
+		    n_sizeof++;
+		    if (order)
+			*list_end++ = *si;
+		    else
+		    {
+			if (head)
+			{
+			    n_head++;
+			    fprintf(pm.fout,"\n%s%s%s\n",pm.cout->caption,head,pm.cout->reset);
+			    head = 0;
+			}
+			fprintf(pm.fout," %#*x = %*u : %s\n",
+				fw_hex, si->size, fw_dec, si->size, si->name );
+		    }
+		}
+	    }
+	    else if ( si->size == -1 )
+		head = si->name;
+	    else if ( si->size == -2 )
+		putchar('\n');
+	}
+    }
+
+
+    //--- print ordered list
+
+    if (order)
+    {
+	putchar('\n');
+	if ( n_sizeof > 1 )
+	{
+	    if ( order == SIZEOF_ORDER_NAME )
+		qsort(list,n_sizeof,sizeof(*list),(qsort_func)compare_sizeof_name);
+	    else
+		qsort(list,n_sizeof,sizeof(*list),(qsort_func)compare_sizeof_size);
+	}
+
+	ccp prev = "";
+	for ( const sizeof_info_t *ptr = list; ptr < list_end; ptr++ )
+	{
+	    if (!strcmp(prev,ptr->name))
+		fprintf(pm.fout,"%s %#*x = %*u : %s%s\n",
+			    pm.cout->warn, fw_hex, ptr->size,
+			    fw_dec, ptr->size, ptr->name, pm.cout->reset );
+	    else
+	    {
+		fprintf(pm.fout," %#*x = %*u : %s\n",
+			fw_hex, ptr->size, fw_dec, ptr->size, ptr->name );
+		prev = ptr->name;
+	    }
+	}
+    }
+
+
+    //--- terminate
+
+    ResetArgManager(&my_filter);
+
+    if ( pm.debug > 0 )
+    {
+	putchar('\n');
+	if (!n_sizeof)
+	    fprintf(pm.flog,"%s> No elements printed.%s\n",pm.cout->info,pm.cout->reset);
+	else
+	{
+	    fputs(pm.cout->info,stdout);
+	    fputs("> ",stdout);
+	    if (n_head)
+		fprintf(pm.flog,"%u head line%s and ", n_head, n_head == 1 ? "" : "s" );
+
+	    if ( n_sizeof < n_elem )
+		fprintf(pm.flog,"%u of %u elements printed.%s\n",
+			n_sizeof, n_elem, pm.cout->reset );
+	    else
+		fprintf(pm.flog,"%u element%s printed.%s\n",
+			n_sizeof, n_sizeof == 1 ? "" : "s",
+			pm.cout->reset );
+	}
+    }
+
+    putchar('\n');
+    FREE(list);
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			misc				///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+const IntervalInfo_t interval_info[] =
+{
+    { NSEC_PER_SEC,	USEC_PER_SEC,	"Second"	},
+    { NSEC_PER_MIN,	USEC_PER_MIN,	"Minute"	},
+    { NSEC_PER_HOUR,	USEC_PER_HOUR,	"Hour"		},
+    { NSEC_PER_DAY,	USEC_PER_DAY,	"Day"		},
+    { NSEC_PER_WEEK,	USEC_PER_WEEK,	"Week"		},
+    { NSEC_PER_MONTH,	USEC_PER_MONTH,	"Month"		},
+    { NSEC_PER_YEAR,	USEC_PER_YEAR,	"Year"		},
+    { M1(u_nsec_t),	M1(u_usec_t),	"*"		},
 };
 
 //

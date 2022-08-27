@@ -1459,7 +1459,7 @@ static wd_disc_t * wd_open_gc_disc
 	    if (ntohl(*ptab))
 		n_part++;
 
-	WDPRINT("MULTIBOOT '%.6s', N=%d, dvd9=%d\n",&disc->dhead.disc_id,n_part,dvd9);
+	WDPRINT("MULTIBOOT '%.6s', N=%d, dvd9=%d\n",disc->dhead.id6.id6,n_part,dvd9);
 
 	wd_part_t * part = CALLOC(n_part,sizeof(*disc->part));
 	disc->part = part;
@@ -2178,7 +2178,7 @@ enumError wd_load_part
 	ccp disc_type	= wd_get_disc_type_name(disc->disc_type,"?");
 	ccp image_type	= disc->image_type ? disc->image_type : "?";
 	ccp image_ext	= disc->image_ext ? disc->image_ext : "";
-	ccp part_id	= wd_print_id(&boot->dhead.disc_id,6,0);
+	ccp part_id	= wd_print_id(boot->dhead.id6.id6,6,0);
 	ccp part_title	= boot->dhead.disc_title;
 
 	char norm_title[WII_TITLE_SIZE+1];
@@ -5933,7 +5933,7 @@ bool wd_patch_disc_header // result = true if something changed
     if ( new_id && !( disc->disc_attrib & WD_DA_GC_MULTIBOOT ) )
     {
 	char id6[6];
-	ccp src = &disc->dhead.disc_id;
+	ccp src = disc->dhead.id6.id6;
 	if (wd_patch_id(id6,src,new_id,6))
 	{
 	    stat = true;
@@ -6079,7 +6079,7 @@ bool wd_patch_part_id // result = true if something changed
 
     if ( new_boot_id && modify & WD_MODIFY_BOOT )
     {
-	ccp src = &part->boot.dhead.disc_id;
+	ccp src = part->boot.dhead.id6.id6;
 	if (wd_patch_id(id6,src,new_boot_id,6))
 	{
 	    wd_memmap_item_t * item
@@ -6151,8 +6151,10 @@ bool wd_patch_part_system // result = true if something changed
     system = hton64(system);
     if ( wd_part_has_tmd(part) && part->tmd->sys_version != system )
     {
+
 	part->tmd->sys_version = system;
 	wd_insert_patch_tmd(part);
+	stat = true;
     }
 
     return stat;
@@ -6778,7 +6780,7 @@ void wd_print_disc
 		m2[0], m2[1], m2[2], m2[3] );
 
     fprintf(f,"%*sID and title:       %.6s, %.64s\n", indent,"",
-		&disc->dhead.disc_id,  disc->dhead.disc_title );
+		disc->dhead.id6.id6, disc->dhead.disc_title );
 
     fprintf(f,"%*sRegion setting:     %d / %s\n",
 		indent,"", ntohl(disc->region.region),
@@ -7006,7 +7008,7 @@ static void wd_print_gc_mem
 	const u8 *m = (u8*)&boot->dhead.gc_magic;
 	snprintf( dest, msgsize,
 		    "boot.bin, magic=%02x-%02x-%02x-%02x, id=%s",
-		    m[0], m[1], m[2], m[3], wd_print_id(&boot->dhead.disc_id,6,0) );
+		    m[0], m[1], m[2], m[3], wd_print_id(boot->dhead.id6.id6,6,0) );
 	func(param,base_off+WII_BOOT_OFF,WII_BOOT_SIZE,msg);
 
 	//----- bi2.bin
@@ -7062,8 +7064,8 @@ static void wd_print_gc_mem
     {
 	snprintf( msg, sizeof(msg),
 		    "GameCube multiboot header, id=%.6s%s",
-		    &disc->dhead.disc_id,
-		    memcmp(&disc->dhead.disc_id+4,"DVD9",4) ? "" : ", dvd9" );
+		    disc->dhead.id6.id6,
+		    memcmp(disc->dhead.id6.id6+4,"DVD9",4) ? "" : ", dvd9" );
 	func(param,0,0x100,msg);
     }
 
@@ -7097,7 +7099,7 @@ void wd_print_mem
     const u8 *m = (u8*)&disc->dhead.wii_magic;
     snprintf( msg, sizeof(msg),
 		"Header, magic=%02x-%02x-%02x-%02x, id=%s",
-		m[0], m[1], m[2], m[3], wd_print_id(&disc->dhead.disc_id,6,0) );
+		m[0], m[1], m[2], m[3], wd_print_id(disc->dhead.id6.id6,6,0) );
     func(param,0,sizeof(disc->dhead),msg);
 
 

@@ -84,6 +84,110 @@ void cmd_version_section ( bool sect_header, ccp name_short, ccp name_long )
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////		    command config & support		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+enumError cmd_config()
+{
+    search_file_list_t sfl;
+    SearchConfigHelper(&sfl,0);
+
+    PrintScript_t ps;
+    SetupPrintScriptByOptions(&ps);
+    const bool print_info = ps.fform == PSFF_UNKNOWN;
+
+    if (print_info)
+    {
+	static char comment[] = "(*:relevant, +:found, -:ignored)";
+	if ( sfl.used == 1 )
+	    printf("\nOne searched configuration directory or file %s:\n",comment);
+	else
+	    printf("\nList of %u searched configuration directories and files %s:\n",
+			sfl.used, comment );
+    }
+
+    int i;
+    search_file_t *found = 0, *sf = sfl.list;
+    for ( i = 0; i < sfl.used; i++, sf++ )
+    {
+	char ch;
+	if ( sf->itype < INTY_REG )
+	    ch = '-';
+	else if ( !found && ( !opt_config || sf->hint & CONF_HINT_OPT ))
+	{
+	    found = sf;
+	    ch = '*';
+	}
+	else
+	    ch = '+';
+
+	if (print_info)
+	    printf("  %c %s\n",ch,sf->fname);
+    }
+
+    if (print_info)
+    {
+	if (found)
+	    printf("\nRelevant configuration file: %s\n",found->fname);
+	else
+	    fputs("\nNo valid configuration file found!\n",stdout);
+    }
+
+    config_t config;
+    InitializeConfig(&config);
+    if (found)
+	ScanConfig(&config,found->fname,!opt_config);
+ #ifdef TEST
+    else if (opt_config)
+	ScanConfig(&config,opt_config,false);
+ #endif
+    else
+	ScanConfig(&config,0,true);
+
+    if (print_sections)
+	PrintConfigFile(stdout,&config);
+    else if (print_info)
+	PrintConfig( stdout, &config, verbose>0 || opt_install );
+    else
+	PrintConfigScript(stdout,&config);
+
+    ResetConfig(&config);
+    ResetSearchFile(&sfl);
+
+    if (print_info)
+    {
+	if ( long_count > 0 )
+	{
+	    const StringField_t *sf = GetSearchList();
+	    fputs("\nSearch list:\n",stdout);
+	    ccp *str = sf->field;
+	    for ( i = 0; i < sf->used; i++, str++ )
+		printf("  %s\n",*str);
+	}
+	putchar('\n');
+    }
+
+    ResetPrintScript(&ps);
+    return ERR_OK;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			command argtest			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+enumError cmd_argtest ( int argc, char ** argv )
+{
+    printf("ARGUMENT TEST: %d arguments:\n",argc);
+
+    int idx;
+    for ( idx = 0; idx < argc; idx++ )
+	printf("%4u.: |%s|\n",idx,argv[idx]);
+    return ERR_OK;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			    cmd_error()			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 

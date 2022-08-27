@@ -155,6 +155,7 @@ typedef enum enumOptions
 	OPT_TIME,
 	OPT_SET_TIME,
 	OPT_LONG,
+	OPT_BRIEF,
 	OPT_SHOW,
 	OPT_FRAGMENTS,
 	OPT_NUMERIC,
@@ -169,13 +170,14 @@ typedef enum enumOptions
 	OPT_NO_SORT,
 	OPT_LIMIT,
 
-	OPT__N_SPECIFIC, // == 113
+	OPT__N_SPECIFIC, // == 114
 
 	//----- global options -----
 
 	OPT_VERSION,
 	OPT_HELP,
 	OPT_XHELP,
+	OPT_CONFIG,
 	OPT_WIDTH,
 	OPT_QUIET,
 	OPT_VERBOSE,
@@ -195,6 +197,16 @@ typedef enum enumOptions
 	OPT_TEST,
 	OPT_OLD,
 	OPT_NEW,
+	OPT_SH,
+	OPT_BASH,
+	OPT_JSON,
+	OPT_PHP,
+	OPT_MAKEDOC,
+	OPT_VAR,
+	OPT_ARRAY,
+	OPT_AVAR,
+	OPT_CASE,
+	OPT_INSTALL,
 	OPT_HOOK,
 	OPT_FORCE,
 	OPT_ALIGN_WDF,
@@ -202,7 +214,7 @@ typedef enum enumOptions
 	OPT_ALLOW_FST,
 	OPT_ALLOW_NKIT,
 
-	OPT__N_TOTAL // == 141
+	OPT__N_TOTAL // == 153
 
 } enumOptions;
 
@@ -316,6 +328,7 @@ typedef enum enumOptions
 //	OB_TIME			= 1llu << OPT_TIME,
 //	OB_SET_TIME		= 1llu << OPT_SET_TIME,
 //	OB_LONG			= 1llu << OPT_LONG,
+//	OB_BRIEF		= 1llu << OPT_BRIEF,
 //	OB_SHOW			= 1llu << OPT_SHOW,
 //	OB_FRAGMENTS		= 1llu << OPT_FRAGMENTS,
 //	OB_NUMERIC		= 1llu << OPT_NUMERIC,
@@ -441,10 +454,18 @@ typedef enum enumOptions
 //				| OB_COMPRESSION
 //				| OB_MEM,
 //
+//	OB_GRP_SCRIPT		= 0,
+//
 //	OB_CMD_VERSION		= OB_SECTIONS
 //				| OB_LONG,
 //
 //	OB_CMD_HELP		= ~(u64)0,
+//
+//	OB_CMD_CONFIG		= OB_LONG
+//				| OB_GRP_SCRIPT
+//				| OB_BRIEF,
+//
+//	OB_CMD_ARGTEST		= ~(u64)0,
 //
 //	OB_CMD_INFO		= OB_SECTIONS
 //				| OB_LONG,
@@ -684,6 +705,8 @@ typedef enum enumCommands
 
 	CMD_VERSION,
 	CMD_HELP,
+	CMD_CONFIG,
+	CMD_ARGTEST,
 	CMD_INFO,
 	CMD_TEST,
 	CMD_ERROR,
@@ -732,7 +755,7 @@ typedef enum enumCommands
 
 	CMD_FILETYPE,
 
-	CMD__N // == 45
+	CMD__N // == 47
 
 } enumCommands;
 
@@ -770,6 +793,7 @@ typedef enum enumGetOpt
 	GO_SPLIT_SIZE		= 'Z',
 
 	GO_AUTO			= 'a',
+	GO_BRIEF		= 'b',
 	GO_DEST			= 'd',
 	GO_NEWER		= 'e',
 	GO_FORCE		= 'f',
@@ -790,6 +814,7 @@ typedef enum enumGetOpt
 	GO_SPLIT		= 'z',
 
 	GO_XHELP		= 0x80,
+	GO_CONFIG,
 	GO_WIDTH,
 	GO_SCAN_PROGRESS,
 	GO_COLOR,
@@ -814,6 +839,16 @@ typedef enum enumGetOpt
 	GO_IGNORE_SETUP,
 	GO_LINKS,
 	GO_USER_BIN,
+	GO_SH,
+	GO_BASH,
+	GO_JSON,
+	GO_PHP,
+	GO_MAKEDOC,
+	GO_VAR,
+	GO_ARRAY,
+	GO_AVAR,
+	GO_CASE,
+	GO_INSTALL,
 	GO_PMODE,
 	GO_FLAT,
 	GO_COPY_GC,

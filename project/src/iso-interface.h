@@ -412,6 +412,7 @@ extern u8 wdisc_usage_tab2[WII_MAX_SECTORS];
 
 int ScanOptAllowFST ( ccp arg );
 int ScanOptAllowNKIT ( ccp arg );
+int ScanOptCase ( ccp arg );
 
 enumError ScanPartSelector
 (

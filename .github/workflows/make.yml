@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-      - run: make -C project distrib
+      - run: SYSTEM=mac make -C project flags distrib
       - name: Upload distribution
         uses: actions/upload-artifact@v2
         with:

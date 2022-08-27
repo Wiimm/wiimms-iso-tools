@@ -375,7 +375,7 @@ static void dump_gc_part
 	    fprintf(f,"%*s  boot.bin, title:  %.64s\n",
 			indent, "", part->boot.dhead.disc_title);
 
-	    ccp title = GetTitle(&part->boot.dhead.disc_id,0);
+	    ccp title = GetTitle(part->boot.dhead.id6.id6,0);
 	    if (title)
 		fprintf(f,"%*s  Title DB:         %s\n", indent, "", title );
 
@@ -607,14 +607,14 @@ enumError Dump_ISO
 
     if ( show_mode & SHOW_INTRO )
     {
-	dump_header(f,indent-2,sf,&disc->dhead.disc_id,real_path,disc);
+	dump_header(f,indent-2,sf,disc->dhead.id6.id6,real_path,disc);
 
 	fprintf(f,"%*sDisc name:         %.64s\n",indent,"",disc->dhead.disc_title);
 	ccp title = GetTitle((ccp)&disc->dhead,0);
 	if (title)
 	    fprintf(f,"%*sDB title:          %s\n",indent,"",title);
 
-	const RegionInfo_t * rinfo = GetRegionInfo(disc->dhead.region_code);
+	const RegionInfo_t * rinfo = GetRegionInfo(disc->dhead.id6.region_code);
 	fprintf(f,"%*sID Region:         %s [%s]\n",indent,"",rinfo->name,rinfo->name4);
 
 	if (is_gc)
@@ -653,7 +653,7 @@ enumError Dump_ISO
     {
 	fprintf(f,"\n%*sDump of file %s\n",indent-2,"",sf->f.fname);
 	if ( show_mode & SHOW_D_ID )
-	    dump_id(f,indent,&disc->dhead.disc_id,sf->wbfs_id6,disc->main_part,19);
+	    dump_id(f,indent,disc->dhead.id6.id6,sf->wbfs_id6,disc->main_part,19);
     }
 
 
@@ -1571,9 +1571,9 @@ int RenameISOHeader ( void * data, ccp fname,
 	return 0; // nothing to do
 
     wd_header_t * whead = (wd_header_t*)data;
-    char old_id6[7], new_id6[7];
+    id6_t old_id6, new_id6;
     memset(old_id6,0,sizeof(old_id6));
-    StringCopyS(old_id6,sizeof(old_id6),&whead->disc_id);
+    StringCopyS(old_id6,sizeof(old_id6),whead->id6.id6);
     memcpy(new_id6,old_id6,sizeof(new_id6));
 
     if ( testmode || verbose >= 0 )
@@ -1664,6 +1664,18 @@ int ScanOptAllowNKIT ( ccp arg )
 	return 1;
 
     opt_allow_nkit = stat;
+    return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int ScanOptCase ( ccp arg )
+{
+    const int stat = ScanKeywordLowerAutoUpper(arg,LOUP_AUTO,0,"Option --case");
+    if ( stat == LOUP_ERROR )
+	return 1;
+
+    opt_case = stat;
     return 0;
 }
 
@@ -2302,7 +2314,7 @@ void DumpFileIndex ( FILE *f, int indent, const FileIndex_t * fidx )
 ccp SpecialRequiredFilesFST[] =
 {
 	"/sys/boot.bin",
-	"/sys/bi2.bin",
+//	"/sys/bi2.bin",
 	"/sys/apploader.img",
 	"/sys/main.dol",
 	0
@@ -3436,7 +3448,7 @@ static enumError ScanSetupDef
 	bool silent		// true: suppress error message if file not found
 )
 {
-    enumError err = ScanSetupFile(part_setup_def,path,FST_SETUP_FILE,silent);
+    enumError err = ScanSetupFile(part_setup_def,0,path,FST_SETUP_FILE,silent);
 
     static const KeywordTab_t tab[] =
     {
@@ -4092,8 +4104,19 @@ u64 GenPartFST
 
     LoadFile(path, "sys/boot.bin", 0, imi->data,
 		WII_BOOT_SIZE, 0, &part->max_fatt, true );
-    LoadFile(path, "sys/bi2.bin", 0, imi->data+WII_BOOT_SIZE,
-		WII_BI2_SIZE, 0, &part->max_fatt, true );
+
+    u8 *bi2_ptr = imi->data+WII_BOOT_SIZE;
+    if (LoadFile(path, "sys/bi2.bin", 0, bi2_ptr, WII_BI2_SIZE, 2, &part->max_fatt, true ))
+    {
+	memset(bi2_ptr,0,WII_BI2_SIZE);
+	static const u8 bi2beg[] =
+	{ 
+	  0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+	  0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x01,
+	  0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x05, 0x00,0x00,0x00,0x00, 0x04,0x00,0x00,0x00,
+	};
+	memcpy(bi2_ptr,bi2beg,sizeof(bi2beg));
+    }
 
     wd_boot_t * boot = imi->data;
     char * title = boot->dhead.disc_title;
@@ -4106,7 +4129,7 @@ u64 GenPartFST
     }
     snprintf(imi->info,sizeof(imi->info),"boot.bin [%.6s] + bi2.bin",(ccp)imi->data);
 
-    if ( !fst->dhead.disc_id && part->part_type == WD_PART_DATA )
+    if ( !fst->dhead.id6.disc_id && part->part_type == WD_PART_DATA )
     {
 	char * dest = (char*)&fst->dhead;
 	memset(dest,0,sizeof(fst->dhead));
@@ -4126,7 +4149,7 @@ u64 GenPartFST
 			&fst->dhead, sizeof(fst->dhead), 2,
 			&part->max_fatt, true);
 	PatchDiscHeader(&fst->dhead,part_id,part_name);
-	PatchId(&fst->dhead.disc_id,modify_disc_id,0,6);
+	PatchId(fst->dhead.id6.id6,modify_disc_id,0,6);
 	PatchName(fst->dhead.disc_title,WD_MODIFY_DISC|WD_MODIFY__AUTO);
     }
 
@@ -4137,7 +4160,7 @@ u64 GenPartFST
     {
 	enumRegion reg = opt_region;
 	const RegionInfo_t * rinfo
-	    = GetRegionInfo(fst->dhead.region_code);
+	    = GetRegionInfo(fst->dhead.id6.region_code);
 
 	if ( reg == REGION__AUTO && rinfo->mandatory )
 	    reg = rinfo->reg;
@@ -4153,7 +4176,7 @@ u64 GenPartFST
 	{
 	    memset( &fst->region, 0, sizeof(fst->region) );
 	    fst->region.region
-		= htonl(  reg == REGION__AUTO ? rinfo->reg : reg );
+		= htonl( reg == REGION__AUTO ? rinfo->reg : reg );
 	}
     }
 
@@ -4273,7 +4296,7 @@ u64 GenPartFST
 			    &part->max_fatt, true )
 		    == ERR_OK;
     if (!load_ticket)
-	ticket_setup(&pc->head->ticket,&fst->dhead.disc_id);
+	ticket_setup(&pc->head->ticket,fst->dhead.id6.id6);
     wd_patch_id(pc->head->ticket.title_id+4,0,part_id,4);
 
     if (load_tmd)
@@ -4281,7 +4304,7 @@ u64 GenPartFST
 				pc->tmd, pc->tmd_size, 0, &part->max_fatt, true )
 		 == ERR_OK;
     if (!load_tmd)
-	tmd_setup(pc->tmd,pc->tmd_size,&fst->dhead.disc_id);
+	tmd_setup(pc->tmd,pc->tmd_size,fst->dhead.id6.id6);
     wd_patch_id(pc->tmd->title_id+4,0,part_id,4);
 
     if (use_std_cert_chain)
@@ -4294,8 +4317,10 @@ u64 GenPartFST
 	LoadFile(path,"cert.bin", 0, pc->cert, pc->cert_size,
 			0, &part->max_fatt, true );
 
+
     if ( part->part_type == WD_PART_DATA )
     {
+
 	PatchId(pc->head->ticket.title_id+4,modify_ticket_id,0,4);
 	PatchId(pc->tmd->title_id+4,modify_tmd_id,0,4);
 	if (opt_ios_valid)
@@ -4339,6 +4364,17 @@ u64 GenPartFST
     imi->part = part;
     snprintf(imi->info,sizeof(imi->info),"%s partition, data",
 			wd_get_part_name(part->part_type,"?"));
+
+
+    //----- fix bi2.bin for double layer
+
+    const u64 term_off = imi->offset + imi->size;
+    if ( term_off > WII_SECTOR_SIZE*(u64)WII_SECTORS_SINGLE_LAYER )
+    {
+	u8 *pos = bi2_ptr + 0x30;
+	if (!be16(pos))
+	    write_be16(pos,0x7ed4);
+    }
 
 
     //----- terminate

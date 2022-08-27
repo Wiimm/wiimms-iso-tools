@@ -68,17 +68,21 @@
 #include "crypt.h"
 #include "titles.h"
 #include "dclib-utf8.h"
+#include "config-paths.inc"
 
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			    Setup			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+ccp		opt_config		= 0;
+int		opt_install		= 0;
+ccp		std_share_path		= 0;
+ccp		share_path		= 0;
 enumProgID	prog_id			= PROG_UNKNOWN;
 u32		revision_id		= SYSTEMID + REVISION_NUM;
 ccp		search_path[6]		= {0};
 ccp		lang_info		= 0;
-volatile int	SIGINT_level		= 0;
 volatile int	verbose			= 0;
 volatile int	logging			= 0;
 int		progress		= 0;
@@ -94,6 +98,7 @@ enumOFT		output_file_type	= OFT_UNKNOWN;
 PrintScriptFF	script_fform		= PSFF_UNKNOWN;
 ccp		script_varname		= 0;
 int		script_array		= 0;
+LowerUpper_t	opt_case		= LOUP_AUTO;
 int		opt_truncate		= 0;
 #if defined(TEST) || defined(WIIMM)					// [[split]]
  int		opt_auto_split		= 1;
@@ -128,6 +133,8 @@ PreallocMode	prealloc_mode		= PREALLOC_DEFAULT;
 StringField_t	source_list;
 StringField_t	recurse_list;
 StringField_t	created_files;
+
+void (*print_title_func) ( FILE * f ) = 0;
 
 char		iobuf [IOBUF_SIZE];			// global io buffer
 const char	zerobuf[ZEROBUF_SIZE]	= {0};		// global zero buffer
@@ -527,6 +534,7 @@ void SetupLib ( int argc, char ** argv, ccp p_progname, enumProgID prid )
 
 
     //----- setup search_path
+// [[config]] remove complete section!?
 
     ccp *sp = search_path, *sp2;
     ASSERT( sizeof(search_path)/sizeof(*search_path) > 5 );
@@ -600,6 +608,29 @@ void SetupLib ( int argc, char ** argv, ccp p_progname, enumProgID prid )
     *sp = 0;
     ASSERT( sp - search_path < sizeof(search_path)/sizeof(*search_path) );
 
+
+    //----- setup std_share_path
+
+// [[config]] // var name conflicts 
+  {
+     #ifndef __CYGWIN__
+	static const char share[] = "/share/wit";
+	std_share_path = "/usr/local/share/wit";
+     #endif
+
+	ccp progdir = ProgramDirectory();
+	PRINT0("progdir=%s\n",progdir);
+	if (progdir)
+	{
+	 #ifdef __CYGWIN__
+	    std_share_path = progdir;
+	 #else
+	    uint plen = strlen(progdir);
+	    if ( plen >= 4 && !strcmp(progdir+plen-4,"/bin") )
+		std_share_path = MEMDUP2(progdir,plen-4,share,strlen(share));
+	 #endif
+	}
+  }
 
     //----- setup language info
 
@@ -685,6 +716,49 @@ void SetupLib ( int argc, char ** argv, ccp p_progname, enumProgID prid )
 	}
     }
  #endif
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void NormalizeOptions
+(
+    uint	log_level	// >0: print PROGRAM_NAME and pathes
+)
+{
+    SetupColors();
+
+    //--- load configuration
+
+    const config_t *config = GetConfig();
+    if (config)
+	share_path = config->share_path;
+
+
+    //--- loglevel
+
+    if ( log_level > 0 )
+    {
+	if (print_title_func)
+	    print_title_func(stdout);
+
+	fprintf(stdlog,"PROGRAM_NAME    = %s\n",ProgInfo.progname);
+	fprintf(stdlog,"CONFIG_FILE     = %s\n",config->config_file);
+
+	{
+	    const config_t *config = GetConfig();
+	    fprintf(stdlog,"CONFIG_FILE     = %s\n",config->config_file);
+	    fprintf(stdlog,"STD_SHARE_PATH  = %s\n",std_share_path);
+	    fprintf(stdlog,"SHARE_PATH      = %s\n",config->share_path);
+	    fprintf(stdlog,"TITLES_PATH     = %s\n",config->titles_path);
+
+	    int i;
+	    const StringField_t *sf = GetSearchList();
+	    ccp *str = sf->field;
+	    for ( i = 0; i < sf->used; i++, str++ )
+		fprintf(stdlog,"SEARCH_PATH[%d]  = %s\n",i,*str);
+	}
+	fprintf(stdlog,"\n");
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3403,16 +3477,19 @@ size_t ResetSetup
 
 enumError ScanSetupFile
 (
-	SetupDef_t * list,	// object list terminated with an element 'name=NULL'
-	ccp path1,		// filename of text file, part 1
-	ccp path2,		// filename of text file, part 2
-	bool silent		// true: suppress error message if file not found
+    SetupDef_t		* sdef,		// object list terminated with an element 'name=NULL'
+    const ListDef_t	* ldef,		// NULL or object list terminated
+					//	with an element 'name=NULL'
+    ccp			path1,		// filename of text file, part 1
+    ccp			path2,		// filename of text file, part 2
+    bool		silent		// true: suppress error message if file not found
 )
 {
-    DASSERT(list);
+// [[config]]
+    DASSERT(sdef);
     DASSERT(path1||path2);
 
-    ResetSetup(list);
+    ResetSetup(sdef);
 
     char pathbuf[PATH_MAX];
     ccp path = PathCatPP(pathbuf,sizeof(pathbuf),path1,path2);
@@ -3460,7 +3537,7 @@ enumError ScanSetupFile
 	//----- check if name is a known parameter
 
 	SetupDef_t * item;
-	for ( item = list; item->name; item++ )
+	for ( item = sdef; item->name; item++ )
 	    if (!strcmp(item->name,name))
 		break;
 	if (!item->name)
@@ -3553,6 +3630,325 @@ size_t ReadDataList // returns number of writen bytes
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			scan configuration		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void ResetConfig ( config_t *config )
+{
+    DASSERT(config);
+    FreeString(config->config_file);
+    FreeString(config->base_path);
+    FreeString(config->install_path);
+    FreeString(config->install_config);
+    FreeString(config->share_path);
+    FreeString(config->titles_path);
+    InitializeConfig(config);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enumError ScanConfig
+(
+    config_t		*config,	// store configuration here
+    ccp			path,		// NULL or path
+    bool		silent		// true: suppress printing of error messages
+)
+{
+    ASSERT(config);
+    ResetConfig(config);
+    config->config_file = path ? STRDUP(path) : 0;
+
+
+    //--- setup paths
+
+    exmem_list_t paths;
+    InitializeEML(&paths);
+
+ #ifdef __CYGWIN__
+    ccp	base_path	= "$(programfiles)";
+    ccp	install_path	= opt_install ? "$(base)/Wiimm/SZS" : ProgramDirectory();
+    ccp	share_path	= opt_install ? "$(install)" : std_share_path;
+ #else
+    ccp	base_path	= "/usr/local";
+    ccp	install_path	= opt_install ? "$(base)/bin" : ProgramDirectory();
+    ccp	share_path	= opt_install ? "$(base)/share/szs" : std_share_path;
+ #endif
+
+    ccp	install_config	= opt_install ? "" : config->config_file;
+
+    struct assign_t { ccp name; ccp init; ccp *var; };
+    const struct assign_t assign_tab[] =
+    {
+	{ "base",	base_path,		&config->base_path },
+	{ "install",	install_path,		&config->install_path },
+	{ "config",	install_config,		&config->install_config },
+	{ "share",	share_path,		&config->share_path },
+	{ "titles",	"$(share)",		&config->titles_path },
+	{0,0,0}
+    };
+
+    const struct assign_t *assign;
+    for ( assign = assign_tab; assign->name; assign++ )
+	if (assign->init)
+	{
+	    exmem_t data = ExMemByString(assign->init);
+	    InsertEML(&paths,assign->name,CPM_LINK,&data,CPM_COPY);
+	}
+
+    AddStandardSymbolsEML(&paths,false);
+    //DumpEML(stdout,2,&paths,0);
+
+
+    //--- scan file
+
+    const ListDef_t list_def[] =
+    {
+	{ "paths",	0, 0, &paths },
+	{0,0,0,0}
+    };
+
+    const enumError err = path && *path
+		? ScanSetupFile(0,list_def,path,0,silent)
+		: ERR_OK;
+
+    ResolveAllSymbolsEML(&paths);
+    //DumpEML(stdout,2,&paths,0);
+
+
+    //--- assign known values
+
+    char buf[1000];
+    for ( assign = assign_tab; assign->name; assign++ )
+    {
+	if (assign->var)
+	{
+	    exmem_key_t *ref = FindEML(&paths,assign->name);
+	    if (ref)
+	    {
+		FreeString(*assign->var);
+		NormalizeFileName(buf,sizeof(buf),ref->data.data.ptr,true,true,TRSL_REMOVE);
+		*assign->var = STRDUP(buf);
+	    }
+	    else
+		*assign->var = EmptyString;
+	}
+    }
+
+    ResetEML(&paths);
+    return err;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void SearchConfigHelper ( search_file_list_t *sfl, int stop_mode )
+{
+    DASSERT(sfl);
+    InitializeSearchFile(sfl);
+
+    ccp opt[]	 = { opt_config, opt_install ? "$(prog)/install.conf" : 0, 0, };
+    ccp xdg_home = "szs";
+    ccp home	 = ".szs";
+    ccp etc[]	 = { "wiimm", "" };
+
+    SearchConfig(sfl,CONFIG_FILE, opt,2, &xdg_home,1, &home,1, etc,2, etc+1,1, 0,0, stop_mode );
+    if (logging>3)
+	DumpSearchFile(stdout,2,sfl,logging>4,"Config search list");
+}
+
+//-----------------------------------------------------------------------------
+
+const config_t * GetConfig()
+{
+    static config_t config;
+    static bool done = false;
+    if (!done)
+    {
+	done = true;
+
+	search_file_list_t sfl;
+	SearchConfigHelper(&sfl,2);
+
+	uint i;
+	ccp found = 0;
+	search_file_t *sf = sfl.list;
+	for ( i = 0; i < sfl.used; i++, sf++ )
+	    if ( sf->itype >= INTY_REG )
+	    {
+		found = sf->fname;
+		break;
+	    }
+
+	InitializeConfig(&config);
+	ScanConfig(&config,found,false);
+	ResetSearchFile(&sfl);
+
+	if ( verbose >= 3 )
+	    PrintConfig(stderr,&config,true);
+    }
+
+    return &config;
+}
+
+//-----------------------------------------------------------------------------
+
+void PrintConfig ( FILE *f, const config_t *config, bool verbose )
+{
+    if ( f && config )
+    {
+	fprintf(f,
+		"\nConfiguration:\n"
+		"  config file:    %s\n"
+		,config->config_file ? config->config_file : ""
+		);
+	if (verbose)
+	    fprintf(f,
+		"  base path:      %s\n"
+		"  install path:   %s\n"
+		"  install config: %s\n"
+		,config->base_path
+		,config->install_path
+		,config->install_config
+		);
+	fprintf(f,
+		"  share path:     %s\n"
+		"  titles path:  %s\n"
+		,config->share_path
+		,config->titles_path
+		);
+    }
+}
+
+//-----------------------------------------------------------------------------
+
+struct config_offset_t { uint mode; ccp name; uint offset; };
+static const struct config_offset_t config_offset_tab[] =
+{
+	{ 0,"config",	offsetof(config_t,config_file) },
+	{ 1,"base",	offsetof(config_t,base_path) },
+	{ 1,"install",	offsetof(config_t,install_path) },
+	{ 1,"config",	offsetof(config_t,install_config) },
+	{ 1,"share",	offsetof(config_t,share_path) },
+	{ 1,"titles",	offsetof(config_t,titles_path) },
+	{0,0}
+};
+
+//-----------------------------------------------------------------------------
+
+void PrintConfigScript ( FILE *f, const config_t *config )
+{
+    if ( f && config )
+    {
+	PrintScript_t ps;
+	SetupPrintScriptByOptions(&ps);
+	ps.f		= f;
+	ps.eq_tabstop	= 1;
+	ps.auto_quote	= true;
+
+	PrintScriptVars(&ps,3,
+		"base=\"%s\"\n"
+		"install=\"%s\"\n"
+		"config=\"%s\"\n"
+		"share=\"%s\"\n"
+		"titles=\"%s\"\n"
+		,config->base_path
+		,config->install_path
+		,config->install_config ? config->install_config : ""
+		,config->share_path
+		,config->titles_path
+		);
+    }
+}
+
+//-----------------------------------------------------------------------------
+
+void PrintConfigFile ( FILE *f, const config_t *config )
+{
+    if ( f && config )
+    {
+	config_t dest;
+	InitializeConfig(&dest);
+
+	const struct config_offset_t *ptr;
+	for ( ptr = config_offset_tab; ptr->name; ptr++ )
+	{
+	    if (!ptr->mode)
+		continue;
+
+	    ccp *destval = (ccp*)((char*)&dest + ptr->offset);
+
+	    bool done = false;
+	    ccp val = *(ccp*)((char*)config + ptr->offset);
+	    if (val)
+	    {
+		const int len = strlen(val);
+		const struct config_offset_t *ptr2;
+		for ( ptr2 = ptr-1; ptr2 >= config_offset_tab; ptr2-- )
+		{
+		    ccp val2 = *(ccp*)((char*)config + ptr2->offset);
+		    if ( ptr2->mode && val2 )
+		    {
+			const int len2 = strlen(val2);
+			if ( len2 > 1 && ( len2 == len || len2 < len && val[len2] == '/' )
+				&& !memcmp(val,val2,len2) )
+			{
+			    ccp res = PRINTDUP("$(%s)%s",ptr2->name,val+len2);
+			    *destval = QuoteStringCircS(res,EmptyQuote,CHMD__MODERN);
+			    FreeString(res);
+			    done = true;
+			    break;
+			}
+		    }
+		}
+	    }
+
+	    if (!done)
+		*destval = QuoteStringCircS(val,EmptyQuote,CHMD__MODERN);
+	}
+
+	if ( brief_count > 0 )
+	    fprintf(f,"[PATHS]\n"
+		"base\t= %s\n"
+		"install\t= %s\n"
+		"config\t= %s\n"
+		"share\t= %s\n"
+		"titles\t= %s\n"
+		,dest.base_path
+		,dest.install_path
+		,dest.install_config
+		,dest.share_path
+		,dest.titles_path
+		);
+	else
+	    fprintf(f,text_config_paths
+		,dest.base_path
+		,dest.install_path
+		,dest.install_config
+		,dest.share_path
+		,dest.titles_path
+		);
+
+	ResetConfig(&dest);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+const StringField_t * GetSearchList()
+{
+    static StringField_t search_list = {0};
+    if (!search_list.field)
+    {
+	InitializeStringField(&search_list);
+	const config_t *config = GetConfig();
+	AppendUniqueStringField(&search_list,config->share_path,false);
+	AppendUniqueStringField(&search_list,std_share_path,false);
+	AppendUniqueStringField(&search_list,ProgramDirectory(),false);
+    }
+    return &search_list;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			apple only			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 #ifdef __APPLE__
@@ -3565,6 +3961,25 @@ int ____chkstk_darwin() { return 0; }
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			    misc			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void SetupPrintScriptByOptions ( PrintScript_t *ps )
+{
+    DASSERT(ps);
+
+    InitializePrintScript(ps);
+    ps->force_case	= opt_case;
+    ps->create_array	= script_array > 0;
+    ps->var_name	= script_varname ? script_varname : "res";
+    ps->var_prefix	= script_varname ? script_varname : "res_";
+    ps->eq_tabstop	= 2;
+    ps->ena_empty	= brief_count < 2;
+    ps->ena_comments	= brief_count < 1;
+
+    ps->fform		= script_fform == PSFF_UNKNOWN && print_sections
+			? PSFF_CONFIG : script_fform;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 size_t AllocTempBuffer ( size_t needed_size )

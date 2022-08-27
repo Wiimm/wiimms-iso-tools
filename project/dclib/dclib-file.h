@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -41,6 +41,63 @@
 
 #include "dclib-types.h"
 #include "dclib-basics.h"
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			    log helpers			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+#define TRY_OPEN_FILE ((FILE*)1)
+#define SETUP_TRY_OPEN_FILE(f,fname,mode) \
+	static FILE *f = TRY_OPEN_FILE; f = TryOpenFile(f,fname,mode)
+
+FILE * TryOpenFile ( FILE *f, ccp fname, ccp mode );
+
+//-----------------------------------------------------------------------------
+// [[TimestampMode_t]
+
+typedef enum TimestampMode_t
+{
+    TSM_OFF,	// no timestamp
+    TSM_SEC,	// timstamp HH:MM:SS
+    TSM_MSEC,	// timstamp HH:MM:SS.123
+    TSM_USEC,	// timstamp HH:MM:SS.123456
+}
+TimestampMode_t;
+
+//-----------------------------------------------------------------------------
+// [[LogFile_t]
+
+typedef struct LogFile_t
+{
+    FILE		*log;		// NULL or log file
+    mem_t		tag;		// A string to print before message
+    TimestampMode_t	ts_mode;	// How to print the timestamp
+    bool		flush;		// TRUE: fflush() for each log
+}
+LogFile_t;
+
+//-----------------------------------------------------------------------------
+
+extern LogFile_t GlobalLogFile;
+
+int GetLogTimestamp	( char *buf, uint buf_size, TimestampMode_t ts_mode );
+int PrintLogTimestamp	( LogFile_t *lf );
+
+int PutLogFile		( LogFile_t *lf, ccp text, int text_len );
+int PrintArgLogFile	( LogFile_t *lf, ccp format, va_list arg );
+int PrintLogFile	( LogFile_t *lf, ccp format, ... )
+				__attribute__ ((__format__(__printf__,2,3)));
+
+//-----------------------------------------------------------------------------
+
+exmem_t SearchToolByPATH ( ccp tool );
+exmem_t SearchToolByList ( ccp * list, int max ); // max<0: NULL is list terminator
+
+FILE * OpenPipeToPager();
+void ClosePagerFile();
+bool StdoutToPager();
+void CloseStdoutToPager();
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -575,13 +632,22 @@ typedef enum TransferMode_t
 {
     //--- jobs
 
-    TFMD_J_MOVE		= 0x01,  // move file
-    TFMD_J_MOVE1	= 0x02,  // move file, but only if not linked (ignore TFMD_J_MOVE)
-    TFMD_J_RM_DEST	= 0x04,  // remove dest before TFMD_J_LINK and TFMD_J_COPY
-    TFMD_J_LINK		= 0x08,  // link file
-    TFMD_J_COPY		= 0x10,  // copy file
-    TFMD_J_RM_SRC	= 0x20,  // remove source after TFMD_J_COPY
-//  TFMD_J_TOUCH	= 0x40,  // touch destination => not supported yet
+    TFMD_J_MOVE		= 0x001,  // move file
+    TFMD_J_MOVE1	= 0x002,  // move file, but only if not linked (ignore TFMD_J_MOVE)
+    TFMD_J_RM_DEST	= 0x004,  // remove dest before TFMD_J_LINK and TFMD_J_COPY
+    TFMD_J_LINK		= 0x008,  // link file
+    TFMD_J_COPY		= 0x010,  // copy file
+    TFMD_J_RM_SRC	= 0x020,  // remove source after TFMD_J_COPY
+//  TFMD_J_TOUCH	= 0x040,  // touch destination => not supported yet
+
+    //--- flags
+
+    TFMD_F_TEST		= 0x100,  // testmode, don't touch files
+
+    //--- masks
+
+    TFMD_M_JOBS		= 0x03f,  // mask for jobs
+    TFMD_M_FLAGS	= 0x100,  // mask for flags
 
     //--- modes
 
@@ -591,7 +657,7 @@ typedef enum TransferMode_t
     TFMD_COPY	=	 	 TFMD_J_RM_DEST | TFMD_J_COPY,
     TFMD_CAT	=				  TFMD_J_COPY,
 }
-__attribute__ ((packed)) TransferMode_t;
+TransferMode_t;
 
 //-----------------------------------------------------------------------------
 
@@ -605,8 +671,9 @@ __attribute__ ((packed)) TransferMode_t;
 
 enumError TransferFile
 (
-    ccp			src,		// source path
+    LogFile_t		*log,		// not NULL: log activities
     ccp			dest,		// destination path
+    ccp			src,		// source path
     TransferMode_t	tfer_mode,	// transfer mode
     mode_t		open_mode	// mode for CopyFile*() -> open()
 );
@@ -750,7 +817,6 @@ typedef struct TraceLog_t
     ccp		fname;		// name of file to open
     FILE	*log;		// NULL or open log file
     int		level;		// log level, don't log if <0
-    
 }
 TraceLog_t;
 
@@ -891,7 +957,11 @@ int ExistDirectory
 
 bool IsSameFilename ( ccp fn1, ccp fn2 );
 
+// convert type get by readdir() to of struct stat.st_mode
+uint ConvertDType2STMode ( uint d_type );
+
 ///////////////////////////////////////////////////////////////////////////////
+// [[FindConfigFile_t]]
 
 typedef enum FindConfigFile_t
 {
@@ -948,6 +1018,43 @@ int SearchFiles
 				// if empty: extract from combined path
     SearchFilesFunc	func,	// callback function, never NULL
     void		*param	// third parameter of func()
+);
+
+///////////////////////////////////////////////////////////////////////////////
+// [[search_paths_stat_t]]
+
+typedef struct search_paths_stat_t
+{
+    bool		abort;		// true: abort search
+    enumError		max_err;	// max found error
+
+    uint		dir_count;	// number of scanned directories
+    uint		func_count;	// number of func() calls
+    uint		hit_count;	// number of hits (!ERR_JOB_IGNORED)
+}
+search_paths_stat_t;
+
+//-----------------------------------------------------------------------------
+
+// error codes < 0 mean: abort.
+// return ERR_JOB_IGNORED if path finally not match
+
+typedef enumError (*SearchPathsFunc)
+(
+    mem_t	path,		// full path of existing file, never NULL
+    uint	st_mode,	// copy of struct stat.st_mode, see "man 2 stat"
+    void	*param		// user defined parameter
+);
+
+//-----------------------------------------------------------------------------
+
+search_paths_stat_t SearchPaths
+(
+    ccp			path1,		// not NULL: part #1 of base path
+    ccp			path2,		// not NULL: part #2 of base path
+    bool		allow_hidden,	// allow hiddent directories and files
+    SearchPathsFunc	func,		// callback function, never NULL
+    void		*param		// last param for func()
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1008,11 +1115,17 @@ uint NumberedFilename
 
 #endif
 
+///////////////////////////////////////////////////////////////////////////////
+
+// return a string of the internal cache
+// if ret_level: store level here.
+ccp GetBlockDeviceHolder ( ccp name, ccp sep, int *ret_level );
+
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			normalize filenames		///////////////
 ///////////////////////////////////////////////////////////////////////////////
-// [[trailing_slash]] 
+// [[trailing_slash]]
 
 typedef enum trailing_slash
 {
@@ -1133,24 +1246,6 @@ config_hint_t;
 
 //-----------------------------------------------------------------------------
 
-uint SearchConfig1
-(
-    search_file_list_t *sfl,
-			// valid search list, new file will be appended
-    ccp config_fname,	// default filename (without path) of config file
-
-    ccp option,		// NULL or filename by option		=> CONF_HINT_OPT
-    ccp home_path,	// NULL or home path for config file	=> CONF_HINT_HOME
-    ccp etc_path,	// NULL or etc path for config file	=> CONF_HINT_ETC
-    ccp share_path,	// NULL or share path for config file	=> CONF_HINT_MISC
-
-    int stop_mode	// >0: stop if found, >1: stop on option
-
-    // hints (by source, values=prio): 8:option, 4:home, 2:etc, 1:prog-path
-);
-
-//-----------------------------------------------------------------------------
-
 bool SearchConfig
 (
     // for all paths:
@@ -1198,8 +1293,11 @@ typedef struct FDList_t
 {
     bool	use_poll;	// false: use select(), true: use poll()
 
-    u64		now_usec;	// set on Clear() and Wait(), result of GetTimeUSec(false)
-    u64		timeout_usec;	// next timeout, based on GetTimeUSec(false)
+    u_usec_t	now_usec;	// set on Clear() and Wait(), result of GetTimeUSec(false)
+    u_usec_t	timeout_usec;	// next timeout, based on GetTimeUSec(false) (TIME!)
+    u_nsec_t	timeout_nsec;	// next timeout, based on GetTimerNSec()     (TIMER!)
+    u_usec_t	min_wait_usec;	// if >0: minimal waiting time (increment 'timeout_usec')
+
 
     //--- select() params
 
@@ -1216,11 +1314,12 @@ typedef struct FDList_t
 
     //--- statistics
 
+    FILE	*debug_file;	// not NULL: print debug line each select() and poll()
     uint	n_sock;		// current number of registered sockets
 				// equals poll_used if poll is used
     uint	wait_count;	// total number of waits
-    u64		wait_usec;	// total wait time in usec
-    u64		cur_usec;	// current wait time in usec
+    u_usec_t	wait_usec;	// total wait time in usec
+    u_usec_t	last_wait_usec;	// last wait time in usec
 }
 FDList_t;
 
@@ -1240,14 +1339,14 @@ uint AddFDList
 (
     // returns the pool-index if available, ~0 otherwise
 
-    FDList_t	*fdl,		// valid socket list
-    int		sock,		// socket to add
-    uint	events		// bit field: POLLIN|POLLOUT|POLLERR
+    FDList_t	*fdl,	// valid socket list
+    int		sock,	// socket to add
+    uint	events	// bit field: POLLIN|POLLPRI|POLLOUT|POLLRDHUP|...
 );
 
 uint GetEventFDList
 (
-    // returns bit field: POLLIN|POLLOUT|POLLERR
+    // returns bit field: POLLIN|POLLOUT|POLLERR|...
 
     FDList_t	*fdl,		// valid socket list
     int		sock,		// socket to look for
@@ -1524,9 +1623,9 @@ typedef struct PrintScript_t
     ccp		var_name;	// NULL or variable name for result
     ccp		var_prefix;	// NULL or prefix for member names
     int		var_size;	// if > 0: print size of var name (some 'fform' only)
-    int		eq_tabstop;	// if > 0: indent '=' to set tabstop (some 'fform' only) 
+    int		eq_tabstop;	// if > 0: indent '=' to set tabstop (some 'fform' only)
     LowerUpper_t force_case;	// change case of var names if not LOUP_AUTO
-    bool	create_array;	// true: create ar arrays
+    bool	create_array;	// true: create arrays
     bool	auto_quote;	// true: detect quotes and use EscapeString()
     bool	add_index;	// true: add index to varname
     bool	ena_empty;	// true: enable empty lines
@@ -1567,6 +1666,75 @@ int PrintScriptVars
     ...					// arguments
 )
 __attribute__ ((__format__(__printf__,3,4)));
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			CpuStatus_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[CpuStatus_t]]
+
+typedef struct CpuStatus_t
+{
+    bool	valid;		// TRUE: data valid (setup done)
+    u_nsec_t	nsec;		// GetTimerNSec()
+    int		clock_ticks;	// number of clock ticks per second
+    int		n_cpu;		// total number of cpus
+
+    // all times in 1e4 ticks per second (in 0.01%)
+    u64		user;		// time spent in user mode.
+    u64		nice;		// time spent in user mode with low priority.
+    u64		system;		// time spent in system mode.
+    u64		idle;		// time spent in the idle task.
+
+    int		running_proc;	// currently runnable processes
+    int		total_proc;	// currently total processes
+
+    union
+    {
+	struct
+	{
+	    double loadavg_1m;	// load average last minute
+	    double loadavg_5m;	// load average last 5 minutes
+	    double loadavg_15m;	// load average last 12 minutes
+	};
+
+	double loadavg[3];	// load average as array
+    };
+}
+CpuStatus_t;
+
+//-----------------------------------------------------------------------------
+
+// prev_cpuinfo == NULL: get absolute values
+// prev_cpuinfo != NULL: update 'prev_cpuinfo' and get delta
+CpuStatus_t GetCpuStatus ( CpuStatus_t * prev_cpuinfo );
+
+ccp PrintCpuStatus ( const CpuStatus_t * cpuinfo );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			MemoryStatus_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[MemoryStatus_t]]
+
+typedef struct MemoryStatus_t
+{
+    // man 5 proc | oo +//proc/meminfo
+    
+    u64 total;		// Total usable RAM.
+    u64 free;		// The sum of LowFree + HighFree.
+    u64 avail;		// An estimate of available memory for starting new applications.
+    u64 buffers;	// Relatively temporary storage.
+    u64 cached;		// In-memory cache for files read from the disk.
+
+    u64 used;		// = total - free - buffers - cached;
+}
+MemoryStatus_t;
+
+//-----------------------------------------------------------------------------
+
+MemoryStatus_t GetMemoryStatus(void);
+ccp PrintMemoryStatus ( const MemoryStatus_t * ms );
 
 //
 ///////////////////////////////////////////////////////////////////////////////

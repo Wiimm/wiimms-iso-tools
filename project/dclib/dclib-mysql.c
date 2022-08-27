@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -35,13 +35,123 @@
 #define _GNU_SOURCE 1
 
 #include <string.h>
+#include <stddef.h>
 #include <mysql/mysql.h>
 #include <mysql/errmsg.h>
 
 #include "dclib-mysql.h"
+#include "dclib-file.h"
 #include "dclib-network.h"
 
 // http://dev.mysql.com/doc/refman/5.1/en/c-api-functions.html
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			global vars			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+UsageDuration_t mysql_query_usage = { .par.used  = 0, .par.enabled = true };
+
+const UsageCtrl_t mysql_query_usage_ctrl =
+{
+	.par		= &mysql_query_usage.par,
+	.ud		= &mysql_query_usage,
+	.title		= "Database queries",
+	.key1		= "DB",
+	.key2		= "MYSQL",
+	.srt_prefix	= "my-q-",
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+const SaveRestoreTab_t SRT_Mysql[] =
+{
+    #undef SRT_NAME
+    #define SRT_NAME MySql_t
+
+    DEF_SRT_COMMENT("mysql stats"),
+    DEF_SRT_SEPARATOR(),
+
+    DEF_SRT_MODE_ADD(),
+    DEF_SRT_UINT(	total_connect_count,	"mystat-connect" ),
+    DEF_SRT_UINT(	total_query_count,	"mystat-query-c" ),
+    DEF_SRT_UINT(	total_query_size,	"mystat-query-s" ),
+    DEF_SRT_UINT(	total_result_count,	"mystat-result"  ),
+    DEF_SRT_UINT(	total_row_count,	"mystat-row"     ),
+    DEF_SRT_UINT(	total_field_count,	"mystat-field-c" ),
+    DEF_SRT_UINT(	total_field_size,	"mystat-field-s" ),
+
+    DEF_SRT_SEPARATOR(),
+    DEF_SRT_TERM()
+};
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			watch long queries		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static ccp	wq_fname	= 0;		// NULL or opened file
+static LogFile_t wq_log		= {0};		// log data
+static bool	wq_failed	= false;	// true, if fopen() faild => don't try again
+
+static u_nsec_t	wq_nsec		= M1(wq_nsec);	// >0: log queries that need ≥# nsec
+static uint	wq_size		= M1(wq_size);	// >0: log queries with  ≥# bytes
+
+///////////////////////////////////////////////////////////////////////////////
+
+void SetupQueryLogMYSQL
+(
+    ccp		fname,		// filename of log file, openend with mode "a"
+    ccp		tag,		// identification of the tool for shared log files
+    u_nsec_t	nsec,		// >0: log queries that need e# nsec
+    uint	size		// >0: log queries that are longer e# bytes
+)
+{
+    CloseQueryLogMYSQL();
+
+    wq_fname		= fname;
+    wq_failed		= false;
+    wq_nsec		= nsec ? nsec : M1(wq_nsec);
+    wq_size		= size ? size : M1(wq_size);
+
+    wq_log.tag		= MemByString0(tag);
+    wq_log.ts_mode	= TSM_MSEC;
+    wq_log.flush	= true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void CloseQueryLogMYSQL()
+{
+    if (wq_log.log)
+    {
+	fclose(wq_log.log);
+	wq_log.log = 0;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+LogFile_t * OpenQueryLogMYSQL()
+{
+    if (!wq_log.log)
+    {
+	if ( wq_failed || !wq_fname || !*wq_fname )
+	{
+	    wq_failed = true;
+	    return 0;
+	}
+
+	wq_log.log = fopen(wq_fname,"ab");
+	if (!wq_log.log)
+	{
+	    wq_failed = true;
+	    return 0;
+	}
+    }
+
+    return &wq_log;
+}
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -71,6 +181,8 @@ void InitializeMYSQL ( MySql_t *my )
     my->auto_reconnect = true;
     my->prefix = EmptyString;
     InitializeStatusMYSQL(&my->status);
+
+    AddToUsageMgr(&mysql_query_usage_ctrl);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -266,6 +378,52 @@ static enumError CheckOpenMYSQL ( MySql_t *my, uint loglevel )
 ///////////////////////////////////////////////////////////////////////////////
 // queries
 
+static void update_query_duration
+	( MySql_t *my, u_nsec_t start_time, ccp query, uint qlen )
+{
+    DASSERT(my);
+    const u_usec_t dur_nsec = GetTimerNSec() - start_time;
+    my->last_duration_usec = dur_nsec / NSEC_PER_USEC;
+    if ( my->max_duration_usec < my->last_duration_usec )
+	 my->max_duration_usec = my->last_duration_usec;
+    my->total_duration_usec += my->last_duration_usec;
+
+    UpdateUsageDurationIncrement(&mysql_query_usage,dur_nsec);
+
+    if ( dur_nsec >= wq_nsec || qlen >= wq_size )
+    {
+	LogFile_t *lf = OpenQueryLogMYSQL();
+	if (lf)
+	{
+	    char buf[2000], *dest = buf;
+	    bool have_space = false;
+	    while ( *query && dest < buf+sizeof(buf)-2 )
+	    {
+		const uchar ch = *query++;
+		if ( ch > ' ' )
+		{
+		    if (have_space)
+		    {
+			have_space = false;
+			*dest++ = ' ';
+		    }
+		    *dest++ = ch;
+		}
+		else if ( dest > buf )
+		    have_space = true;
+	    }
+	    *dest = 0;
+
+	    PrintLogFile(lf,"%5u %s : %s\n",
+			qlen,
+			PrintTimerNSec6(0,0,dur_nsec,DC_SFORM_ALIGN|DC_SFORM_DASH),
+			buf );
+	}
+    }
+}
+
+//-----------------------------------------------------------------------------
+
 enumError DoQueryMYSQL
 (
     MySql_t	*my,		// valid struct
@@ -277,7 +435,7 @@ enumError DoQueryMYSQL
     DASSERT(my);
     DASSERT(query);
 
-    const u64 start_time = GetTimeUSec(false);
+    const u_nsec_t start_time = GetTimerNSec();
 
     enumError err = CheckOpenMYSQL(my,loglevel);
     if (err)
@@ -319,10 +477,7 @@ enumError DoQueryMYSQL
 		ERROR0(ERR_DATABASE,"%s (#%d)\n",
 			    my->status.message, my->status.status );
 
-	    my->last_duration_usec = GetTimeUSec(false) - start_time;
-	    if ( my->max_duration_usec < my->last_duration_usec )
-		 my->max_duration_usec = my->last_duration_usec;
-	    my->total_duration_usec += my->last_duration_usec;
+	    update_query_duration(my,start_time,query,query_length);
 	    return ERR_DATABASE;
 	}
     }
@@ -332,11 +487,7 @@ enumError DoQueryMYSQL
 
     my->field_count = mysql_field_count(my->mysql);
     ClearStatusMYSQL(&my->status);
-
-    my->last_duration_usec = GetTimeUSec(false) - start_time;
-    if ( my->max_duration_usec < my->last_duration_usec )
-	 my->max_duration_usec = my->last_duration_usec;
-    my->total_duration_usec += my->last_duration_usec;
+    update_query_duration(my,start_time,query,query_length);
     return ERR_OK;
 }
 
@@ -591,6 +742,7 @@ s64 FetchIntMYSQL
 (
     MySql_t	*my,		// valid struct
     LogLevelMYSQL loglevel,	// log level for mysql errors and queries
+    bool	allow_trail,	// allow additional chars behind number
     s64		return_default	// return this value on non existent result
 )
 {
@@ -602,7 +754,7 @@ s64 FetchIntMYSQL
     char *end;
     const s64 val = strtoll(res.ptr,&end,10);
     FreeMemMYSQL(my,res);
-    return end == res.ptr + res.len ? val : return_default;
+    return allow_trail || end == res.ptr + res.len ? val : return_default;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -611,6 +763,7 @@ u64 FetchUIntMYSQL
 (
     MySql_t	*my,		// valid struct
     LogLevelMYSQL loglevel,	// log level for mysql errors and queries
+    bool	allow_trail,	// allow additional chars behind number
     u64		return_default	// return this value on non existent result
 )
 {
@@ -622,7 +775,7 @@ u64 FetchUIntMYSQL
     char *end;
     const u64 val = strtoull(res.ptr,&end,10);
     FreeMemMYSQL(my,res);
-    return end == res.ptr + res.len ? val : return_default;
+    return allow_trail || end == res.ptr + res.len ? val : return_default;
 }
 
 //
@@ -686,6 +839,7 @@ s64 PrintFetchIntMYSQL
 (
     MySql_t	*my,		// valid struct
     LogLevelMYSQL loglevel,	// log level for mysql errors and queries
+    bool	allow_trail,	// allow additional chars behind number
     s64		return_default,	// return this value on non existent result
     ccp		format,		// format string for vsnprintf()
     ...				// parameters for 'format'
@@ -705,7 +859,7 @@ s64 PrintFetchIntMYSQL
     char *end;
     const s64 val = strtoll(res.ptr,&end,10);
     FreeMemMYSQL(my,res);
-    return end == res.ptr + res.len ? val : return_default;
+    return allow_trail || end == res.ptr + res.len ? val : return_default;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -714,6 +868,7 @@ u64 PrintFetchUIntMYSQL
 (
     MySql_t	*my,		// valid struct
     LogLevelMYSQL loglevel,	// log level for mysql errors and queries
+    bool	allow_trail,	// allow additional chars behind number
     u64		return_default,	// return this value on non existent result
     ccp		format,		// format string for vsnprintf()
     ...				// parameters for 'format'
@@ -733,7 +888,7 @@ u64 PrintFetchUIntMYSQL
     char *end;
     const u64 val = strtoull(res.ptr,&end,10);
     FreeMemMYSQL(my,res);
-    return end == res.ptr + res.len ? val : return_default;
+    return allow_trail || end == res.ptr + res.len ? val : return_default;
 }
 
 //
@@ -865,7 +1020,7 @@ int CountTablesMYSQL
     mem_t db  = EscapeStringMYSQL(my, database && *database ? database : my->database );
     mem_t tab = EscapeStringMYSQL(my, table && *table ? table : "%" );
 
-    stat = PrintFetchIntMYSQL(my,MYLL_QUERY_ON_ERROR,-1,
+    stat = PrintFetchIntMYSQL(my,MYLL_QUERY_ON_ERROR,false,-1,
 		"SELECT COUNT(DISTINCT TABLE_NAME) FROM information_schema.COLUMNS\n"
 		"WHERE TABLE_SCHEMA = \"%s\" && TABLE_NAME like \"%s\"\n",
 		db.ptr, tab.ptr );
@@ -894,7 +1049,7 @@ int CountColumnsMYSQL
     if ( column && *column )
     {
 	mem_t col = EscapeStringMYSQL(my,column);
-	stat = PrintFetchIntMYSQL(my,MYLL_QUERY_ON_ERROR,-1,
+	stat = PrintFetchIntMYSQL(my,MYLL_QUERY_ON_ERROR,false,-1,
 	    "SELECT COUNT(*) FROM information_schema.COLUMNS\n"
 	    "WHERE TABLE_SCHEMA = \"%s\" && TABLE_NAME like \"%s\""
 	    " && COLUMN_NAME = \"%s\"\n",
@@ -903,7 +1058,7 @@ int CountColumnsMYSQL
     }
     else
     {
-	stat = PrintFetchIntMYSQL(my,MYLL_QUERY_ON_ERROR,-1,
+	stat = PrintFetchIntMYSQL(my,MYLL_QUERY_ON_ERROR,false,-1,
 	    "SELECT COUNT(*) FROM information_schema.COLUMNS\n"
 	    "WHERE TABLE_SCHEMA = \"%s\" && TABLE_NAME like \"%s\"\n",
 	    db.ptr, tab.ptr );

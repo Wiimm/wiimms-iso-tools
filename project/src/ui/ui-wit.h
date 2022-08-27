@@ -140,6 +140,7 @@ typedef enum enumOptions
 	OPT_GCZ,
 	OPT_FST,
 	OPT_FILES,
+	OPT_INSTALL,
 	OPT_ITIME,
 	OPT_MTIME,
 	OPT_CTIME,
@@ -162,13 +163,14 @@ typedef enum enumOptions
 	OPT_FILE_LIMIT,
 	OPT_PATCH_FILE,
 
-	OPT__N_SPECIFIC, // == 106
+	OPT__N_SPECIFIC, // == 107
 
 	//----- global options -----
 
 	OPT_VERSION,
 	OPT_HELP,
 	OPT_XHELP,
+	OPT_CONFIG,
 	OPT_WIDTH,
 	OPT_QUIET,
 	OPT_VERBOSE,
@@ -204,8 +206,9 @@ typedef enum enumOptions
 	OPT_VAR,
 	OPT_ARRAY,
 	OPT_AVAR,
+	OPT_CASE,
 
-	OPT__N_TOTAL // == 144
+	OPT__N_TOTAL // == 147
 
 } enumOptions;
 
@@ -304,6 +307,7 @@ typedef enum enumOptions
 //	OB_GCZ			= 1llu << OPT_GCZ,
 //	OB_FST			= 1llu << OPT_FST,
 //	OB_FILES		= 1llu << OPT_FILES,
+//	OB_INSTALL		= 1llu << OPT_INSTALL,
 //	OB_ITIME		= 1llu << OPT_ITIME,
 //	OB_MTIME		= 1llu << OPT_MTIME,
 //	OB_CTIME		= 1llu << OPT_CTIME,
@@ -449,6 +453,13 @@ typedef enum enumOptions
 //				| OB_LONG,
 //
 //	OB_CMD_HELP		= ~(u64)0,
+//
+//	OB_CMD_CONFIG		= OB_INSTALL
+//				| OB_LONG
+//				| OB_GRP_SCRIPT
+//				| OB_BRIEF,
+//
+//	OB_CMD_ARGTEST		= ~(u64)0,
 //
 //	OB_CMD_INFO		= OB_SECTIONS
 //				| OB_LONG,
@@ -717,6 +728,8 @@ typedef enum enumCommands
 
 	CMD_VERSION,
 	CMD_HELP,
+	CMD_CONFIG,
+	CMD_ARGTEST,
 	CMD_INFO,
 	CMD_TEST,
 	CMD_ERROR,
@@ -765,7 +778,7 @@ typedef enum enumCommands
 	CMD_SKELETON,
 	CMD_MIX,
 
-	CMD__N // == 45
+	CMD__N // == 47
 
 } enumCommands;
 
@@ -823,6 +836,7 @@ typedef enum enumGetOpt
 	GO_SPLIT		= 'z',
 
 	GO_XHELP		= 0x80,
+	GO_CONFIG,
 	GO_WIDTH,
 	GO_SCAN_PROGRESS,
 	GO_COLOR,
@@ -910,6 +924,8 @@ typedef enum enumGetOpt
 	GO_VAR,
 	GO_ARRAY,
 	GO_AVAR,
+	GO_CASE,
+	GO_INSTALL,
 	GO_ITIME,
 	GO_MTIME,
 	GO_CTIME,

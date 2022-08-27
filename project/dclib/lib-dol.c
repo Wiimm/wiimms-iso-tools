@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -548,6 +548,8 @@ u32 GetDolOffsetByAddr
 {
     DASSERT(dol_head);
 
+    addr &= ~0x40000000; // remove mirror bit
+
     int sect;
     for ( sect = 0; sect < DOL_N_SECTIONS; sect++ )
     {
@@ -585,7 +587,7 @@ u32 GetDolOffsetByAddr
 u32 GetDolAddrByOffset
 (
     const dol_header_t	*dol_head,	// valid DOL header
-    u32			off,		// address to search
+    u32			off,		// offset to search
     u32			size,		// >0: wanted size
     u32			*valid_size	// not NULL: return valid size
 )
@@ -632,7 +634,7 @@ uint AddDolAddrByOffset
     const dol_header_t	*dol_head,	// valid DOL header
     MemMap_t		*mm,		// valid destination mem map, not cleared
     bool		use_tie,	// TRUE: use InsertMemMapTie()
-    u32			off,		// address to search
+    u32			off,		// offset to search
     u32			size		// size, may overlay multiple sections
 )
 {
@@ -1199,8 +1201,24 @@ void ResetWCH ( wch_control_t * wc )
 
 //
 ///////////////////////////////////////////////////////////////////////////////
-///////////////			virtual dumps			///////////////
+///////////////			sizeof_info_t: dol		///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[sizeof_info_dol]]
+
+const sizeof_info_t sizeof_info_dol[] =
+{
+    SIZEOF_INFO_TITLE("DOL")
+	SIZEOF_INFO_ENTRY(dol_header_t)
+	SIZEOF_INFO_ENTRY(dol_sect_info_t)
+	SIZEOF_INFO_ENTRY(dol_sect_select_t)
+	SIZEOF_INFO_ENTRY(dol_sect_addr_t)
+	SIZEOF_INFO_ENTRY(gch_header_t)
+	SIZEOF_INFO_ENTRY(wch_segment_t)
+	SIZEOF_INFO_ENTRY(wch_header_t)
+	SIZEOF_INFO_ENTRY(wch_control_t)
+
+    SIZEOF_INFO_TERM()
+};
 
 //
 ///////////////////////////////////////////////////////////////////////////////

@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -254,7 +254,20 @@ enumError CheckEnvOptions ( ccp varname, check_opt_func func )
     if ( !env || !*env )
 	return ERR_OK;
 
-    TRACE("env[%s] = %s\n",varname,env);
+    PRINT("env[%s] = %s\n",varname,env);
+
+ #if 1 // [[new]] with ArgManager_t
+    ArgManager_t am = {0};
+    AppendArgManager(&am,ProgInfo.progname,0,false);
+    ScanQuotedArgManager(&am,env,true);
+
+  #ifdef DEBUG
+    for ( int i = 0; i < am.argc; i++ )
+	printf(" [%02u] |%s|\n",i,am.argv[i]);
+  #endif
+    enumError stat = func(am.argc,am.argv,true);
+
+ #else // [[old]]
 
     const int envlen = strlen(env);
     char * buf = MALLOC(envlen+1);
@@ -274,7 +287,7 @@ enumError CheckEnvOptions ( ccp varname, check_opt_func func )
 	while ( *(u8*)src > ' ' )
 	    *dest++ = *src++;
 	*dest++ = 0;
-	ASSERT( dest <= buf+envlen+1 );
+	DASSERT( dest <= buf+envlen+1 );
     }
     TRACE("argc = %d\n",argc);
 
@@ -290,17 +303,18 @@ enumError CheckEnvOptions ( ccp varname, check_opt_func func )
 	while (*dest)
 	    dest++;
 	dest++;
-	ASSERT( dest <= buf+envlen+1 );
+	DASSERT( dest <= buf+envlen+1 );
     }
 
     enumError stat = func(argc,argv,true);
+
+ #endif
+
+    // don't free() because of possible pointers into argv[]
+
     if (stat)
 	fprintf(stderr,
 	    "Error while scanning the environment variable '%s'\n",varname);
-
-    // don't free() because it's possible that there are pointers to arguments
-    //FREE(argv);
-    //FREE(buf);
 
     return stat;
 }
@@ -580,7 +594,8 @@ static void print_help_options
 		GetTextMode(colmode,TTM_RESET) );
     }
 
-    const int fw = GetTermWidth(80,40) - 1;
+//    const int fw = GetTermWidth(80,40) - 1;
+    const int fw = GetGoodTermWidth(0,false) - 1;
 
     const InfoOption_t *io_beg = iu->opt_info + beg_index;
     const InfoOption_t *io_end = iu->opt_info + end_index;
@@ -704,7 +719,8 @@ void PrintHelpCommands
     }
 
     fprintf(f,"\n%*s%sCommands:%s\n\n", indent,"", col_head, col_reset );
-    const int fw = GetTermWidth(80,40) - 1;
+//    const int fw = GetTermWidth(80,40) - 1;
+    const int fw = GetGoodTermWidth(0,false) - 1;
 
     int fw1 = 0, fw2 = 0;
     const InfoCommand_t * ic;
@@ -836,7 +852,8 @@ void PrintHelpCmd
 	cmd = 0;
     const InfoCommand_t * ic = iu->cmd_info + cmd;
 
-    const int fw = GetTermWidth(80,40) - 1;
+//    const int fw = GetTermWidth(80,40) - 1;
+    const int fw = GetGoodTermWidth(0,false) - 1;
 
     uint col_len;
     ccp col_head, col_reset;

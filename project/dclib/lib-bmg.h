@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -70,7 +70,6 @@ typedef u16 bmg_slot_t;			// type of slot
 
 typedef struct bmg_t bmg_t;
 
-
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			MKW specific consts		///////////////
@@ -88,6 +87,9 @@ enum
     MID_RCUP_END		= MID_RCUP_BEG + BMG_N_RCUP,
     MID_BCUP_BEG		= 0x2489,
     MID_BCUP_END		= MID_BCUP_BEG + BMG_N_BCUP,
+
+    BMG_RCUP_TRACKS		=     4,
+    BMG_BCUP_TRACKS		=     5,
 
     MID_ENGINE_BEG		= 0x0589,
     MID_ENGINE_END		= MID_ENGINE_BEG + 4,
@@ -258,6 +260,8 @@ extern u8		bmg_def_attrib[BMG_ATTRIB_SIZE];
 //	1: file param
 //	2: string param
 extern const KeywordTab_t PatchKeysBMG[];
+
+extern const sizeof_info_t sizeof_info_bmg[];
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -897,13 +901,31 @@ enumError SaveRawBMG
     bool		set_time	// true: set time stamps
 );
 
+enumError SaveRawFileBMG
+(
+    bmg_t		* bmg,		// pointer to valid bmg
+    FILE		* f,		// valid output file
+    ccp			fname		// NULL or filename for error messages
+);
+
 enumError SaveTextBMG
 (
     bmg_t		* bmg,		// pointer to valid bmg
     ccp			fname,		// filename of destination
     FileMode_t		fmode,		// create-file mode
     bool		set_time,	// true: set time stamps
-    bool		force_numeric,	// true: force numric MIDs
+    bool		force_numeric,	// true: force numeric MIDs
+    uint		brief_count	// >0: suppress syntax info
+					// >1: suppress all comments
+					// >2: suppress '#BMG' magic
+);
+
+enumError SaveTextFileBMG
+(
+    bmg_t		* bmg,		// pointer to valid bmg
+    FILE		* f,		// valid output file
+    ccp			fname,		// NULL or filename for error messages
+    bool		force_numeric,	// true: force numeric MIDs
     uint		brief_count	// >0: suppress syntax info
 					// >1: suppress all comments
 					// >2: suppress '#BMG' magic
@@ -920,7 +942,7 @@ typedef struct bmg_create_t
     bmg_t	*bmg;			// current bmg
     const endian_func_t			// endian functions, never NULL
 		*endian;		// init by bmg->endian, overridden by opt_bmg_endian
-			
+
 
     FastBuf_t	inf;			// INF1 data
     FastBuf_t	dat;			// DAT1 data

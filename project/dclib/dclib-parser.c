@@ -32,111 +32,119 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef DCLIB_SYSTEM_H
-#define DCLIB_SYSTEM_H 1
+#define _GNU_SOURCE 1
 
-#ifndef PRINT_SYSTEM_SETTINGS
-  #include <stdio.h>
-#endif
+#include "dclib-basics.h"
+#include "dclib-parser.h"
 
+//
 ///////////////////////////////////////////////////////////////////////////////
-#ifndef PRINT_SYSTEM_SETTINGS
+///////////////			    ScanText_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
 
-typedef enum enumSystemID
+void SetupScanText ( ScanText_t *st, cvp data, uint data_size )
 {
-	SYSID_UNKNOWN		= 0x00000000,
-	SYSID_I386		= 0x01000000,
-	SYSID_X86_64		= 0x02000000,
-	SYSID_CYGWIN32		= 0x03000000,
-	SYSID_CYGWIN64		= 0x04000000,
-	SYSID_MAC_I386		= 0x05000000,
-	SYSID_MAC_X64		= 0x06000000,
-	SYSID_MAC_ARM		= 0x07000000,
-	SYSID_LINUX		= 0x08000000,
-	SYSID_UNIX		= 0x09000000,
-
-} enumSystemID;
-
-#endif
-
-///////////////////////////////////////////////////////////////////////////////
-
-#undef SYSTEM_LINUX
-
-#ifdef __CYGWIN__
-  #define SYSTEM_LINUX 0
-  #define SYSTEM "cygwin"
-  #ifdef __x86_64
-	#define SYSTEM2		"cygwin64"
-	#define SYSTEMID	SYSID_CYGWIN64
-  #else
-	#define SYSTEM2		"cygwin32"
-	#define SYSTEMID	SYSID_CYGWIN32
-  #endif
-#elif __APPLE__
-	#define SYSTEM_LINUX	0
-	#define SYSTEM		"mac"
-  #ifdef __aarch64__
-	#define SYSTEM2		"mac/arm"
-	#define SYSTEMID	SYSID_MAC_ARM
-  #elif __x86_64__
-	#define SYSTEM2		"mac/x64"
-	#define SYSTEMID	SYSID_MAC_X64
-  #else
-	#define SYSTEM2		"mac/i386"
-	#define SYSTEMID	SYSID_MAC_I386
-  #endif
-#elif __linux__
-  #define SYSTEM_LINUX 1
-  #ifdef __i386__
-	#define SYSTEM		"i386"
-	#define SYSTEMID	SYSID_I386
-  #elif __x86_64__
-	#define SYSTEM		"x86_64"
-	#define SYSTEMID	SYSID_X86_64
-  #else
-	#define SYSTEM		"linux"
-	#define SYSTEMID	SYSID_LINUX
-  #endif
-#elif __unix__
-	#define SYSTEM_LINUX	0
-	#define SYSTEM		"unix"
-	#define SYSTEMID	SYSID_UNIX
-#else
-	#define SYSTEM		"unknown"
-	#define SYSTEMID	SYSID_UNKNOWN
-#endif
-
-#ifndef SYSTEM2
-	#define SYSTEM2		SYSTEM
-#endif
-
-///////////////////////////////////////////////////////////////////////////////
-#ifndef PRINT_SYSTEM_SETTINGS
-
-static inline void dclibPrintSystem ( FILE * f )
-{
-    fprintf(f,
-	"SYSTEM\t\t:= %s\n"
-	"SYSTEM2\t\t:= %s\n"
-	"SYSTEMID\t:= 0x%x\n"
-  #ifdef SYSTEM_LINUX
-	"SYSTEM_LINUX\t:= 1\n"
-  #endif
-	,SYSTEM
-	,SYSTEM2
-	,SYSTEMID
-	);
+    DASSERT(st);
+    memset(st,0,sizeof(*st));
+    st->data		= data;
+    st->data_size	= data_size;
+    st->ignore_comments	= true;
+    
+    RewindScanText(st);
 }
 
-#endif
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifdef PRINT_SYSTEM_SETTINGS
-result_SYSTEM=SYSTEM
-result_SYSTEM2=SYSTEM2
-result_SYSTEM_LINUX=SYSTEM_LINUX
-#endif
+void ResetScanText ( ScanText_t *st )
+{
+    if (st)
+    {
+	if (st->fname_alloced)
+	    FreeString(st->fname);
+	memset(st,0,sizeof(*st));
+    }
+}
 
-#endif // DCLIB_SYSTEM_H 1
+///////////////////////////////////////////////////////////////////////////////
+
+void SetFilenameScanText( ScanText_t *st, ccp fname, CopyMode_t cm )
+{
+    DASSERT(st);
+    if (st->fname_alloced)
+	FreeString(st->fname);
+    st->fname = CopyString(fname,cm,&st->fname_alloced);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void RewindScanText ( ScanText_t *st )
+{
+    DASSERT(st);
+
+    st->ptr		= st->data;
+    st->eot		= st->data + st->data_size;
+    st->line		= st->data;
+    st->eol		= st->data;
+
+    st->is_eot		= !st->ptr || st->ptr >= st->eot;
+    st->is_section	= false;
+    st->is_term		= st->is_eot;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool NextLineScanText ( ScanText_t *st )
+{
+    DASSERT(st);
+    st->is_section = false;
+
+    ccp ptr = st->ptr;
+    ccp eot = st->eot;
+    if ( !ptr || ptr >= eot )
+    {
+	st->line = st->eol = ptr;
+	st->is_eot = st->is_term = true;
+	return false;
+    }
+
+    while ( ptr < eot )
+    {
+	// skip leading spaced and controls
+	while ( ptr < eot && (uchar)*ptr <= ' ' )
+	    ptr++;
+
+	ccp line = ptr;
+	while ( ptr < eot && *ptr && *ptr != '\r' && *ptr != '\n' )
+	    ptr++;
+	ccp eol = ptr;
+	while ( eol > line && eol[-1] == ' ' || eol[-1] == '\t' )
+	    eol--;
+
+	if ( line == eol || *line == '#' && st->ignore_comments )
+	    continue;
+	if ( st->detect_sections > 0
+	   && *line == '['
+	   && eol[-1] == ']'
+	   && !memchr(line+1,'[',eol-line-2)
+	   && !memchr(line+1,']',eol-line-2)
+	   )
+	{
+	    st->is_section = true;
+	}
+
+	st->line = line;
+	st->eol  = eol;
+	break;
+    }
+
+    st->ptr = ptr;
+    st->is_eot = ptr >= eot;
+    st->is_term = st->is_eot || st->is_section;
+    return !st->is_term;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////				END			///////////////
+///////////////////////////////////////////////////////////////////////////////
 

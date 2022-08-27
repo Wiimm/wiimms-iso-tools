@@ -20,6 +20,11 @@
 	"Print help and exit. If the first non option is a valid command name," \
 	" then a help for the given command is printed." )
 
+#:def_cmd( "ARGTEST", "ARGTEST", \
+	"wit ARGTEST ...", \
+	"This debug command accepts all kinds of parameters and prints one" \
+	" line for each parameter." )
+
 #:def_cmd( "INFO", "INFO", \
 	"wit INFO [keyword]...", \
 	"Print some internal information about the keywords. If the keyword" \
@@ -378,6 +383,11 @@
 #:def_opt( "SOURCE", "s|source", "CMP", \
 	"path", \
 	"Use the entered file or directory as source.\n" \
+	"  If parameter PATH contains at least one wildcard (e.g. '*.wbfs')," \
+	" then PATH is used as search pattern and all found files are added." \
+	" In order to use this variant, the calling shell must not interpret" \
+	" the wildcards. Therefore, the parameter must usually be enclosed in" \
+	" single or double quotes.\n" \
 	"  Directories are expanded to all containing files but hidden files" \
 	" (file names begins with a point) are ignored. If a command needs" \
 	" only images then non image files of the directory are ignored" \
@@ -393,6 +403,11 @@
 	"path", \
 	" If @path@ is not a directory, then it is used as a simple source" \
 	" file like {--source}.\n" \
+	"  If parameter PATH contains at least one wildcard (e.g. '*.wbfs')," \
+	" then PATH is used as search pattern and all found files are added." \
+	" In order to use this variant, the calling shell must not interpret" \
+	" the wildcards. Therefore, the parameter must usually be enclosed in" \
+	" single or double quotes.\n" \
 	"  Directories are scanned for source files recursively. The option" \
 	" {--rdepth} limits the search depth. Hidden files and hidden sub" \
 	" directories (file names begins with a point) and files with non" \
@@ -1009,6 +1024,16 @@
 	"varname", \
 	"Shortcut for: {--array --var name}" )
 
+#:def_opt( "CASE", "case", "GP", \
+	"case", \
+	"@CASE@ is one of @LOWER@, @AUTO@ (default) or @UPPER@.If @LOWER@ or" \
+	" @UPPER@ are set, then the lower/upper case of the variable names is" \
+	" adjusted accordingly." )
+
+#:def_opt( "INSTALL", "install", "C", \
+	"", \
+	"Manage configuration for an installation." )
+
 #:def_opt( "ITIME", "itime", "C", \
 	"", \
 	"Select 'itime' (insertion time) for printing. @--itime@ is an" \
@@ -1152,6 +1177,59 @@
 	"", \
 	"" )
 
+#:def_cmd_opt( "CONFIG", "CONFIG", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "INSTALL", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "LONG", \
+	"", \
+	"If set, print the search list too. This option is ignored, if any" \
+	" script output is enabled." )
+
+#:def_cmd_opt( "CONFIG", "SH", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "BASH", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "JSON", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "PHP", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "MAKEDOC", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "VAR", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "ARRAY", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "AVAR", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "CASE", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "BRIEF", \
+	"", \
+	"If printed as sections, exclude all comments." )
+
 #:def_cmd_opt( "INFO", "SECTIONS", \
 	"", \
 	"" )
@@ -1246,6 +1324,10 @@
 	"" )
 
 #:def_cmd_opt( "ANALYZE", "AVAR", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "ANALYZE", "CASE", \
 	"", \
 	"" )
 
@@ -5618,8 +5700,13 @@
 	"Print help and exit. If the first non option is a valid command name," \
 	" then a help for the given command is printed." )
 
+#:def_cmd( "ARGTEST", "ARGTEST", \
+	"wwt ARGTEST ...", \
+	"This debug command accepts all kinds of parameters and prints one" \
+	" line for each parameter." )
+
 #:def_cmd( "INFO", "INFO", \
-	"wit INFO [keyword]...", \
+	"wwt INFO [keyword]...", \
 	"Print some internal information about the keywords. If the keyword" \
 	" @ALL@ is set or no keyword is entered, then all informations are" \
 	" printed. Possible keywords are: @IMAGE-FORMAT@ and @ALL@." )
@@ -5858,6 +5945,14 @@
 	"Stop parsing the command line and print a help message with all" \
 	" commands included. Exit after printing." )
 
+#:def_opt( "CONFIG", "config", "GP", \
+	"file", \
+	"Define a configuration file or a directory as source. In later case," \
+	" file @'wiimms-iso-tools.conf'@ is searched.\n" \
+	"  If option is not not set, then file @'wiimms-iso-tools.conf'@ is" \
+	" searched in different directories. Use command @'wszst CONFIG'@ to" \
+	" get more details." )
+
 #:def_opt( "WIDTH", "width", "GP", \
 	"width", \
 	"Define the width (number of columns) for help and some other messages" \
@@ -5975,6 +6070,11 @@
 #:def_opt( "SOURCE", "source", "CMP", \
 	"path", \
 	"Use the entered file or directory as source.\n" \
+	"  If parameter PATH contains at least one wildcard (e.g. '*.wbfs')," \
+	" then PATH is used as search pattern and all found files are added." \
+	" In order to use this variant, the calling shell must not interpret" \
+	" the wildcards. Therefore, the parameter must usually be enclosed in" \
+	" single or double quotes.\n" \
 	"  Directories are expanded to all containing files but hidden files" \
 	" (file names begins with a point) are ignored. If a command needs" \
 	" only images then non image files of the directory are ignored" \
@@ -5990,6 +6090,11 @@
 	"path", \
 	" If @path@ is not a directory, then it is used as a simple source" \
 	" file like {--source}.\n" \
+	"  If parameter PATH contains at least one wildcard (e.g. '*.wbfs')," \
+	" then PATH is used as search pattern and all found files are added." \
+	" In order to use this variant, the calling shell must not interpret" \
+	" the wildcards. Therefore, the parameter must usually be enclosed in" \
+	" single or double quotes.\n" \
 	"  Directories are scanned for source files recursively. The option" \
 	" {--rdepth} limits the search depth. Hidden files and hidden sub" \
 	" directories (file names begins with a point) and files with non" \
@@ -6110,6 +6215,55 @@
 	"Detect soft and hard linked source files while composing or" \
 	" extracting discs and try to create hard links instead of independent" \
 	" copies on the destination file system." )
+
+#:def_opt( "SH", "sh", "G", \
+	"", \
+	"Dump info using SH syntax. Use {--var name} as prefix." )
+
+#:def_opt( "BASH", "bash", "G", \
+	"", \
+	"Dump info using BASH syntax. Use {--var name} as prefix." )
+
+#:def_opt( "JSON", "json", "G", \
+	"", \
+	"Dump info using JSON syntax. Options {--var} and {--array} are" \
+	" ignored." )
+
+#:def_opt( "PHP", "php", "G", \
+	"", \
+	"Dump infos using PHP syntax. Use {--var name} as variable name of the" \
+	" resulting object." )
+
+#:def_opt( "MAKEDOC", "makedoc", "G", \
+	"", \
+	"Dump infos using MakeDoc syntax. Use {--var name} as variable name of" \
+	" the resulting map." )
+
+#:def_opt( "VAR", "var", "GP", \
+	"varname", \
+	"Use @VARNAME@ as variable name or prefix on script output. The" \
+	" default variabe name is 'res'." )
+
+#:def_opt( "ARRAY", "array", "G", \
+	"", \
+	"Use an array on script output if possible. If arrays are not" \
+	" supported, then append a '_#' suffix with an zero based index to the" \
+	" variable name defined by {--var name}. In this case, only one output" \
+	" file is created." )
+
+#:def_opt( "AVAR", "avar", "GP", \
+	"varname", \
+	"Shortcut for: {--array --var name}" )
+
+#:def_opt( "CASE", "case", "GP", \
+	"case", \
+	"@CASE@ is one of @LOWER@, @AUTO@ (default) or @UPPER@.If @LOWER@ or" \
+	" @UPPER@ are set, then the lower/upper case of the variable names is" \
+	" adjusted accordingly." )
+
+#:def_opt( "INSTALL", "install", "GP", \
+	"", \
+	"Manage configuration for an installation." )
 
 #:def_opt( "PMODE", "pmode", "CP", \
 	"p-mode", \
@@ -6637,6 +6791,10 @@
 	"", \
 	"Print in long format. Multiple usage possible." )
 
+#:def_opt( "BRIEF", "b|brief", "C", \
+	"", \
+	"Print only a summary." )
+
 #:def_opt( "SHOW", "+|show", "CP", \
 	"list", \
 	"This option allows fine control over the things that are to be" \
@@ -6723,6 +6881,59 @@
 #:def_cmd_opt( "HELP", "WIDTH", \
 	"", \
 	"" )
+
+#:def_cmd_opt( "CONFIG", "CONFIG", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "INSTALL", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "LONG", \
+	"", \
+	"If set, print the search list too. This option is ignored, if any" \
+	" script output is enabled." )
+
+#:def_cmd_opt( "CONFIG", "SH", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "BASH", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "JSON", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "PHP", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "MAKEDOC", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "VAR", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "ARRAY", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "AVAR", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "CASE", \
+	"", \
+	"" )
+
+#:def_cmd_opt( "CONFIG", "BRIEF", \
+	"", \
+	"If printed as sections, exclude all comments." )
 
 #:def_cmd_opt( "INFO", "SECTIONS", \
 	"", \

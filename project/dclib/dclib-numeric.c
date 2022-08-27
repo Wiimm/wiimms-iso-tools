@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -36,10 +36,12 @@
 
 #include <string.h>
 #include <unistd.h>
+#include <stddef.h>
 #include <time.h>
 #include <stdio.h>
 #include <errno.h>
 #include <sys/time.h>
+#include <sys/resource.h>
 #include <fcntl.h>
 
 #include "dclib-basics.h"
@@ -679,6 +681,16 @@ void le16n ( u16 * dest, const u16 * src, int n )
 	*dest++ = le16(src++);
 }
 
+void le32n ( u32 * dest, const u32 * src, int n )
+{
+    DASSERT( dest );
+    DASSERT( n >= 0 );
+    DASSERT( src || !n );
+
+    while ( n-- > 0 )
+	*dest++ = le32(src++);
+}
+
 void lef4n ( float32 * dest, const float32 * src, int n )
 {
     DASSERT( dest );
@@ -697,6 +709,16 @@ void write_le16n ( u16 * dest, const u16 * src, int n )
 
     while ( n-- > 0 )
 	write_le16(dest++,*src++);
+}
+
+void write_le32n ( u32 * dest, const u32 * src, int n )
+{
+    DASSERT( dest );
+    DASSERT( n >= 0 );
+    DASSERT( src || !n );
+
+    while ( n-- > 0 )
+	write_le32(dest++,*src++);
 }
 
 void write_lef4n ( float32 * dest, const float32 * src, int n )
@@ -946,6 +968,213 @@ int CheckIndexCEnd ( int max, int * p_begin, int count )
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			    lt/eq/gt			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+char * ScanCompareOp ( compare_operator_t *dest_op, ccp arg )
+{
+    compare_operator_t op = COP_FALSE;
+    ccp ptr = arg;
+    if (ptr)
+    {
+	while ( *ptr > 0 && *ptr <= ' ' )
+	    ptr++;
+
+	if ( (uchar)ptr[0] == 0xe2 && (uchar)ptr[1] == 0x89 )
+	{
+	    switch ((uchar)ptr[2])
+	    {
+		case 0xa0: op = COP_NE; ptr += 3; break; // UTF8 ≠
+		case 0xa4: op = COP_LE; ptr += 3; break; // UTF8 ≤
+		case 0xa5: op = COP_GE; ptr += 3; break; // UTF8 ≥
+	    }
+	}
+	else if ( *ptr == '!' )
+	{
+	    if ( *++ptr == '=' )
+	    {
+		op = COP_NE;
+		ptr++;
+	    }
+	}
+	else
+	    switch (*ptr)
+	    {
+	     case '=':
+		op = COP_EQ;
+		if ( *++ptr == '=' )
+		    ptr++;
+		break;
+
+	     case '<':
+		op = COP_LT;
+		switch (*++ptr)
+		{
+		 case '=':
+		    op = COP_LE;
+		    ptr++;
+		    break;
+		 case '>':
+		    op = COP_NE;
+		    ptr++;
+		    break;
+		}
+		break;
+
+	     case '>':
+		op = COP_GT;
+		if ( *++ptr == '=' )
+		{
+		    op = COP_GE;
+		    ptr++;
+		}
+		break;
+	    }
+    }
+
+    if (dest_op)
+	*dest_op = op;
+    return op == COP_FALSE ? (char*)arg : (char*)ptr;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp GetCompareOpName ( compare_operator_t op )
+{
+    switch (op)
+    {
+	case COP_EQ:	return "==";
+	case COP_LT:	return "<";
+	case COP_GT:	return ">";
+	case COP_NE:	return "!=";
+	case COP_LE:	return "<=";
+	case COP_GE:	return ">=";
+	case COP_TRUE:	return "*";
+	default:	return "%";
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool CompareByOpStat ( int stat, compare_operator_t op )
+{
+    switch (op)
+    {
+	case COP_EQ:	return stat == 0;
+	case COP_LT:	return stat <  0;
+	case COP_GT:	return stat >  0;
+	case COP_NE:	return stat != 0;
+	case COP_LE:	return stat <= 0;
+	case COP_GE:	return stat >= 0;
+	case COP_TRUE:	return true;
+	default:	return false;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool CompareByOpINT ( int a, compare_operator_t op, int b )
+{
+    switch (op)
+    {
+	case COP_EQ:	return a == b;
+	case COP_LT:	return a <  b;
+	case COP_GT:	return a >  b;
+	case COP_NE:	return a != b;
+	case COP_LE:	return a <= b;
+	case COP_GE:	return a >= b;
+	case COP_TRUE:	return true;
+	default:	return false;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool CompareByOpUINT ( uint a, compare_operator_t op, uint b )
+{
+    switch (op)
+    {
+	case COP_EQ:	return a == b;
+	case COP_LT:	return a <  b;
+	case COP_GT:	return a >  b;
+	case COP_NE:	return a != b;
+	case COP_LE:	return a <= b;
+	case COP_GE:	return a >= b;
+	case COP_TRUE:	return true;
+	default:	return false;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool CompareByOpI64 ( s64 a, compare_operator_t op, s64 b )
+{
+    switch (op)
+    {
+	case COP_EQ:	return a == b;
+	case COP_LT:	return a <  b;
+	case COP_GT:	return a >  b;
+	case COP_NE:	return a != b;
+	case COP_LE:	return a <= b;
+	case COP_GE:	return a >= b;
+	case COP_TRUE:	return true;
+	default:	return false;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool CompareByOpU64 ( u64 a, compare_operator_t op, u64 b )
+{
+    switch (op)
+    {
+	case COP_EQ:	return a == b;
+	case COP_LT:	return a <  b;
+	case COP_GT:	return a >  b;
+	case COP_NE:	return a != b;
+	case COP_LE:	return a <= b;
+	case COP_GE:	return a >= b;
+	case COP_TRUE:	return true;
+	default:	return false;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool CompareByOpFLT ( float a, compare_operator_t op, float b )
+{
+    switch (op)
+    {
+	case COP_EQ:	return a == b;
+	case COP_LT:	return a <  b;
+	case COP_GT:	return a >  b;
+	case COP_NE:	return a != b;
+	case COP_LE:	return a <= b;
+	case COP_GE:	return a >= b;
+	case COP_TRUE:	return true;
+	default:	return false;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+bool CompareByOpDBL ( double a, compare_operator_t op, double b )
+{
+    switch (op)
+    {
+	case COP_EQ:	return a == b;
+	case COP_LT:	return a <  b;
+	case COP_GT:	return a >  b;
+	case COP_NE:	return a != b;
+	case COP_LE:	return a <= b;
+	case COP_GE:	return a >= b;
+	case COP_TRUE:	return true;
+	default:	return false;
+    }
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			encoding/decoding		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -968,9 +1197,11 @@ ccp GetEncodingName ( EncodeMode_t em )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-uint GetEscapedSize
+uint GetEscapeLen
 (
-    // returns the needed buffer size for PrintEscapedString() 
+    // returns the extra size needed for escapes.
+    // Add 'src_len' to get the escaped string size.
+    // Add 'additionally 4 to get a good buffer size.
 
     ccp		source,		// NULL or string to print
     int		src_len,	// length of string. if -1, str is null terminated
@@ -979,14 +1210,15 @@ uint GetEscapedSize
 )
 {
     const CharMode_t utf8	= char_mode & CHMD_UTF8;
-    const CharMode_t allow_e	= char_mode & CHMD_ESC;
+    const int esc_size		= char_mode & CHMD_ESC  ? 1 : 3;
+    const int pipe_size		= char_mode & CHMD_PIPE ? 1 : 0;
 
     if ( !source || !*source )
-	return 1;
+	return 0;
     ccp str = source;
     ccp end = src_len < 0 ? 0 : str + src_len;
 
-    uint size = 4; // +4 for escapes at end; +1 for NULL terminator
+    uint size = 0;
     while ( !end || str < end )
     {
 	const u8 ch = (u8)*str++;
@@ -995,7 +1227,7 @@ uint GetEscapedSize
 	    case 0:
 		if (!end)
 		    return size;
-		size += 4;
+		size += 3;
 		break;
 
 	    case '\\':
@@ -1006,20 +1238,22 @@ uint GetEscapedSize
 	    case '\r':
 	    case '\t':
 	    case '\v':
-		size += 2;
+		size++;
 		break;
 
 	    case '\033':
-		size += allow_e ? 2 : 4;
+		size += esc_size;
+		break;
+
+	    case '|':
+		size += pipe_size;
 		break;
 
 	    default:
 		if ( ch == quote )
-		    size += 2;
-		else if ( ch < ' ' || !utf8 && (ch&0x7f) < ' ' || (ch&0x7f) == 0x7f )
-		    size += 4;
-		else
 		    size++;
+		else if ( ch < ' ' || !utf8 && (ch&0x7f) < ' ' || (ch&0x7f) == 0x7f )
+		    size += 3;
 	}
     }
     return size;
@@ -1040,15 +1274,16 @@ char * PrintEscapedString
     uint	*dest_len	// not NULL: Store length of result here
 )
 {
-    /////////////////////////////////////////////////////////
-    /////  Update GetEscapedSize() on modifications!!   /////
-    /////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////
+    /////  Update GetEscapeLen() on modifications!!   /////
+    ///////////////////////////////////////////////////////
 
     DASSERT(buf);
     DASSERT(buf_size>=10);
 
     const CharMode_t utf8	= char_mode & CHMD_UTF8;
     const CharMode_t allow_e	= char_mode & CHMD_ESC;
+    const CharMode_t esc_pipe	= char_mode & CHMD_PIPE;
 
     char *dest = buf;
     char *dest_end = dest + buf_size - 4;
@@ -1096,6 +1331,16 @@ char * PrintEscapedString
 		}
 		break;
 
+	    case '|':
+		if (esc_pipe)
+		{
+		    *dest++ = '\\';
+		    *dest++ = '!';
+		}
+		else
+		    *dest++ = '|';
+		break;
+
 	    default:
 		if ( ch == quote )
 		{
@@ -1131,7 +1376,7 @@ uint ScanEscapedString
     ccp		source,		// string to scan
     int		len,		// length of string. if -1, str is null terminated
     bool	utf8,		// true: source and output is UTF-8
-    int		quote,		// 0:none, -1:auto, >0: quotation char
+    int		quote,		// -1:auto, 0:none, >0: quotation char
     uint	*scanned_len	// not NULL: Store number of scanned 'source' bytes here
 )
 {
@@ -1151,6 +1396,8 @@ uint ScanEscapedString
 	quote = *src++;
 	have_quote = true;
     }
+    else if ( have_quote && *src == quote )
+	src++;
 
     while ( dest < dest_end && src < src_end )
     {
@@ -1415,7 +1662,7 @@ uint EncodeBase64
     // returns the number of scanned bytes of 'source'
 
     char	*buf,			// valid destination buffer
-    uint	buf_size,		// size of 'buf', >= 4
+    uint	buf_size,		// size of 'buf' >= 4
     const void	*source,		// NULL or data to encode
     int		source_len,		// length of 'source'; if <0: use strlen(source)
     const char	encode64[64+1],		// encoding table; if NULL: use TableEncode64default
@@ -1544,7 +1791,7 @@ uint EncodeBase64ml // ml: multi line
     // returns the number of scanned bytes of 'source'
 
     char	*buf,			// valid destination buffer
-    uint	buf_size,		// size of 'buf', >= 4
+    uint	buf_size,		// size of 'buf' >= 4
     const void	*source,		// NULL or data to encode
     int		source_len,		// length of 'source'; if <0: use strlen(source)
     const char	encode64[64+1],		// encoding table; if NULL: use TableEncode64default
@@ -1718,7 +1965,7 @@ mem_t DecodeJSONCirc
 
     ccp		source,		// NULL or string to decode
     int		source_len,	// length of 'source'. If -1, str is NULL terminated
-    int		quote		// 0:none, -1:auto, >0: quotation char
+    int		quote		// -1:auto, 0:none, >0: quotation char
 )
 {
     char buf[CIRC_BUF_MAX_ALLOC+10];
@@ -1733,6 +1980,160 @@ mem_t DecodeJSONCirc
     }
     return mem;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[hex]]
+
+uint EncodeHex
+(
+    // returns the number of valid bytes in 'buf'. Result is NULL-terminated.
+
+    char	*buf,			// valid destination buffer
+    uint	buf_size,		// size of 'buf', >2 and 2 bytes longer than needed
+    const void	*source,		// NULL or data to encode
+    int		source_len,		// length of 'source'; if <0: use strlen(source)
+    ccp		digits			// digits to use, eg. LoDigits[] (=fallback) or HiDigits[]
+)
+{
+    DASSERT(buf);
+    DASSERT(buf_size>2);
+
+    if (!digits)
+	digits = LoDigits;
+
+    char *dest = buf;
+    char *dest_end = dest + buf_size - 1;
+
+    if (!source)
+	source = "";
+    ccp str = source;
+    ccp end = str + ( source_len < 0 ? strlen(str) : source_len );
+
+    while ( dest < dest_end && str < end )
+    {
+	const u8 ch = (u8)*str++;
+	*dest++ = digits[ch>>4];
+	*dest++ = digits[ch&15];
+    }
+    *dest = 0;
+    return dest - buf;
+}
+
+//-----------------------------------------------------------------------------
+// [[hex]]
+
+mem_t EncodeHexCirc
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    const void	*source,		// NULL or data to encode
+    int		source_len,		// length of 'source'; if <0: use strlen(source)
+    ccp		digits			// digits to use, eg. LoDigits[] (=fallback) or HiDigits[]
+)
+{
+    char buf[CIRC_BUF_MAX_ALLOC+10];
+    mem_t mem;
+    mem.len = EncodeHex(buf,sizeof(buf),source,source_len,digits);
+    if ( mem.len < CIRC_BUF_MAX_ALLOC )
+	mem.ptr = CopyCircBuf(buf,mem.len+1);
+    else
+    {
+	mem.ptr = 0;
+	mem.len = 0;
+    }
+    return mem;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// [[hex]]
+
+uint DecodeHex
+(
+    // returns the number of valid bytes in 'buf'
+
+    char	*buf,		// valid destination buffer
+    uint	buf_size,	// size of 'buf', >= 3
+    ccp		source,		// NULL or string to decode
+    int		source_len,	// length of 'source'. If -1, str is NULL terminated
+    int		quote,		// -1:auto, 0:none, >0: quotation char
+    uint	*scanned_len	// not NULL: Store number of scanned 'str' bytes here
+)
+{
+    DASSERT(buf);
+    DASSERT(buf_size>3);
+    DASSERT(source);
+
+    char *dest = buf;
+    char *dest_end = dest + buf_size - 1;
+
+    ccp src = source;
+    ccp src_end = src + ( source_len < 0 ? strlen(src) : source_len );
+
+    bool have_quote = quote > 0;
+    if ( quote == -1 && src < src_end && ( *src == '"' || *src == '\'' ))
+    {
+	quote = *src++;
+	have_quote = true;
+    }
+
+    while ( dest < dest_end && src < src_end )
+    {
+	u8 hi = TableNumbers[(u8)*src];
+	if ( hi >= 16 )
+	    break;
+	hi <<= 4;
+
+	u8 lo = ++src < src_end ? TableNumbers[(u8)*src] : 0;
+	if ( lo >= 16 )
+	{
+	    *dest++ = hi;
+	    break;
+	}
+	*dest++ = hi | lo;
+	src++;
+    }
+
+    if (scanned_len)
+    {
+	if ( have_quote && src < src_end && *src == quote )
+	    src++;
+	*scanned_len = src - source;
+    }
+
+    *dest = 0;
+    return dest - buf;
+}
+
+//-----------------------------------------------------------------------------
+// [[hex]]
+
+mem_t DecodeHexCirc
+(
+    // Returns a buffer alloced by GetCircBuf()
+    // with valid pointer and null terminated.
+    // If result is too large (>CIRC_BUF_MAX_ALLOC) then (0,0) is returned.
+
+    ccp		source,		// NULL or string to decode
+    int		source_len,	// length of 'source'. If -1, str is NULL terminated
+    int		quote		// -1:auto, 0:none, >0: quotation char
+)
+{
+    char buf[CIRC_BUF_MAX_ALLOC+10];
+    mem_t mem;
+    mem.len = DecodeHex(buf,sizeof(buf),source,source_len,quote,0);
+    if ( mem.len < CIRC_BUF_MAX_ALLOC )
+	mem.ptr = CopyCircBuf(buf,mem.len+1);
+    else
+    {
+	mem.ptr = 0;
+	mem.len = 0;
+    }
+    return mem;
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -1767,10 +2168,12 @@ uint DecodeByMode
     switch (emode)
     {
       case ENCODE_STRING:
+      case ENCODE_PIPE:
 	len = ScanEscapedString(buf,buf_size,source,slen,false,-1,scanned_len);
 	break;
 
       case ENCODE_UTF8:
+      case ENCODE_PIPE8:
 	len = ScanEscapedString(buf,buf_size,source,slen,true,-1,scanned_len);
 	break;
 
@@ -1789,6 +2192,10 @@ uint DecodeByMode
 
       case ENCODE_JSON:
 	len = DecodeJSON(buf,buf_size,source,slen,-1,scanned_len);
+	break;
+
+      case ENCODE_HEX:
+	len = DecodeHex(buf,buf_size,source,slen,-1,scanned_len);
 	break;
 
       default:
@@ -1837,6 +2244,8 @@ mem_t DecodeByModeMem
     {
       case ENCODE_STRING:
       case ENCODE_UTF8:
+      case ENCODE_PIPE:
+      case ENCODE_PIPE8:
 	need = slen + 5;
 	break;
 
@@ -1845,6 +2254,10 @@ mem_t DecodeByModeMem
       case ENCODE_BASE64STAR:
       case ENCODE_BASE64XML:
 	need = ( 3*slen ) / 4 + 12;
+	break;
+
+      case ENCODE_HEX:
+	need = (slen+3)/2;
 	break;
 
       //case ENCODE_JSON: // [[json]]
@@ -1965,7 +2378,7 @@ uint EncodeByMode
     // returns the number of valid bytes in 'buf'. Result is NULL-terminated.
 
     char		*buf,		// valid destination buffer
-    uint		buf_size,	// size of 'buf', >= 4
+    uint		buf_size,	// size of 'buf' >= 4
     ccp			source,		// string to encode
     int			slen,		// length of string. if -1, str is null terminated
     EncodeMode_t	emode		// encoding mode
@@ -1986,7 +2399,15 @@ uint EncodeByMode
 	break;
 
       case ENCODE_UTF8:
-	PrintEscapedString(buf,buf_size,source,slen,CHMD__ALL,0,&len);
+	PrintEscapedString(buf,buf_size,source,slen,CHMD__MODERN,0,&len);
+	break;
+
+      case ENCODE_PIPE:
+	PrintEscapedString(buf,buf_size,source,slen,CHMD_IF_REQUIRED|CHMD_PIPE,0,&len);
+	break;
+
+      case ENCODE_PIPE8:
+	PrintEscapedString(buf,buf_size,source,slen,CHMD__MODERN|CHMD_IF_REQUIRED|CHMD_PIPE,0,&len);
 	break;
 
       case ENCODE_BASE64:
@@ -2011,6 +2432,10 @@ uint EncodeByMode
 
       case ENCODE_JSON:
 	len = EncodeJSON(buf,buf_size,source,slen);
+	break;
+
+      case ENCODE_HEX:
+	len = EncodeHex(buf,buf_size,source,slen,0);
 	break;
 
       default:
@@ -2055,6 +2480,8 @@ mem_t EncodeByModeMem
     {
       case ENCODE_STRING:
       case ENCODE_UTF8:
+      case ENCODE_PIPE:
+      case ENCODE_PIPE8:
 	need = slen * 4 + 5;
 	break;
 
@@ -2063,6 +2490,10 @@ mem_t EncodeByModeMem
       case ENCODE_BASE64STAR:
       case ENCODE_BASE64XML:
 	need = ( 4*slen ) / 3 + 10;
+	break;
+
+      case ENCODE_HEX:
+	need = 2*slen + 1;
 	break;
 
       case ENCODE_JSON: // [[json]]
@@ -2101,6 +2532,79 @@ mem_t EncodeByModeMem
 ///////////////		escape/quote strings, alloc space	///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+exmem_t EscapeStringEx
+(
+    // Returns an exmem_t struct. If not quoted (CHMD_IF_REQUIRED) it returns 'src'
+    // Use FreeExMem(&result) to free possible alloced result.
+
+    cvp		src,			// NULL or source
+    int		src_len,		// size of 'src'. If -1: Use strlen(src)
+    cvp		return_if_null,		// return this, if 'src==NULL'
+    cvp		return_if_empty,	// return this, if src is empty (have no chars)
+    CharMode_t	char_mode,		// how to escape (CHMD_*)
+    char	quote,			// quoting character: "  or  '  or  $ (for $'...')
+    bool	try_circ		// use circ-buffer, if result is small enough
+)
+{
+    if (!src)
+	return ExMemByString((char*)return_if_null);
+
+    if ( src_len < 0 )
+	src_len = strlen(src);
+    if (!src_len)
+	return ExMemByString((char*)return_if_empty);
+
+    char quote_char;
+    uint quote_mode;
+    if ( quote == '$' )
+    {
+	quote_mode = 3;
+	quote_char = '\'';
+    }
+    else if (quote)
+    {
+	quote_mode = 2;
+	quote_char = quote;
+    }
+    else
+    {
+	quote_mode = 0;
+	quote_char = '"';
+    }
+
+    uint size = GetEscapeLen(src,src_len,char_mode,quote_char);
+    if ( !size && char_mode & CHMD_IF_REQUIRED )
+	return ExMemByS(src,src_len);
+
+    size += quote_mode + src_len + 4;
+    const bool use_circ = try_circ && size <= CIRC_BUF_MAX_ALLOC;
+    char *buf = use_circ ? GetCircBuf(size) : MALLOC(size);
+
+    uint len;
+    if ( quote_mode == 3 )
+    {
+	PrintEscapedString(buf+2,size-3,src,src_len,char_mode,quote_char,&len);
+	buf[0] = '$';
+	buf[1] = buf[len+2] = quote_char;
+	buf[len+3] = 0;
+
+    }
+    else if ( quote_mode == 2 )
+    {
+	PrintEscapedString(buf+1,size-2,src,src_len,char_mode,quote_char,&len);
+	buf[0] = buf[len+1] = quote_char;
+	buf[len+2] = 0;
+    }
+    else
+	PrintEscapedString(buf,size,src,src_len,char_mode,quote_char,&len);
+
+    exmem_t res = { .data={ buf, len+quote_mode },
+			.is_circ_buf = use_circ, .is_alloced = !use_circ };
+    return res;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
 char * EscapeString
 (
     // Returns a pointer.
@@ -2124,6 +2628,14 @@ char * EscapeString
     if (!src_len)
 	return (char*)return_if_empty;
 
+ #if 1
+    exmem_t res = EscapeStringEx(src,src_len,return_if_null,return_if_empty,char_mode,quote,try_circ);
+    if (dest_len)
+	*dest_len = res.data.len;
+    return res.is_circ_buf || res.is_alloced
+	? (char*)res.data.ptr
+	: MEMDUP(res.data.ptr,res.data.len);
+ #else // [[2do]] [[obsolete]]
     char quote_char;
     uint quote_mode;
     if ( quote == '$' )
@@ -2142,7 +2654,18 @@ char * EscapeString
 	quote_char = '"';
     }
 
-    uint size = GetEscapedSize(src,src_len,char_mode,quote_char) + quote_mode;
+    uint size = GetEscapeLen(src,src_len,char_mode,quote_char);
+    if ( !size && char_mode & CHMD_IF_REQUIRED )
+    {
+	char *buf = try_circ && size <= CIRC_BUF_MAX_ALLOC ? GetCircBuf(src_len+1) : MALLOC(src_len+1);
+	memcpy(buf,src,src_len);
+	buf[src_len] = 0;
+	if (dest_len)
+	    *dest_len = src_len;
+	return buf;
+    }
+
+    size += quote_mode + src_len + 4;
     char *buf = try_circ && size <= CIRC_BUF_MAX_ALLOC ? GetCircBuf(size) : MALLOC(size);
 
     uint len;
@@ -2152,7 +2675,7 @@ char * EscapeString
 	buf[0] = '$';
 	buf[1] = buf[len+2] = quote_char;
 	buf[len+3] = 0;
-	
+
     }
     else if ( quote_mode == 2 )
     {
@@ -2166,12 +2689,136 @@ char * EscapeString
     if (dest_len)
 	*dest_len = len + quote_mode;
     return buf;
+ #endif
 };
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct Escape_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// https://en.wikipedia.org/wiki/ANSI_escape_code
+
+const char ecape_stat_name[ESCST__N+1][5] =
+{
+	"-",	// ESCST_NONE
+	"CHAR",	// ESCST_CHAR
+	"FE",	// ESCST_FE
+	"SS2",	// ESCST_SS2
+	"SS3",	// ESCST_SS3
+	"CSI",	// ESCST_CSI
+	"OSC",	// ESCST_OSC
+	"",	// ESCST__N
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+EscapeStat_t CheckEscape ( Escape_t *esc, cvp source, cvp end, bool check_esc )
+{
+    DASSERT(esc);
+    memset(esc,0,sizeof(*esc));
+    if (!source)
+	return 0;
+
+    ccp src = source;
+    if (!end)
+	end = src + strlen(src);
+    if ( src >= (ccp)end )
+	return 0;
+
+    ccp beg = src;
+    if (check_esc)
+    {
+	if ( *src != '\e' )
+	{
+	    esc->status = ESCST_CHAR;
+	    esc->code = *src++;
+	    goto term;
+	}
+
+	src++;
+	if ( src >= (ccp)end )
+	    return 0;
+    }
+    esc->code = *src++;
+
+    int term_wd = 0;
+    switch (esc->code)
+    {
+     case 'N':			//--- SS2: Single Shift 2 ---
+	if ( src < (ccp)end )
+	{
+	    esc->status = ESCST_SS2;
+	    esc->code = *src++;
+	}
+	break;
+
+     case 'O':			//--- SS3: Single Shift 3 ---
+	if ( src < (ccp)end )
+	{
+	    esc->status = ESCST_SS3;
+	    esc->code = *src++;
+	}
+	break;
+
+     case '[':			//--- CSI ---
+	while ( src < (ccp)end && *src >= 0x30 && *src <= 0x3f )
+	    src++;
+	while ( src < (ccp)end && *src >= 0x20 && *src <= 0x2f )
+	    src++;
+	if ( src < (ccp)end && *src >= 0x40 && *src <= 0x7e )
+	{
+	    esc->status = ESCST_CSI;
+	    esc->code = *src++;
+	}
+	break;
+
+
+     case ']':			//--- OSC ---
+	// terminate by ST (ESC \ == 0x9c) or BEL (7)
+	for ( ; src < (ccp)end; src++ )
+	{
+	    if ( *src == 7 || (u8)*src == 0x9c )
+	    {
+		src++;
+		term_wd = 1;
+		esc->status = ESCST_OSC;
+		break;
+	    }
+	    if ( src+1 < (ccp)end && src[0] == '\e' && src[1] == '\\' )
+	    {
+		src += 2;
+		term_wd = 2;
+		esc->status = ESCST_OSC;
+		break;
+	    }
+	}
+	break;
+
+     default:			//--- single char ---
+	esc->status = ESCST_CHAR;
+	break;
+    }
+
+ term:;
+    if ( esc->status != ESCST_NONE )
+    {
+	esc->scanned_len = src - (ccp)source;
+	if ( esc->status > ESCST_CHAR )
+	{
+	    esc->esc.ptr = beg;
+	    esc->esc.len = src - beg - term_wd;
+	}
+    }
+
+    return esc->status;
+}
 
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			    time			///////////////
 ///////////////////////////////////////////////////////////////////////////////
+
+ccp micro_second_char = "u";
 
 s64 timezone_adjust_sec   = -1;
 s64 timezone_adjust_usec  = -1;
@@ -2265,6 +2912,24 @@ struct timespec GetClockTime ( bool localtime )
     return ts;
 }
 
+//-----------------------------------------------------------------------------
+
+struct timespec GetClockTimer(void)
+{
+    struct timespec ts;
+
+ #if HAVE_CLOCK_GETTIME
+    if (!clock_gettime(CLOCK_MONOTONIC,&ts))
+	return ts;
+ #endif
+
+    // fall back
+    struct timeval tval = GetTimeOfDay(false);
+    ts.tv_sec  = tval.tv_sec;
+    ts.tv_nsec = tval.tv_usec * NSEC_PER_USEC;
+    return ts;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 DayTime_t GetDayTime ( bool localtime )
@@ -2326,50 +2991,114 @@ u_nsec_t GetTimeNSec ( bool localtime )
     return (u_nsec_t)(ts.tv_sec) * NSEC_PER_SEC + ts.tv_nsec;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+CurrentTime_t current_time = {0};
+
+CurrentTime_t GetCurrentTime ( bool localtime )
+{
+    struct timeval tval = GetTimeOfDay(localtime);
+
+    CurrentTime_t ct;
+    ct.sec  = tval.tv_sec;
+    ct.usec = tval.tv_sec * USEC_PER_SEC + tval.tv_usec;
+    ct.msec = ct.usec / 1000;
+    return ct;
+}
+
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////			    timer			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-static time_t time_base = 0;
+u_sec_t GetTimerSec()
+{
+    struct timespec ts = GetClockTimer();
+    return ts.tv_sec;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
 u_msec_t GetTimerMSec()
 {
-    struct timeval tv;
-    gettimeofday(&tv,NULL);
-    if (!time_base)
-	time_base = tv.tv_sec;
-
-    return (u_msec_t)( tv.tv_sec - time_base ) * MSEC_PER_SEC
-		+ tv.tv_usec/USEC_PER_MSEC;
+    struct timespec ts = GetClockTimer();
+    return ts.tv_sec * MSEC_PER_SEC + ts.tv_nsec / NSEC_PER_MSEC;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 u_usec_t GetTimerUSec()
 {
-    struct timeval tv;
-    gettimeofday(&tv,NULL);
-    if (!time_base)
-	time_base = tv.tv_sec;
-
-    return (u_usec_t)( tv.tv_sec - time_base ) * USEC_PER_SEC + tv.tv_usec;
+    struct timespec ts = GetClockTimer();
+    return ts.tv_sec * USEC_PER_SEC + ts.tv_nsec / NSEC_PER_USEC;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-u_usec_t GetTimerNSec()
+u_nsec_t GetTimerNSec()
 {
-    struct timespec ts = GetClockTime(false);
-    if (!time_base)
-	time_base = ts.tv_sec;
-
-    return (u_usec_t)( ts.tv_sec - time_base ) * NSEC_PER_SEC + ts.tv_nsec;
+    struct timespec ts = GetClockTimer();
+    return ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintRefTime
+(
+
+    u_sec_t		tim,		// seconds since epoch; 0 is replaced by time()
+    u_sec_t		*ref_tim	// NULL or ref_tim; if *ref_tim==0: write current time
+					// it is used to select format
+)
+{
+    u_sec_t ref;
+    if (!ref_tim)
+	ref = GetTimeSec(false);
+    else
+    {
+	if (!*ref_tim)
+	    *ref_tim = GetTimeSec(false);
+	ref = *ref_tim;
+    }
+
+    ccp format = tim >= ref - 10*SEC_PER_HOUR && tim <= ref + 10*SEC_PER_HOUR
+	? "  %k:%M:%S"
+	: tim >= ref - 12*SEC_PER_DAY && tim <= ref + 10*SEC_PER_DAY
+	? " %e. %k:%M"
+	: "%F";
+    return PrintTimeByFormat(format,tim);
+}
+
+//-----------------------------------------------------------------------------
+
+ccp PrintRefTimeUTC
+(
+
+    u_sec_t		tim,		// seconds since epoch; 0 is replaced by time()
+    u_sec_t		*ref_tim	// NULL or ref_tim; if *ref_tim==0: write current time
+					// it is used to select format
+)
+{
+    u_sec_t ref;
+    if (!ref_tim)
+	ref = GetTimeSec(false);
+    else
+    {
+	if (!*ref_tim)
+	    *ref_tim = GetTimeSec(false);
+	ref = *ref_tim;
+    }
+
+    ccp format = tim >= ref - 10*SEC_PER_HOUR && tim <= ref + 10*SEC_PER_HOUR
+	? "  %k:%M:%S"
+	: tim >= ref - 12*SEC_PER_DAY && tim <= ref + 10*SEC_PER_DAY
+	? " %e. %k:%M"
+	: "%F";
+    return PrintTimeByFormatUTC(format,tim);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 ccp PrintTimeByFormat
@@ -2377,14 +3106,12 @@ ccp PrintTimeByFormat
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		tim		// seconds since epoch; 0 is replaced by time()
+    u_sec_t		tim		// seconds since epoch; 0 is replaced by time()
 )
 {
-    if (!tim)
-	tim = time(0);
-
     char buf[100];
-    struct tm *tm = localtime(&tim);
+    const time_t reftime = tim ? tim : time(0);
+    struct tm *tm = localtime(&reftime);
     const uint len = strftime(buf,sizeof(buf),format,tm);
     return CopyCircBuf(buf,len+1);
 }
@@ -2396,14 +3123,12 @@ ccp PrintTimeByFormatUTC
     // returns temporary buffer by GetCircBuf();
 
     ccp			format,		// format string for strftime()
-    time_t		tim		// seconds since epoch; 0 is replaced by time()
+    u_sec_t		tim		// seconds since epoch; 0 is replaced by time()
 )
 {
-    if (!tim)
-	tim = time(0);
-
     char buf[100];
-    struct tm *tm = gmtime(&tim);
+    const time_t reftime = tim ? tim : time(0);
+    struct tm *tm = gmtime(&reftime);
     const uint len = strftime(buf,sizeof(buf),format,tm);
     return CopyCircBuf(buf,len+1);
 }
@@ -2462,6 +3187,90 @@ ccp PrintNSecByFormatUTC
     }
 
     return CopyCircBuf(buf,len+1);
+}
+
+//-----------------------------------------------------------------------------
+
+ccp PrintNTimeByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+					// 1-9 '@' in row replaced by digits of 'usec'
+    u_nsec_t		ntime
+)
+{
+    return PrintNSecByFormat(format,ntime/NSEC_PER_SEC,ntime%NSEC_PER_SEC);
+}
+
+//-----------------------------------------------------------------------------
+
+ccp PrintNTimeByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+					// 1-9 '@' in row replaced by digits of 'usec'
+    u_nsec_t		ntime
+)
+{
+    return PrintNSecByFormatUTC(format,ntime/NSEC_PER_SEC,ntime%NSEC_PER_SEC);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintUTimeByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+					// 1-9 '@' in row replaced by digits of 'usec'
+    u_usec_t		utime
+)
+{
+    return PrintNSecByFormat(format,utime/USEC_PER_SEC,utime%USEC_PER_SEC*NSEC_PER_USEC);
+}
+
+//-----------------------------------------------------------------------------
+
+ccp PrintUTimeByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+					// 1-9 '@' in row replaced by digits of 'usec'
+    u_usec_t		utime
+)
+{
+    return PrintNSecByFormatUTC(format,utime/USEC_PER_SEC,utime%USEC_PER_SEC*NSEC_PER_USEC);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintMTimeByFormat
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+					// 1-9 '@' in row replaced by digits of 'usec'
+    u_msec_t		mtime
+)
+{
+    return PrintNSecByFormat(format,mtime/MSEC_PER_SEC,mtime%MSEC_PER_SEC*NSEC_PER_MSEC);
+}
+
+//-----------------------------------------------------------------------------
+
+ccp PrintMTimeByFormatUTC
+(
+    // returns temporary buffer by GetCircBuf();
+
+    ccp			format,		// format string for strftime()
+					// 1-9 '@' in row replaced by digits of 'usec'
+    u_msec_t		mtime
+)
+{
+    return PrintNSecByFormatUTC(format,mtime/MSEC_PER_SEC,mtime%MSEC_PER_SEC*NSEC_PER_MSEC);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2791,13 +3600,16 @@ ccp PrintTimer3
     u64			sec,		// seconds to print
     int			usec,		// 0...999999: usec fraction,
 					// otherwise suppress ms/us output
-    bool		aligned		// true: print aligned 3 character output
+    sizeform_mode_t	mode		// DC_SFORM_ALIGN | DC_SFORM_DASH
 )
 {
     if (!buf)
 	buf = GetCircBuf( buf_size = 4 );
+    const bool aligned = mode & DC_SFORM_ALIGN;
 
-    if ( !sec && usec >= 0 && usec <= 999999 )
+    if ( !sec && !usec && mode & DC_SFORM_DASH )
+	StringCopyS(buf,buf_size,"  -");
+    else if ( !sec && usec >= 0 && usec <= 999999 )
     {
 	if (!usec)
 	    StringCopyS(buf,buf_size,aligned?"  0":"0");
@@ -2848,13 +3660,16 @@ ccp PrintTimer4
     u64			sec,		// seconds to print
     int			usec,		// 0...999999: usec fraction,
 					// otherwise suppress ms/us output
-    bool		aligned		// true: print aligned 4 character output
+    sizeform_mode_t	mode		// DC_SFORM_ALIGN | DC_SFORM_DASH
 )
 {
     if (!buf)
 	buf = GetCircBuf( buf_size = 5 );
+    const bool aligned = mode & DC_SFORM_ALIGN;
 
-    if ( sec < 10 && usec >= 0 && usec <= 999999 )
+    if ( !sec && !usec && mode & DC_SFORM_DASH )
+	StringCopyS(buf,buf_size,"   -");
+    else if ( sec < 10 && usec >= 0 && usec <= 999999 )
     {
 	if (sec)
 	    snprintf(buf,buf_size,"%llu.%us",sec,usec/100000);
@@ -2895,38 +3710,53 @@ ccp PrintTimer4
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// [[nsec]] -> PrintTimer6U(), PrintTimer6N()
-
-ccp PrintTimer6
+ccp PrintTimer6N
 (
     char		* buf,		// result buffer (>6 bytes)
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     u64			sec,		// seconds to print
-    int			usec,		// 0...999999: usec fraction,
-					//    otherwise suppress ms/us output
-    bool		aligned		// true: print aligned 6 character output
+    int			nsec,		// 0...999999999: nsec fraction,
+					//    otherwise suppress ms/us/ns output
+    sizeform_mode_t	mode		// DC_SFORM_ALIGN | DC_SFORM_CENTER | DC_SFORM_DASH
 )
 {
-    if (!buf)
-	buf = GetCircBuf( buf_size = 7 );
-
-    if (aligned)
+    if ( mode & DC_SFORM_CENTER )
     {
-	if ( sec < 10 && usec >= 0 && usec <= 999999 )
+	char buf2[20];
+	PrintTimer6N(buf2,sizeof(buf2),sec,nsec,mode&~(DC_SFORM_CENTER|DC_SFORM_ALIGN));
+	return StringCenterS(buf,buf_size,buf2,6);
+    }
+
+    char temp[20];
+    if (!buf)
+    {
+	buf = temp;
+	buf_size = sizeof(temp);
+    }
+
+    const bool nsec_valid = nsec >= 0 && nsec <= 999999999;
+
+    if ( mode & DC_SFORM_ALIGN )
+    {
+	if ( !sec && !nsec && mode & DC_SFORM_DASH )
+	    StringCopyS(buf,buf_size,"     -");
+	else if ( sec < 10 && nsec_valid )
 	{
-	    usec += 1000000 * sec;
-	    if (!usec)
+	    u_nsec_t sum = sec *NSEC_PER_SEC + nsec;
+	    if (!sum)
 		StringCopyS(buf,buf_size,"     0");
-	    else if ( usec < 10000 )
-		snprintf(buf,buf_size,"%4uus",usec);
+	    else if ( sum < 10000 )
+		snprintf(buf,buf_size,"%4lluns",sum);
+	    else if ( sum < 10000000 )
+		snprintf(buf,buf_size,"%4lluus",sum/1000);
 	    else
-		snprintf(buf,buf_size,"%4ums",usec/1000);
+		snprintf(buf,buf_size,"%4llums",sum/1000000);
 	}
 	else if ( sec < 100 )
 	{
-	    if ( usec >= 0 && usec <= 999999 )
-		snprintf(buf,buf_size,"%2llu.%02us",sec,usec/10000);
+	    if (nsec_valid )
+		snprintf(buf,buf_size,"%2llu.%02us",sec,nsec/10000000);
 	    else
 		snprintf(buf,buf_size,"%5llus",sec);
 	}
@@ -2955,21 +3785,25 @@ ccp PrintTimer6
     }
     else
     {
-	if ( sec < 10 )
+	if ( !sec && !nsec && mode & DC_SFORM_DASH )
+	    StringCopyS(buf,buf_size,"-");
+	else if ( sec < 10 && nsec_valid )
 	{
-	    usec += 1000000 * sec;
-	    if (!usec)
+	    u_nsec_t sum = sec *NSEC_PER_SEC + nsec;
+	    if (!sum)
 		StringCopyS(buf,buf_size,"0");
-	    else if ( usec < 10000 )
-		snprintf(buf,buf_size,"%uus",usec);
+	    else if ( sum < 10000 )
+		snprintf(buf,buf_size,"%lluns",sum);
+	    else if ( sum < 10000000 )
+		snprintf(buf,buf_size,"%lluus",sum/1000);
 	    else
-		snprintf(buf,buf_size,"%ums",usec/1000);
+		snprintf(buf,buf_size,"%llums",sum/1000000);
 	}
 	else if ( sec < 100 )
 	{
-	    if ( usec >= 0 && usec <= 999999 )
+	    if ( nsec_valid )
 	    {
-		const uint val2 = usec/10000;
+		const uint val2 = nsec/10000000;
 		if (val2)
 		    snprintf(buf,buf_size,"%llu.%02us",sec,val2);
 		else
@@ -3032,7 +3866,7 @@ ccp PrintTimer6
 	}
     }
 
-    return buf;
+    return buf == temp ? CopyCircBuf0(buf,strlen(buf)) : buf;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3045,14 +3879,19 @@ ccp PrintTimerUSec4s
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     s_usec_t		usec,		// microseconds to print
-    sizeform_mode_t	mode		// support of DC_SFORM_ALIGN, DC_SFORM_PLUS
+    sizeform_mode_t	mode		// DC_SFORM_ALIGN | DC_SFORM_PLUS | DC_SFORM_DASH
 )
 {
     if ( !buf || buf_size < 2 )
 	buf = GetCircBuf( buf_size = 5 );
 
     if (!usec)
-	StringCopyS(buf,buf_size, mode & DC_SFORM_ALIGN ? "   0" : "0" );
+    {
+	if ( mode & DC_SFORM_DASH )
+	    StringCopyS(buf,buf_size, mode & DC_SFORM_ALIGN ? "   -" : "-" );
+	else
+	    StringCopyS(buf,buf_size, mode & DC_SFORM_ALIGN ? "   0" : "0" );
+    }
     else
     {
 	char sign;
@@ -3064,7 +3903,7 @@ ccp PrintTimerUSec4s
 	else
 	    sign = mode & DC_SFORM_PLUS ? '+' : ' ';
 
-	PrintTimerUSec3(buf+1,buf_size-1,usec,mode&DC_SFORM_ALIGN);
+	PrintTimerUSec3(buf+1,buf_size-1,usec,mode&~DC_SFORM_PLUS);
 	*buf = ' ';
 
 	char *ptr = buf+1;
@@ -3077,22 +3916,25 @@ ccp PrintTimerUSec4s
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// [[nsec]] -> PrintTimer7Us(), PrintTimer7Ns()
-
 ccp PrintTimerUSec7s
 (
     char		* buf,		// result buffer (>7 bytes)
 					// If NULL, a local circulary static buffer is used
     size_t		buf_size,	// size of 'buf', ignored if buf==NULL
     s_usec_t		usec,		// microseconds to print
-    sizeform_mode_t	mode		// support of DC_SFORM_ALIGN, DC_SFORM_PLUS
+    sizeform_mode_t	mode		// DC_SFORM_ALIGN | DC_SFORM_PLUS | DC_SFORM_DASH
 )
 {
     if ( !buf || buf_size < 2 )
 	buf = GetCircBuf( buf_size = 8 );
 
     if (!usec)
-	StringCopyS(buf,buf_size, mode & DC_SFORM_ALIGN ? "      0" : "0" );
+    {
+	if ( mode & DC_SFORM_DASH )
+	    StringCopyS(buf,buf_size, mode & DC_SFORM_ALIGN ? "      -" : "-" );
+	else
+	    StringCopyS(buf,buf_size, mode & DC_SFORM_ALIGN ? "      0" : "0" );
+    }
     else
     {
 	char sign;
@@ -3113,6 +3955,123 @@ ccp PrintTimerUSec7s
 	ptr[-1] = sign;
     }
     return buf;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintTimerNSec7s
+(
+    char		* buf,		// result buffer (>7 bytes)
+					// If NULL, a local circulary static buffer is used
+    size_t		buf_size,	// size of 'buf', ignored if buf==NULL
+    s_nsec_t		nsec,		// nansoseconds to print
+    sizeform_mode_t	mode		// DC_SFORM_ALIGN | DC_SFORM_PLUS | DC_SFORM_DASH
+)
+{
+    if ( !buf || buf_size < 2 )
+	buf = GetCircBuf( buf_size = 8 );
+
+    if (!nsec)
+    {
+	if ( mode & DC_SFORM_DASH )
+	    StringCopyS(buf,buf_size, mode & DC_SFORM_ALIGN ? "      -" : "-" );
+	else
+	    StringCopyS(buf,buf_size, mode & DC_SFORM_ALIGN ? "      0" : "0" );
+    }
+    else
+    {
+	char sign;
+	if ( nsec < 0 )
+	{
+	    nsec = -nsec;
+	    sign = '-';
+	}
+	else
+	    sign = mode & DC_SFORM_PLUS ? '+' : ' ';
+
+	PrintTimerNSec6(buf+1,buf_size-1, nsec, mode & DC_SFORM_ALIGN );
+	*buf = ' ';
+
+	char *ptr = buf+1;
+	while ( *ptr == ' ' )
+	    ptr++;
+	ptr[-1] = sign;
+    }
+    return buf;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintAge3Sec
+(
+    u_sec_t		now,		// NULL or current time by GetTimeSec(false)
+    u_sec_t		time		// time to print
+)
+{
+    if (!time)
+	return "  -";
+
+    if (!now)
+	now = GetTimeSec(false);
+
+    now -= time;
+    return now < 0 ? "  +" : PrintTimer3(0,0,now,-1,DC_SFORM_ALIGN);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintAge4Sec
+(
+    u_sec_t		now,		// NULL or current time by GetTimeSec(false)
+    u_sec_t		time		// time to print
+)
+{
+    if (!time)
+	return "   -";
+
+    if (!now)
+	now = GetTimeSec(false);
+
+    now -= time;
+    return now < 0
+	? PrintTimerSec4s(0,0,now,DC_SFORM_ALIGN)
+	: PrintTimer4(0,0,now,-1,DC_SFORM_ALIGN);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintAge6Sec
+(
+    u_sec_t		now,		// NULL or current time by GetTimeSec(false)
+    u_sec_t		time		// time to print
+)
+{
+    if (!time)
+	return "     -";
+
+    if (!now)
+	now = GetTimeSec(false);
+
+    now -= time;
+    return now < 0 ? "     +" : PrintTimerSec6(0,0,now,DC_SFORM_ALIGN);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintAge7Sec
+(
+    u_sec_t		now,		// NULL or current time by GetTimeSec(false)
+    u_sec_t		time		// time to print
+)
+{
+    if (!time)
+	return "      -";
+
+    if (!now)
+	now = GetTimeSec(false);
+
+    return PrintTimerSec7s(0,0,now-time,DC_SFORM_ALIGN);
 }
 
 //
@@ -3191,7 +4150,7 @@ char * ScanIntervalUSec
 {
     struct timespec ts;
     char *res = ScanIntervalTS(&ts,source);
-    
+
     if (res_usec)
 	*res_usec = ts.tv_sec * USEC_PER_SEC + ts.tv_nsec / NSEC_PER_USEC;
     return res;
@@ -3207,7 +4166,7 @@ char * ScanIntervalNSec
 {
     struct timespec ts;
     char *res = ScanIntervalTS(&ts,source);
-    
+
     if (res_nsec)
 	*res_nsec = ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
     return res;
@@ -3637,6 +4596,1821 @@ time_t year2time ( int year )
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			usage counter			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+int usage_count_enabled = 0;
+
+void EnableUsageCount()
+{
+    usage_count_enabled++;
+    UpdateUsageByMgr(0);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+const SaveRestoreTab_t SRT_UsageCount[] =
+{
+    #undef SRT_NAME
+    #define SRT_NAME UsageCount_t
+
+    DEF_SRT_UINT(	par.enabled,		"enabled" ),
+    DEF_SRT_UINT(	par.used,		"used" ),
+    DEF_SRT_ARRAY_A(entry),
+      DEF_SRT_UINT(	entry[0].count,		"count" ),
+      DEF_SRT_UINT(	entry[0].elapsed_nsec,	"elapsed" ),
+      DEF_SRT_UINT(	entry[0].time_sec,	"time" ),
+      DEF_SRT_FLOAT(	entry[0].top1s,		"top1s" ),
+      DEF_SRT_FLOAT(	entry[0].top5s,		"top5s" ),
+    DEF_SRT_ARRAY_END(),
+
+    DEF_SRT_SEPARATOR(),
+    DEF_SRT_TERM()
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ClearUsageCount ( UsageCount_t *uc, int count )
+{
+    if (!uc)
+	return;
+
+    uint index = CheckIndex1(uc->par.used,count);
+    if ( index >= uc->par.used - 1 )
+	return;
+
+    uc->par.used = index;
+    if (!index)
+    {
+	const bool enabled = uc->par.enabled;
+	memset( uc, 0, sizeof(*uc) );
+	uc->par.enabled = enabled;
+    }
+    else
+    {
+	UsageCountEntry_t *e = uc->entry + index;
+	memset( e, 0, PTR_DISTANCE((u8*)uc->entry+sizeof(uc->entry),e) );
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// [[UpdateUsageCount]]
+
+void UpdateUsageCount ( UsageCount_t *uc, u_nsec_t timer_nsec )
+{
+    if (!uc)
+	return;
+
+    if ( !uc->par.enabled || usage_count_enabled <= 0 )
+    {
+	uc->ref.elapsed_nsec = 0;
+	uc->ref.count = 0;
+	uc->par.dirty = false;
+	return;
+    }
+
+    if ( !uc->par.is_active )
+    {
+	if ( !uc->par.used && !uc->ref.count )
+	    return;
+	uc->par.is_active = true;
+    }
+
+    UsageCountEntry_t cur = {0};
+    cur.elapsed_nsec = timer_nsec ? timer_nsec : GetTimerNSec();
+
+    uc->par.update_nsec = uc->ref.elapsed_nsec + NSEC_PER_SEC;
+    if ( cur.elapsed_nsec >= uc->par.update_nsec )
+    {
+	// needed for the case that USAGE_COUNT_ENTRIES was reduced after restart!
+	if ( uc->par.used > USAGE_COUNT_ENTRIES )
+	     uc->par.used = USAGE_COUNT_ENTRIES;
+
+	cur.time_sec = GetTimeSec(false);
+
+	if (uc->ref.elapsed_nsec)
+	{
+	    //--- find index and move data
+
+	    int index;
+	    if ( uc->par.used < USAGE_COUNT_FIRST_ADD )
+		index = uc->par.used + 1;
+	    else
+	    {
+		u_nsec_t min = USAGE_COUNT_NEXT_MIN(NSEC_PER_SEC);
+		for ( index = USAGE_COUNT_FIRST_ADD;
+		      index < uc->par.used;
+		      index++, min = USAGE_COUNT_NEXT_MIN(min)
+		    )
+		{
+		    UsageCountEntry_t *e = uc->entry + index;
+		    if ( e->elapsed_nsec < min )
+		    {
+			AddUsageCountEntry(e,e-1);
+			index--;
+			break;
+		    }
+		}
+		if ( ++index > USAGE_COUNT_ENTRIES )
+		    index = USAGE_COUNT_ENTRIES;
+	    }
+
+	    if ( index > 1 )
+		memmove( uc->entry+1, uc->entry, (index-1) * sizeof(*uc->entry) );
+
+	    if ( uc->par.used < index )
+		 uc->par.used = index;
+
+
+	    //--- update first entry
+
+	    UsageCountEntry_t *e = uc->entry;
+	    *e = uc->ref;
+	    e->elapsed_nsec = cur.elapsed_nsec - e->elapsed_nsec;
+
+
+	    //--- update top value (1s)
+
+	    if (e->elapsed_nsec)
+		e->top1s = (double)( NSEC_PER_SEC * e->count ) / e->elapsed_nsec;
+
+
+	    //--- update top value (5s)
+
+	    u_nsec_t elapsed5 = 0, count5 = 0;
+	    UsageCountEntry_t *e5 = uc->entry;
+	    for ( int i = 0; i < uc->par.used && elapsed5 < 5*NSEC_PER_SEC; i++, e5++ )
+	    {
+		elapsed5 += e5->elapsed_nsec;
+		count5   += e5->count;
+	    }
+
+	    if (elapsed5)
+	    {
+		if ( count5 == e->count )
+		    elapsed5 = 5*NSEC_PER_SEC;
+		e->top5s = (double)( NSEC_PER_SEC * count5 ) / elapsed5;
+	    }
+	}
+
+	uc->ref = cur;
+	uc->par.update_nsec = uc->ref.elapsed_nsec + NSEC_PER_SEC;
+    }
+
+    uc->par.force_update_nsec = uc->ref.elapsed_nsec + NSEC_PER_MIN;
+    uc->par.dirty = uc->ref.count > 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void UpdateUsageCountIncrement ( UsageCount_t *uc )
+{
+    DASSERT(uc);
+    uc->par.is_active = true;
+    UpdateUsageCount(uc,0);
+    if ( usage_count_enabled > 0 )
+    {
+	uc->ref.count++;
+	uc->par.dirty = true;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void UpdateUsageCountAdd ( UsageCount_t *uc, int add )
+{
+    DASSERT(uc);
+    if ( add > 0 )
+    {
+	uc->par.is_active = true;
+	UpdateUsageCount(uc,0);
+	if ( usage_count_enabled > 0 )
+	{
+	    uc->ref.count += add;
+	    uc->par.dirty = true;
+	}
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void AddUsageCountEntry ( UsageCountEntry_t *dest, const UsageCountEntry_t *add )
+{
+    DASSERT(dest);
+    DASSERT(add);
+    dest->count		+= add->count;
+    dest->elapsed_nsec	+= add->elapsed_nsec;
+
+    if ( !dest->time_sec || dest->time_sec > add->time_sec )
+	dest->time_sec = add->time_sec;
+
+    if ( dest->top1s < add->top1s )
+	 dest->top1s = add->top1s;
+    if ( dest->top5s < add->top5s )
+	 dest->top5s = add->top5s;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+UsageCountEntry_t GetUsageCount ( const UsageCount_t *uc, s_nsec_t nsec )
+{
+    DASSERT(uc);
+    UsageCountEntry_t res = {0};
+    const UsageCountEntry_t *e = uc->entry;
+    for ( int i = 0; i < uc->par.used && nsec > 0; i++, e++ )
+    {
+	nsec -= e->elapsed_nsec;
+	AddUsageCountEntry(&res,e);
+    }
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+PointerList_t usage_count_mgr = { .used = 0, .grow = 10 };
+
+///////////////////////////////////////////////////////////////////////////////
+
+u_nsec_t MaintainUsageByMgr ( u_nsec_t now_nsec )
+{
+    // returns delta time to next maintenance based on GetTimerNSec()
+
+    if (!now_nsec)
+	now_nsec = GetTimerNSec();
+    u_nsec_t next_nsec = now_nsec + NSEC_PER_MIN;
+
+    for ( int i = 0; i < usage_count_mgr.used; i++ )
+    {
+	const UsageCtrl_t *uci = usage_count_mgr.list[i];
+	if (!uci)
+	    continue;
+
+	const UsageParam_t *par = GetUsageParam(uci);
+	if (par)
+	{
+	    if ( par->dirty && par->update_nsec && par->update_nsec <= now_nsec
+		|| par->force_update_nsec && par->force_update_nsec <= now_nsec )
+	    {
+		UpdateByUCI(uci,now_nsec);
+	    }
+	    if ( par->dirty && par->update_nsec && next_nsec > par->update_nsec )
+		next_nsec = par->update_nsec;
+	}
+    }
+
+    return next_nsec;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void UpdateByUCI ( const UsageCtrl_t *uci, u_nsec_t now_nsec )
+{
+    if (uci)
+    {
+	if (uci->update_func)
+	    uci->update_func(uci,now_nsec);
+	else if (uci->uc)
+	    UpdateUsageCount(uci->uc,now_nsec);
+	else if (uci->ud)
+	    UpdateUsageDuration(uci->ud,now_nsec);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void UpdateUsageByMgr ( u_nsec_t timer_nsec )
+{
+    if (!timer_nsec)
+	timer_nsec = GetTimerNSec();
+    for ( int i = 0; i < usage_count_mgr.used; i++ )
+    {
+	const UsageCtrl_t *uci = usage_count_mgr.list[i];
+	if (uci)
+	{
+	    if (uci->uc)
+		UpdateUsageCount(uci->uc,timer_nsec);
+	    else if (uci->ud)
+		UpdateUsageDuration(uci->ud,timer_nsec);
+	}
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#if 0
+ static int sort_usage_count ( const UsageCtrl_t *a, const UsageCtrl_t *b )
+ {
+    DASSERT( a && b );
+    return strcmp(a->key1,b->key1);
+ }
+#endif
+
+//-----------------------------------------------------------------------------
+
+void AddToUsageMgr ( const UsageCtrl_t *uci )
+{
+    if ( !uci || !uci->key1 )
+	return;
+
+    // no duplicates!
+    for ( int i = 0; i < usage_count_mgr.used; i++ )
+    {
+	const UsageCtrl_t *uci2 = usage_count_mgr.list[i];
+	if ( uci2 && ( uci2->uc && uci2->uc == uci->uc || uci2->ud && uci2->ud == uci->ud ))
+	    return;
+    }
+
+    AddToPointerMgr(&usage_count_mgr,uci);
+
+ #if 0
+    qsort( usage_count_mgr.list, usage_count_mgr.used,
+		sizeof(*usage_count_mgr.list), (qsort_func)sort_usage_count );
+ #endif
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void SaveCurrentStateByUsageCountMgr ( FILE *f, uint fw_name )
+{
+    DASSERT(f);
+    const u_nsec_t timer_nsec = GetTimerNSec();
+    void **ucip = usage_count_mgr.list;
+    for ( int i = 0; i < usage_count_mgr.used; i++, ucip++ )
+    {
+	UsageCtrl_t *uci = *ucip;
+	if (uci)
+	{
+	    UpdateUsageCount(uci->uc,timer_nsec);
+	    if (uci->srt_prefix)
+	    {
+		if (uci->uc)
+		    SaveCurrentStateByTable(f,uci->uc,SRT_UsageCount,uci->srt_prefix,fw_name);
+		else if (uci->ud)
+		    SaveCurrentStateByTable(f,uci->ud,SRT_UsageDuration,uci->srt_prefix,fw_name);
+	    }
+	}
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void RestoreStateByUsageCountMgr ( RestoreState_t *rs )
+{
+    DASSERT(rs);
+    void **ucip = usage_count_mgr.list;
+    for ( int i = 0; i < usage_count_mgr.used; i++, ucip++ )
+    {
+	UsageCtrl_t *uci = *ucip;
+	if (uci)
+	{
+	    if (uci->uc)
+	    {
+		UsageCount_t *uc = uci->uc;
+		if (uci->srt_load)
+		    RestoreStateByTable(rs,uc,SRT_UsageCount,uci->srt_load);
+		if (uci->srt_prefix)
+		    RestoreStateByTable(rs,uc,SRT_UsageCount,uci->srt_prefix);
+
+		// needed for the case that USAGE_COUNT_ENTRIES was reduced after restart!
+		if ( uc->par.used > USAGE_COUNT_ENTRIES )
+		     uc->par.used = USAGE_COUNT_ENTRIES;
+	    }
+	    else if (uci->ud)
+	    {
+		UsageDuration_t *ud = uci->ud;
+		if (uci->srt_load)
+		    RestoreStateByTable(rs,ud,SRT_UsageDuration,uci->srt_load);
+		if (uci->srt_prefix)
+		    RestoreStateByTable(rs,ud,SRT_UsageDuration,uci->srt_prefix);
+
+		// needed for the case that USAGE_COUNT_ENTRIES was reduced after restart!
+		if ( ud->par.used > USAGE_COUNT_ENTRIES )
+		     ud->par.used = USAGE_COUNT_ENTRIES;
+	    }
+	}
+    }
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			wait counter			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+const SaveRestoreTab_t SRT_UsageDuration[] =
+{
+    #undef SRT_NAME
+    #define SRT_NAME UsageDuration_t
+
+    DEF_SRT_UINT(	par.enabled,		"enabled" ),
+    DEF_SRT_UINT(	par.used,		"used" ),
+    DEF_SRT_ARRAY_A(entry),
+      DEF_SRT_UINT(	entry[0].elapsed_nsec,	"elapsed" ),
+      DEF_SRT_UINT(	entry[0].total_nsec,	"total" ),
+      DEF_SRT_UINT(	entry[0].top_nsec,	"top" ),
+      DEF_SRT_UINT(	entry[0].count,		"count" ),
+      DEF_SRT_UINT(	entry[0].time_sec,	"time" ),
+      DEF_SRT_FLOAT(	entry[0].top_cnt_1s,	"top-c1" ),
+      DEF_SRT_FLOAT(	entry[0].top_cnt_5s,	"top-c5" ),
+    DEF_SRT_ARRAY_END(),
+
+    DEF_SRT_SEPARATOR(),
+    DEF_SRT_TERM()
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+// n_rec<0: clear from end, n_rec>=0: clear from index
+void ClearUsageDuration ( UsageDuration_t *ud, int count )
+{
+    if (!ud)
+	return;
+
+    uint index = CheckIndex1(ud->par.used,count);
+    if ( index >= ud->par.used - 1 )
+	return;
+
+    ud->par.used = index;
+    if (!index)
+    {
+	const bool enabled = ud->par.enabled;
+	memset( ud, 0, sizeof(*ud) );
+	ud->par.enabled = enabled;
+    }
+    else
+    {
+	UsageDurationEntry_t *e = ud->entry + index;
+	memset( e, 0, PTR_DISTANCE((u8*)ud->entry+sizeof(ud->entry),e) );
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// [[UpdateUsageDuration]]
+
+// TIMER_NSEC: 0 or GetTimerNSec(), but not GetTime*()
+void UpdateUsageDuration ( UsageDuration_t *ud, u_nsec_t timer_nsec )
+{
+    if (!ud)
+	return;
+
+    if ( !ud->par.enabled || usage_count_enabled <= 0 )
+    {
+	ud->ref.elapsed_nsec = 0;
+	ud->ref.count = 0;
+	ud->par.dirty = false;
+	return;
+    }
+
+    if ( !ud->par.is_active )
+    {
+	if ( !ud->par.used && !ud->ref.count )
+	    return;
+	ud->par.is_active = true;
+    }
+
+    UsageDurationEntry_t cur = {0};
+    cur.elapsed_nsec = timer_nsec ? timer_nsec : GetTimerNSec();
+
+    ud->par.update_nsec = ud->ref.elapsed_nsec + NSEC_PER_SEC;
+    if ( cur.elapsed_nsec >= ud->par.update_nsec )
+    {
+	// needed for the case that USAGE_COUNT_ENTRIES was reduced after restart!
+	if ( ud->par.used > USAGE_COUNT_ENTRIES )
+	     ud->par.used = USAGE_COUNT_ENTRIES;
+
+	cur.time_sec = GetTimeSec(false);
+
+	if (ud->ref.elapsed_nsec)
+	{
+	    //--- find index and move data
+
+	    int index;
+	    if ( ud->par.used < USAGE_COUNT_FIRST_ADD )
+		index = ud->par.used + 1;
+	    else
+	    {
+		u_nsec_t min = USAGE_COUNT_NEXT_MIN(NSEC_PER_SEC);
+		for ( index = USAGE_COUNT_FIRST_ADD;
+		      index < ud->par.used;
+		      index++, min = USAGE_COUNT_NEXT_MIN(min)
+		    )
+		{
+		    UsageDurationEntry_t *e = ud->entry + index;
+		    if ( e->elapsed_nsec < min )
+		    {
+			AddUsageDurationEntry(e,e-1);
+			index--;
+			break;
+		    }
+		}
+		if ( ++index > USAGE_COUNT_ENTRIES )
+		    index = USAGE_COUNT_ENTRIES;
+	    }
+
+	    if ( index > 1 )
+		memmove( ud->entry+1, ud->entry, (index-1) * sizeof(*ud->entry) );
+
+	    if ( ud->par.used < index )
+		 ud->par.used = index;
+
+
+	    //--- update first entry
+
+	    UsageDurationEntry_t *e = ud->entry;
+	    *e = ud->ref;
+	    e->elapsed_nsec = cur.elapsed_nsec - e->elapsed_nsec;
+
+
+	    //--- update top value (1s)
+
+	    if (e->elapsed_nsec)
+		e->top_cnt_1s  = (double)( NSEC_PER_SEC * e->count ) / e->elapsed_nsec;
+
+
+	    //--- update top value (5s)
+
+	    u_nsec_t elapsed5 = 0, count5 = 0;
+	    UsageDurationEntry_t *e5 = ud->entry;
+	    for ( int i = 0; i < ud->par.used && elapsed5 < 5*NSEC_PER_SEC; i++, e5++ )
+	    {
+		elapsed5 += e5->elapsed_nsec;
+		count5   += e5->count;
+	    }
+
+	    if (elapsed5)
+	    {
+		if ( count5 == e->count )
+		    elapsed5 = 5*NSEC_PER_SEC;
+		e->top_cnt_5s = (double)( NSEC_PER_SEC * count5 ) / elapsed5;
+	    }
+	}
+
+	ud->ref = cur;
+	ud->par.update_nsec = ud->ref.elapsed_nsec + NSEC_PER_SEC;
+    }
+
+    ud->par.force_update_nsec = ud->ref.elapsed_nsec + NSEC_PER_MIN;
+    ud->par.dirty = ud->ref.count > 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void UpdateUsageDurationAdd
+	( UsageDuration_t *ud, int add, u_nsec_t wait_nsec, u_nsec_t top_nsec )
+{
+    DASSERT(ud);
+    ud->par.is_active = true;
+    UpdateUsageDuration(ud,0);
+
+    if ( add > 0 && usage_count_enabled > 0 )
+    {
+	ud->par.dirty = true;
+	ud->ref.count += add;
+	ud->ref.total_nsec += wait_nsec;
+	if ( ud->ref.top_nsec < top_nsec )
+	     ud->ref.top_nsec = top_nsec;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void UpdateUsageDurationIncrement ( UsageDuration_t *ud, u_nsec_t wait_nsec )
+{
+    DASSERT(ud);
+    ud->par.is_active = true;
+    UpdateUsageDuration(ud,0);
+    if ( usage_count_enabled > 0 )
+    {
+	ud->par.dirty = true;
+	ud->ref.count++;
+	ud->ref.total_nsec += wait_nsec;
+	if ( ud->ref.top_nsec < wait_nsec )
+	     ud->ref.top_nsec = wait_nsec;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void UsageDurationIncrement ( UsageDuration_t *ud, u_nsec_t wait_nsec )
+{
+    DASSERT(ud);
+    ud->par.is_active = true;
+    if ( usage_count_enabled > 0 )
+    {
+	ud->par.dirty = true;
+	ud->ref.count++;
+	ud->ref.total_nsec += wait_nsec;
+	if ( ud->ref.top_nsec < wait_nsec )
+	     ud->ref.top_nsec = wait_nsec;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+UsageDurationEntry_t GetUsageDuration ( const UsageDuration_t *ud, s_nsec_t nsec )
+{
+    DASSERT(ud);
+    UsageDurationEntry_t res = {0};
+    const UsageDurationEntry_t *e = ud->entry;
+    for ( int i = 0; i < ud->par.used && nsec > 0; i++, e++ )
+    {
+	nsec -= e->elapsed_nsec;
+	AddUsageDurationEntry(&res,e);
+    }
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void AddUsageDurationEntry ( UsageDurationEntry_t *dest, const UsageDurationEntry_t *add )
+{
+    DASSERT(dest);
+    DASSERT(add);
+    dest->count		+= add->count;
+    dest->elapsed_nsec	+= add->elapsed_nsec;
+    dest->total_nsec	+= add->total_nsec;
+
+    if ( !dest->time_sec || dest->time_sec > add->time_sec )
+	dest->time_sec = add->time_sec;
+
+    if ( dest->top_nsec < add->top_nsec )
+	 dest->top_nsec = add->top_nsec;
+
+    if ( dest->top_cnt_1s < add->top_cnt_1s )
+	 dest->top_cnt_1s = add->top_cnt_1s;
+    if ( dest->top_cnt_5s < add->top_cnt_5s )
+	 dest->top_cnt_5s = add->top_cnt_5s;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			list usage count/wait		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static ccp print_usage_count_val ( double val, const float *color_val )
+{
+    if ( val <= 0 )
+	return "       -";
+
+    static const float color_val0[] = { 100, 200, 300, 500, 1000, 2000 };
+    if (!color_val)
+	color_val = color_val0;
+
+    if ( val > color_val[0] || val >= 9999.9994 )
+    {
+	ccp col =   val < color_val[2]
+		? ( val < color_val[1] ? colout->mark : colout->info )
+		:   val < color_val[4]
+		? ( val < color_val[3] ? colout->hint : colout->warn )
+		: ( val < color_val[5] ? colout->err  : colout->bad );
+
+	return val < 9999.9994
+		? PrintCircBuf("%s%8.3f%s",col,val,colout->reset)
+		: val < 999999.94
+		? PrintCircBuf("%s%8.1f%s",col,val,colout->reset)
+		: PrintCircBuf("%s%8.0f%s",col,val,colout->reset);
+    }
+
+    char *res = PrintCircBuf("%8.3f",val);
+    if ( val < 1.0 && res[3] == '0' )
+	res[3] = ' ';
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+
+static ccp print_usage_count
+	( u32 n_wait, u_nsec_t elapsed_nsec, const float *color_val )
+{
+    return elapsed_nsec
+	? print_usage_count_val( (double)( NSEC_PER_SEC * n_wait ) / elapsed_nsec, color_val )
+	: "       ×";
+}
+
+//-----------------------------------------------------------------------------
+
+static ccp print_usage_dur_val ( u_nsec_t dur, const u_nsec_t *color_dur )
+{
+    if (!dur)
+	return "     -";
+
+    ccp res = PrintTimerNSec6(0,0,dur,DC_SFORM_ALIGN);
+
+    static const u_nsec_t color_dur0[] =
+    {
+	 10 *	NSEC_PER_MSEC,	// mark
+	 50 *	NSEC_PER_MSEC,	// info
+	200 *	NSEC_PER_MSEC,	// hint
+		NSEC_PER_SEC,	// warn
+	  8 *	NSEC_PER_SEC,	// err
+		NSEC_PER_MIN,	// bad
+    };
+    if (!color_dur)
+	color_dur = color_dur0;
+
+    if ( dur > color_dur[0] )
+    {
+	ccp col =   dur < color_dur[2]
+		? ( dur < color_dur[1] ? colout->mark : colout->info )
+		:   dur < color_dur[4]
+		? ( dur < color_dur[3] ? colout->hint : colout->warn )
+		: ( dur < color_dur[5] ? colout->err  : colout->bad );
+
+	return PrintCircBuf("%s%s%s",col,res,colout->reset);
+    }
+
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+
+static ccp print_usage_dur
+	( u_nsec_t total, u64 count, const u_nsec_t *color_dur )
+{
+    return count
+	? print_usage_dur_val( total/count, color_dur )
+	: "     -";
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+
+void ListUsageCount
+(
+    PrintMode_t		*p_pm,		// NULL or print mode
+    const UsageCtrl_t	*uci,		// NULL or object to list
+    int			print_mode,	// see LUC_PM_*
+    s_nsec_t		limit_nsec	// >0: limit output until # is reached
+)
+{
+    if (!uci)
+	return;
+
+    if (uci->list_func)
+    {
+	uci->list_func(p_pm,uci,print_mode,limit_nsec);
+	return;
+    }
+
+    if (!uci->uc)
+    {
+	if (uci->ud)
+	    ListUsageDuration(p_pm,uci,print_mode,limit_nsec);
+	return;
+    }
+
+    //--- setup
+
+    PrintMode_t pm = {0};
+    if (p_pm)
+	pm = *p_pm;
+    SetupPrintMode(&pm);
+
+    if ( limit_nsec <= 0 )
+	limit_nsec = S_NSEC_MAX;
+
+    UsageCount_t *uc = uci->uc;
+    fprintf(pm.fout,"%s%s%*s %s%s (%u record%s%s%s)%s%s",
+		pm.compact ? "" : pm.eol, pm.prefix, pm.indent, "",
+		pm.cout->caption, uci->title,
+		uc->par.used, uc->par.used == 1 ? "" : "s",
+		usage_count_enabled > 0 ? "" : ", global disabled",
+		uc->par.enabled ? "" : ", disabled",
+		pm.cout->reset, pm.eol );
+
+    if (!uc->par.used)
+	return;
+
+
+    //--- print table
+
+    UsageCountEntry_t sum = {0};
+    u_sec_t reftime = 0;
+    u_nsec_t min = USAGE_COUNT_NEXT_MIN(NSEC_PER_SEC);
+
+    if ( print_mode == LUC_PM_SUMMARY )
+    {
+     fprintf(pm.fout,
+	"%s%*s%s╔════════╦════════╤═════════╤══════════╦═══════════╤═══════════╗%s"
+	"%s%*s%s║ range  ║ period │ counter │  count/s ║ top~1s /s │ top~5s /s ║%s"
+	"%s%*s%s╠════════╬════════╪═════════╪══════════╬═══════════╪═══════════╣%s%s"
+	,pm.prefix ,pm.indent,"" ,colout->heading ,pm.eol
+	,pm.prefix ,pm.indent,"" ,colout->heading ,pm.eol
+	,pm.prefix ,pm.indent,"" ,colout->heading ,colout->reset ,pm.eol
+	);
+
+     const IntervalInfo_t *interval = interval_info;
+     const UsageCountEntry_t *e = uc->entry;
+     for ( int i = 0; i < uc->par.used; i++, e++ )
+     {
+	AddUsageCountEntry(&sum,e);
+	bool is_last = false;
+	const bool is_limit = sum.elapsed_nsec >= limit_nsec;
+	if ( sum.elapsed_nsec < interval->nsec )
+	{
+	    is_last = i+1 == uc->par.used;
+	    if ( !is_last && !is_limit )
+		continue;
+	}
+
+	ccp name;
+	if ( is_last || sum.elapsed_nsec < interval->nsec )
+	    name = "*";
+	else
+	{
+	    while ( sum.elapsed_nsec > interval->nsec )
+		interval++;
+	    name = interval[-1].name;
+	}
+
+	fprintf(pm.fout,
+		"%s%*s%s║%s %-6.6s %s║%s %s %s│%s %s %s│%s %s %s║%s"
+		,pm.prefix ,pm.indent,""
+		,colout->heading, colout->reset
+		,name
+		,colout->heading, colout->reset
+		,PrintTimerNSec6(0,0,sum.elapsed_nsec,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,PrintNumberU7(0,0,sum.count,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,print_usage_count(sum.count,sum.elapsed_nsec,uci->color_val)
+		,colout->heading, colout->reset
+		);
+
+	fprintf(pm.fout,
+		" %s  %s│%s  %s %s║%s"
+		,print_usage_count_val(sum.top1s,uci->color_val)
+		,colout->heading, colout->reset
+		,print_usage_count_val(sum.top5s,uci->color_val)
+		,colout->heading, colout->reset
+		);
+
+	if (pm.debug)
+	    fprintf(pm.flog," %2u%s",i,pm.eol);
+	else
+	    fputs(pm.eol,pm.fout);
+
+	if ( is_limit || !interval->name )
+	    break;
+     }
+
+     fprintf(pm.fout,
+	"%s ╚════════╩════════╧═════════╧══════════╩═══════════╧═══════════╝%s%s"
+	,colout->heading ,colout->reset ,pm.eol );
+    }
+    else
+    {
+     fprintf(pm.fout,
+	"%s%*s%s╔═══════════╦═════════════════════════════╦══════════╦══════════╦═════════════════════════════╗%s"
+	"%s%*s%s║           ║       Single Record         ║  top 1s  ║  top 5s  ║       Summed Values         ║%s"
+	"%s%*s%s║ real time ║ period │ counter │  count/s ║  count/s ║  count/s ║ period │ counter │  count/s ║%s"
+	"%s%*s%s╠═══════════╬════════╪═════════╪══════════╬══════════╬══════════╬════════╪═════════╪══════════╣%s%s"
+	,pm.prefix ,pm.indent,"" ,colout->heading ,pm.eol
+	,pm.prefix ,pm.indent,"" ,colout->heading ,pm.eol
+	,pm.prefix ,pm.indent,"" ,colout->heading ,pm.eol
+	,pm.prefix ,pm.indent,"" ,colout->heading ,colout->reset ,pm.eol
+	);
+
+     const IntervalInfo_t *interval = interval_info+1;
+     const UsageCountEntry_t *e = uc->entry;
+ #if TEST_USAGE_COUNT
+     for ( int i = 0; i <= uc->par.used && sum.elapsed_nsec < limit_nsec; i++, e++ )
+ #else
+     for ( int i = 0; i < uc->par.used && sum.elapsed_nsec < limit_nsec; i++, e++ )
+ #endif
+     {
+	AddUsageCountEntry(&sum,e);
+	if ( i > 0 && ( sum.elapsed_nsec >= interval->nsec || i == USAGE_COUNT_FIRST_ADD ))
+	{
+	    fprintf(pm.fout,
+		"%s ╟───────────╫────────┼─────────┼──────────╫"
+		"──────────╫──────────╫"
+		"────────┼─────────┼──────────╢%s%s",
+		colout->heading, colout->reset, pm.eol );
+	    while ( sum.elapsed_nsec >= interval->nsec )
+		interval++;
+	}
+
+	fprintf(pm.fout,
+		"%s%*s%s║%s%s %s║%s %s %s│%s %s %s│%s %s %s║%s"
+		,pm.prefix ,pm.indent,""
+		,colout->heading, colout->reset
+		,PrintRefTime(e->time_sec,&reftime)
+		,colout->heading, colout->reset
+		,PrintTimerNSec6(0,0,e->elapsed_nsec,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,PrintNumberU7(0,0,e->count,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,print_usage_count(e->count,e->elapsed_nsec,uci->color_val)
+		,colout->heading, colout->reset
+		);
+
+	fprintf(pm.fout,
+		" %s %s║%s %s %s║%s"
+		,print_usage_count_val(e->top1s,uci->color_val)
+		,colout->heading, colout->reset
+		,print_usage_count_val(e->top5s,uci->color_val)
+		,colout->heading, colout->reset
+		);
+
+	fprintf(pm.fout,
+		" %s %s│%s %s %s│%s %s %s║%s"
+		,PrintTimerNSec6(0,0,sum.elapsed_nsec,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,PrintNumberU7(0,0,sum.count,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,print_usage_count(sum.count,sum.elapsed_nsec,uci->color_val)
+		,colout->heading, colout->reset
+		);
+
+	if (pm.debug)
+	{
+	    if ( pm.debug >= 2 && i >= USAGE_COUNT_FIRST_ADD )
+	    {
+		fprintf(pm.flog," %2u  %s %s%4llu%%%s %s%5llu%%%s%s",
+			i,
+			PrintTimerNSec6(0,0,min,DC_SFORM_ALIGN|DC_SFORM_DASH),
+			e->elapsed_nsec < min ? ""
+				: e->elapsed_nsec < min*2 ? colout->hint : colout->warn,
+			100 * e->elapsed_nsec / min, colout->reset,
+			sum.elapsed_nsec < min ? colout->info : "",
+			100 * sum.elapsed_nsec / min, colout->reset, pm.eol );
+		min = USAGE_COUNT_NEXT_MIN(min);
+	    }
+	    else
+		fprintf(pm.flog," %2u%s",i,pm.eol);
+	}
+	else
+	    fputs(pm.eol,pm.fout);
+     }
+
+     fprintf(pm.fout,
+	"%s ╚═══════════╩════════╧═════════╧══════════╩"
+	"══════════╩══════════╩"
+	"════════╧═════════╧══════════╝%s%s"
+	,colout->heading ,colout->reset ,pm.eol );
+    }
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+
+void ListUsageDuration
+(
+    PrintMode_t		*p_pm,		// NULL or print mode
+    const UsageCtrl_t	*uci,		// NULL or object to list
+    int			print_mode,	// see LUC_PM_*
+    s_nsec_t		limit_nsec	// >0: limit output until # is reached
+)
+{
+    if (!uci)
+	return;
+
+    if (uci->list_func)
+    {
+	uci->list_func(p_pm,uci,print_mode,limit_nsec);
+	return;
+    }
+
+    if (!uci->ud)
+    {
+	if (uci->uc)
+	    ListUsageCount(p_pm,uci,print_mode,limit_nsec);
+	return;
+    }
+
+    //--- setup
+
+    PrintMode_t pm = {0};
+    if (p_pm)
+	pm = *p_pm;
+    SetupPrintMode(&pm);
+
+    if ( limit_nsec <= 0 )
+	limit_nsec = S_NSEC_MAX;
+
+    UsageDuration_t *ud = uci->ud;
+    fprintf(pm.fout,"%s%s%*s %s%s (%u record%s%s%s)%s%s",
+		pm.compact ? "" : pm.eol, pm.prefix, pm.indent, "",
+		pm.cout->caption, uci->title,
+		ud->par.used, ud->par.used == 1 ? "" : "s",
+		usage_count_enabled > 0 ? "" : ", global disabled",
+		ud->par.enabled ? "" : ", disabled",
+		pm.cout->reset, pm.eol );
+
+    if (!ud->par.used)
+	return;
+
+
+    //--- print table
+
+    UsageDurationEntry_t sum = {0};
+    u_sec_t reftime = 0;
+    u_nsec_t min = USAGE_COUNT_NEXT_MIN(NSEC_PER_SEC);
+
+    if ( print_mode == LUC_PM_SUMMARY )
+    {
+     printf(
+	"%s ╔════════╦═════════════════════════════════════╦═════════╤═════════╤════════╗%s"
+	"%s ║        ║            Summed Record            ║ top 1s  │ top 5s  │  top   ║%s"
+	"%s ║ range  ║ period │ counter │ count/s │ Ø time ║ count/s │ count/s │  time  ║%s"
+	"%s ╠════════╬════════╪═════════╪═════════╪════════╬═════════╪═════════╪════════╣%s%s"
+	,colout->heading, pm.eol
+	,colout->heading, pm.eol
+	,colout->heading, pm.eol
+	,colout->heading ,colout->reset, pm.eol
+	);
+
+     const IntervalInfo_t *interval = interval_info;
+     const UsageDurationEntry_t *e = ud->entry;
+     for ( int i = 0; i < ud->par.used; i++, e++ )
+     {
+	AddUsageDurationEntry(&sum,e);
+	bool is_last = false;
+	const bool is_limit = sum.elapsed_nsec >= limit_nsec;
+	if ( sum.elapsed_nsec < interval->nsec )
+	{
+	    is_last = i+1 == ud->par.used;
+	    if ( !is_last && !is_limit )
+		continue;
+	}
+
+	ccp name;
+	if ( is_last || sum.elapsed_nsec < interval->nsec )
+	    name = "*";
+	else
+	{
+	    while ( sum.elapsed_nsec > interval->nsec )
+		interval++;
+	    name = interval[-1].name;
+	}
+
+	if ( i > 0 && ( sum.elapsed_nsec >= interval->nsec || i == USAGE_COUNT_FIRST_ADD ))
+	{
+	    fprintf(pm.fout,
+		"%s ╟───────────╫────────┼─────────┼─────────┼────────╫"
+		"─────────┼────────╫─────────┼────────╫"
+		"────────┼─────────┼─────────┼────────╢%s%s",
+		colout->heading, colout->reset, pm.eol );
+	    while ( sum.elapsed_nsec >= interval->nsec )
+		interval++;
+	}
+
+	fprintf(pm.fout,
+		"%s%*s%s║%s %-6.6s %s║%s %s %s│%s %s %s│%s%s %s│%s %s %s║%s"
+		,pm.prefix ,pm.indent,""
+		,colout->heading, colout->reset
+		,name
+		,colout->heading, colout->reset
+		,PrintTimerNSec6(0,0,sum.elapsed_nsec,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,PrintNumberU7(0,0,sum.count,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,print_usage_count(sum.count,sum.elapsed_nsec,uci->color_val)
+		,colout->heading, colout->reset
+		,print_usage_dur(sum.total_nsec,sum.count,uci->color_dur)
+		,colout->heading, colout->reset
+		);
+
+	fprintf(pm.fout,
+		"%s %s│%s%s %s│%s %s %s║%s"
+		,print_usage_count_val(sum.top_cnt_1s,uci->color_val)
+		,colout->heading, colout->reset
+		,print_usage_count_val(sum.top_cnt_5s,uci->color_val)
+		,colout->heading, colout->reset
+		,print_usage_dur_val(sum.top_nsec,uci->color_dur)
+		,colout->heading, colout->reset
+		);
+
+	if (pm.debug)
+	    fprintf(pm.flog," %2u%s",i,pm.eol);
+	else
+	    fputs(pm.eol,pm.fout);
+
+	if ( is_limit || !interval->name )
+	    break;
+     }
+
+     fprintf(pm.fout,
+	"%s ╚════════╩════════╧═════════╧═════════╧════════╩"
+	"═════════╧═════════╧════════╝%s%s"
+	,colout->heading ,colout->reset ,pm.eol );
+    }
+    else
+    {
+     printf(
+	"%s ╔═══════════╦═════════════════════════════════════╦═════════╤═════════╤════════╦═════════════════════════════════════╗%s"
+	"%s ║           ║            Single Record            ║ top 1s  │ top 5s  │  top   ║            Summed Values            ║%s"
+	"%s ║ real time ║ period │ counter │ count/s │ Ø time ║ count/s │ count/s │  time  ║ period │ counter │ count/s │ Ø time ║%s"
+	"%s ╠═══════════╬════════╪═════════╪═════════╪════════╬═════════╪═════════╪════════╬════════╪═════════╪═════════╪════════╣%s%s"
+	,colout->heading, pm.eol
+	,colout->heading, pm.eol
+	,colout->heading, pm.eol
+	,colout->heading ,colout->reset, pm.eol
+	);
+
+     const IntervalInfo_t *interval = interval_info+1;
+     const UsageDurationEntry_t *e = ud->entry;
+ #if TEST_USAGE_COUNT
+     for ( int i = 0; i <= ud->par.used && sum.elapsed_nsec < limit_nsec; i++, e++ )
+ #else
+     for ( int i = 0; i < ud->par.used && sum.elapsed_nsec < limit_nsec; i++, e++ )
+ #endif
+     {
+	AddUsageDurationEntry(&sum,e);
+	if ( i > 0 && ( sum.elapsed_nsec >= interval->nsec || i == USAGE_COUNT_FIRST_ADD ))
+	{
+	    fprintf(pm.fout,
+		"%s ╟───────────╫────────┼─────────┼─────────┼────────╫"
+		"─────────┼─────────┼────────╫"
+		"────────┼─────────┼─────────┼────────╢%s%s",
+		colout->heading, colout->reset, pm.eol );
+	    while ( sum.elapsed_nsec >= interval->nsec )
+		interval++;
+	}
+
+	fprintf(pm.fout,
+		"%s%*s%s║%s%s %s║%s %s %s│%s %s %s│%s%s %s│%s %s %s║%s"
+		,pm.prefix ,pm.indent,""
+		,colout->heading, colout->reset
+		,PrintRefTime(e->time_sec,&reftime)
+		,colout->heading, colout->reset
+		,PrintTimerNSec6(0,0,e->elapsed_nsec,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,PrintNumberU7(0,0,e->count,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,print_usage_count(e->count,e->elapsed_nsec,uci->color_val)
+		,colout->heading, colout->reset
+		,print_usage_dur(e->total_nsec,e->count,uci->color_dur)
+		,colout->heading, colout->reset
+		);
+
+	fprintf(pm.fout,
+		"%s %s│%s%s %s│%s %s %s║%s"
+		,print_usage_count_val(e->top_cnt_1s,uci->color_val)
+		,colout->heading, colout->reset
+		,print_usage_count_val(e->top_cnt_5s,uci->color_val)
+		,colout->heading, colout->reset
+		,print_usage_dur_val(e->top_nsec,uci->color_dur)
+		,colout->heading, colout->reset
+		);
+
+	fprintf(pm.fout,
+		" %s %s│%s %s %s│%s%s %s│%s %s %s║%s"
+		,PrintTimerNSec6(0,0,sum.elapsed_nsec,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,PrintNumberU7(0,0,sum.count,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,print_usage_count(sum.count,sum.elapsed_nsec,uci->color_val)
+		,colout->heading, colout->reset
+		,print_usage_dur(sum.total_nsec,sum.count,uci->color_dur)
+		,colout->heading, colout->reset
+		);
+
+	if (pm.debug)
+	{
+	    if ( pm.debug >= 2 && i >= USAGE_COUNT_FIRST_ADD )
+	    {
+		fprintf(pm.flog," %2u  %s %s%4llu%%%s %s%5llu%%%s%s",
+			i,
+			PrintTimerNSec6(0,0,min,DC_SFORM_ALIGN|DC_SFORM_DASH),
+			e->elapsed_nsec < min ? ""
+				: e->elapsed_nsec < min*2 ? colout->hint : colout->warn,
+			100 * e->elapsed_nsec / min, colout->reset,
+			sum.elapsed_nsec < min ? colout->info : "",
+			100 * sum.elapsed_nsec / min, colout->reset, pm.eol );
+		min = USAGE_COUNT_NEXT_MIN(min);
+	    }
+	    else
+		fprintf(pm.flog," %2u%s",i,pm.eol);
+	}
+	else
+	    fputs(pm.eol,pm.fout);
+     }
+
+     fprintf(pm.fout,
+	"%s ╚═══════════╩════════╧═════════╧═════════╧════════╩"
+	"═════════╧═════════╧════════╩"
+	"════════╧═════════╧═════════╧════════╝%s%s"
+	,colout->heading ,colout->reset ,pm.eol );
+    }
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			    cpu usage			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+CpuUsage_t cpu_usage = { .par.used=0, .par.enabled = CPU_USAGE_ENABLED };
+
+const UsageCtrl_t cpu_usage_ctrl =
+{
+	.par		= &cpu_usage.par,
+	.update_func	= UpdateCpuUsageByUCI,
+	.list_func	= ListCpuUsage,
+	.title		= "CPU usage (extern)",
+	.key1		= "CPU",
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+static ccp print_cpu_percent ( double val )
+{
+    if (!val)
+	return "     -";
+
+  //static const double collist[] = { 40, 60, 80, 95 };
+    static const double collist[] = { 25, 50, 75, 95 };
+
+    if ( val >= collist[0] )
+    {
+	ccp col = val < collist[2]
+		? ( val < collist[1] ? colout->info : colout->hint )
+		: ( val < collist[3] ? colout->warn : colout->err );
+	return PrintCircBuf("%s%6.2f%s", col, val, colout->reset );
+    }
+
+    char *res = PrintCircBuf("%6.2f",val);
+    if ( val < 1.0 && res[2] == '0' )
+	res[2] = ' ';
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+
+static ccp print_cpu_seconds ( u_usec_t val )
+{
+    return !val
+	? "       -"
+	: val < USEC_PER_SEC
+	? PrintCircBuf("%8llu",val)
+	: val < 10*USEC_PER_SEC
+	? PrintCircBuf("%llu.%06llu",val/USEC_PER_SEC,val%USEC_PER_SEC)
+	: PrintCircBuf("%4llu.%03llu",val/USEC_PER_SEC,val%USEC_PER_SEC/1000);
+}
+
+//-----------------------------------------------------------------------------
+
+static ccp print_cpu_wait_val ( double val )
+{
+    static const double collist[] = { 100, 150, 200, 250, 300, 350 };
+    if ( val > collist[0] )
+    {
+	if ( val >= 999.0 )
+	    return PrintCircBuf(" %s%6.0f%s",colout->fatal,val,colout->reset);
+
+	ccp col = val < collist[2]
+		? ( val < collist[1] ? colout->mark : colout->info )
+		: val < collist[4]
+		? ( val < collist[3] ? colout->hint : colout->warn )
+		: ( val < collist[5] ? colout->err  : colout->bad );
+
+	return PrintCircBuf("%s%7.2f%s",col,val,colout->reset);
+    }
+
+    if ( val <= 0 )
+	return "      -";
+
+    char * res = PrintCircBuf("%7.2f",val);
+    if ( val < 1.0 && res[3] == '0' )
+	res[3] = ' ';
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+
+static ccp print_cpu_wait ( u32 n_wait, u_usec_t elapsed_usec )
+{
+    return elapsed_usec
+	? print_cpu_wait_val( (double)( USEC_PER_SEC * n_wait ) / elapsed_usec )
+	: "      ×";
+}
+
+//-----------------------------------------------------------------------------
+
+static void print_cpu_debug
+	( int idx, u_usec_t *min, u_usec_t elapsed1, u_usec_t elapsed2 )
+{
+    DASSERT(min);
+
+    if ( idx >= CPU_USAGE_FIRST_ADD && *min )
+    {
+	printf(" %2u  %s %s%4llu%%%s %s%4llu%%%s\n",
+		idx,
+		PrintTimerUSec6(0,0,*min,DC_SFORM_ALIGN|DC_SFORM_DASH),
+		elapsed1 < *min ? "" : elapsed1 < *min*2 ? colout->hint : colout->warn,
+		100 * elapsed1 / *min, colout->reset,
+		elapsed2 < *min ? colout->info : "", 100 * elapsed2 / *min, colout->reset );
+	*min = CPU_USAGE_NEXT_MIN(*min);
+    }
+    else
+	printf(" %2u\n",idx);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ListCpuUsage
+(
+    PrintMode_t		*p_pm,		// NULL or print mode
+    const UsageCtrl_t	*uci,		// ignored!
+    int			print_mode,	// see LUC_PM_*
+    s_nsec_t		limit_nsec	// >0: limit output until # is reached
+)
+{
+    //--- setup
+
+    PrintMode_t pm = {0};
+    if (p_pm)
+	pm = *p_pm;
+    SetupPrintMode(&pm);
+
+    const u_usec_t limit_usec = limit_nsec > 0 ? limit_nsec/NSEC_PER_USEC : S_USEC_MAX;
+
+
+    //--- print header
+
+    const ccp empty_line = pm.compact ? "" : "\n";
+    printf("%s%s  CPU Usage (%u record%s%s)%s\n",
+		empty_line, colout->caption,
+		cpu_usage.par.used, cpu_usage.par.used == 1 ? "" : "s",
+		cpu_usage.par.enabled ? "" : ", disabled", colout->reset );
+
+    if (!cpu_usage.par.used)
+	return;
+
+
+    //--- print table
+
+    CpuUsageEntry_t sum = {0};
+    u_sec_t reftime = 0;
+    u_usec_t min = CPU_USAGE_NEXT_MIN(USEC_PER_SEC);
+
+    if ( print_mode == LUC_PM_SUMMARY )
+    {
+     printf(
+	"%s ╔════════╦═════════════════════════════════════════╦════════════════╦════════════════╗\n"
+	"%s ║        ║              Summed Values              ║    top 1s      ║    top 5s      ║\n"
+	"%s ║ range  ║ period │ user%% │system%%│total%% │ wait/s ║total%% │ wait/s ║total%% │ wait/s ║\n"
+	"%s ╠════════╬════════╪═══════╪═══════╪═══════╪════════╬═══════╪════════╬═══════╪════════╣%s\n"
+	,colout->heading
+	,colout->heading
+	,colout->heading
+	,colout->heading ,colout->reset
+	);
+
+     const IntervalInfo_t *interval = interval_info;
+     const CpuUsageEntry_t *e = cpu_usage.entry;
+     for ( int i = 0; i < cpu_usage.par.used; i++, e++ )
+     {
+	AddCpuEntry(&sum,e);
+	bool is_last = false;
+	const bool is_limit = sum.elapsed_usec >= limit_usec;
+	if ( sum.elapsed_usec < interval->usec )
+	{
+	    is_last = i+1 == cpu_usage.par.used;
+	    if ( !is_last && !is_limit )
+		continue;
+	}
+
+	ccp name;
+	if ( is_last || sum.elapsed_usec < interval->usec )
+	    name = "*";
+	else
+	{
+	    while ( sum.elapsed_usec > interval->usec )
+		interval++;
+	    name = interval[-1].name;
+	}
+
+	const double elapsed = 100.0 / sum.elapsed_usec;
+	printf(" %s║%s %-6.6s %s║%s %s %s│%s%s %s│%s%s %s│%s%s %s│%s%s %s║%s"
+		,colout->heading, colout->reset
+		,name
+		,colout->heading, colout->reset
+		,PrintTimerUSec6(0,0,sum.elapsed_usec,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,print_cpu_percent(sum.utime_usec * elapsed)
+		,colout->heading, colout->reset
+		,print_cpu_percent(sum.stime_usec * elapsed)
+		,colout->heading, colout->reset
+		,print_cpu_percent(( sum.utime_usec + sum.stime_usec) * elapsed)
+		,colout->heading, colout->reset
+		,print_cpu_wait(sum.n_wait,sum.elapsed_usec)
+		,colout->heading, colout->reset
+		);
+
+	printf("%s %s│%s%s %s║%s%s %s│%s%s %s║%s"
+		,print_cpu_percent(sum.top1s)
+		,colout->heading, colout->reset
+		,print_cpu_wait_val(sum.topw1s)
+		,colout->heading, colout->reset
+		,print_cpu_percent(sum.top5s)
+		,colout->heading, colout->reset
+		,print_cpu_wait_val(sum.topw5s)
+		,colout->heading, colout->reset
+		);
+
+	if (pm.debug)
+	    fprintf(pm.flog," %2u%s",i,pm.eol);
+	else
+	    fputs(pm.eol,pm.fout);
+
+	if ( is_limit || !interval->name )
+	    break;
+     }
+     printf(
+	"%s ╚════════╩════════╧═══════╧═══════╧═══════╧════════╩"
+	"═══════╧════════╩═══════╧════════╝%s%s%s",
+	colout->heading ,colout->reset, pm.eol, empty_line );
+    }
+    else if ( print_mode == LUC_PM_RAW )
+    {
+     printf(
+	"%s ╔═══════════╦══════════════════════════════════════════════════╦══════════════════════════════════════════════════╗\n"
+	"%s ║           ║                Single Record (µs)                ║                Summed Values (µs)                ║\n"
+	"%s ║ real time ║ period │   user   │  system  │   total  │ wait/s ║ period │   user   │  system  │   total  │ wait/s ║\n"
+	"%s ╠═══════════╬════════╪══════════╪══════════╪══════════╪════════╬════════╪══════════╪══════════╪══════════╪════════╣%s\n"
+	,colout->heading
+	,colout->heading
+	,colout->heading
+	,colout->heading ,colout->reset
+	);
+
+     const IntervalInfo_t *interval = interval_info+1;
+     for ( int i = 0; i < cpu_usage.par.used && sum.elapsed_usec < limit_usec; i++ )
+     {
+	const CpuUsageEntry_t *e = cpu_usage.entry+i;
+	AddCpuEntry(&sum,e);
+	if ( i > 0 && ( sum.elapsed_usec >= interval->usec || i == CPU_USAGE_FIRST_ADD ))
+	{
+	    printf(
+		"%s ╟───────────╫────────┼──────────┼──────────┼──────────┼────────╫"
+		"────────┼──────────┼──────────┼──────────┼────────╢%s\n",
+		colout->heading, colout->reset );
+	    while ( sum.elapsed_usec >= interval->usec )
+		interval++;
+	}
+
+	printf(" %s║%s%s %s║%s %s %s│%s %s %s│%s %s %s│%s %s %s│%s%s %s║%s"
+		,colout->heading, colout->reset
+		,PrintRefTime(e->time_sec,&reftime)
+		,colout->heading, colout->reset
+		,PrintTimerUSec6(0,0,e->elapsed_usec,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,print_cpu_seconds(e->utime_usec)
+		,colout->heading, colout->reset
+		,print_cpu_seconds(e->stime_usec)
+		,colout->heading, colout->reset
+		,print_cpu_seconds( e->utime_usec + e->stime_usec )
+		,colout->heading, colout->reset
+		,print_cpu_wait(e->n_wait,e->elapsed_usec)
+		,colout->heading, colout->reset
+		);
+
+	printf(" %s %s│%s %s %s│%s %s %s│%s %s %s│%s%s %s║%s"
+		,PrintTimerUSec6(0,0,sum.elapsed_usec,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,print_cpu_seconds(sum.utime_usec)
+		,colout->heading, colout->reset
+		,print_cpu_seconds(sum.stime_usec)
+		,colout->heading, colout->reset
+		,print_cpu_seconds( sum.utime_usec + sum.stime_usec )
+		,colout->heading, colout->reset
+		,print_cpu_wait(sum.n_wait,sum.elapsed_usec)
+		,colout->heading, colout->reset
+		);
+
+	if (pm.debug)
+	    print_cpu_debug(i,&min,e->elapsed_usec,sum.elapsed_usec);
+	else
+	    putchar('\n');
+     }
+
+     printf(
+	"%s ╚═══════════╩════════╧══════════╧══════════╧══════════╧════════╩"
+	"════════╧══════════╧══════════╧══════════╧════════╝%s\n%s",
+	colout->heading, colout->reset, empty_line );
+    }
+    else
+    {
+     printf(
+	"%s ╔═══════════╦═════════════════════════════════════════╦════════════════╦════════════════╦═════════════════════════════════════════╗\n"
+	"%s ║           ║              Single Record              ║    top 1s      ║    top 5s      ║              Summed Values              ║\n"
+	"%s ║ real time ║ period │ user%% │system%%│total%% │ wait/s ║total%% │ wait/s ║total%% │ wait/s ║ period │ user%% │system%%│total%% │ wait/s ║\n"
+	"%s ╠═══════════╬════════╪═══════╪═══════╪═══════╪════════╬═══════╪════════╬═══════╪════════╬════════╪═══════╪═══════╪═══════╪════════╣%s\n"
+	,colout->heading
+	,colout->heading
+	,colout->heading
+	,colout->heading ,colout->reset
+	);
+
+     const IntervalInfo_t *interval = interval_info+1;
+ #if TEST_USAGE_COUNT
+     for ( int i = 0; i <= cpu_usage.par.used && sum.elapsed_usec < limit_usec; i++ )
+ #else
+     for ( int i = 0; i < cpu_usage.par.used && sum.elapsed_usec < limit_usec; i++ )
+ #endif
+     {
+	const CpuUsageEntry_t *e = cpu_usage.entry+i;
+	AddCpuEntry(&sum,e);
+	if ( i > 0 && ( sum.elapsed_usec >= interval->usec || i == CPU_USAGE_FIRST_ADD ))
+	{
+	    printf(
+		"%s ╟───────────╫────────┼───────┼───────┼───────┼────────╫"
+		"───────┼────────╫───────┼────────╫"
+		"────────┼───────┼───────┼───────┼────────╢%s\n",
+		colout->heading, colout->reset );
+	    while ( sum.elapsed_usec >= interval->usec )
+		interval++;
+	}
+
+	double elapsed = 100.0 / e->elapsed_usec;
+	printf(" %s║%s%s %s║%s %s %s│%s%s %s│%s%s %s│%s%s %s│%s%s %s║%s"
+		,colout->heading, colout->reset
+		,PrintRefTime(e->time_sec,&reftime)
+		,colout->heading, colout->reset
+		,PrintTimerUSec6(0,0,e->elapsed_usec,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,print_cpu_percent(e->utime_usec * elapsed)
+		,colout->heading, colout->reset
+		,print_cpu_percent(e->stime_usec * elapsed)
+		,colout->heading, colout->reset
+		,print_cpu_percent(( e->utime_usec + e->stime_usec) * elapsed)
+		,colout->heading, colout->reset
+		,print_cpu_wait(e->n_wait,e->elapsed_usec)
+		,colout->heading, colout->reset
+		);
+
+	printf("%s %s│%s%s %s║%s%s %s│%s%s %s║%s"
+		,print_cpu_percent(e->top1s)
+		,colout->heading, colout->reset
+		,print_cpu_wait_val(e->topw1s)
+		,colout->heading, colout->reset
+		,print_cpu_percent(e->top5s)
+		,colout->heading, colout->reset
+		,print_cpu_wait_val(e->topw5s)
+		,colout->heading, colout->reset
+		);
+
+	elapsed = 100.0 / sum.elapsed_usec;
+	printf(" %s %s│%s%s %s│%s%s %s│%s%s %s│%s%s %s║%s"
+		,PrintTimerUSec6(0,0,sum.elapsed_usec,DC_SFORM_ALIGN|DC_SFORM_DASH)
+		,colout->heading, colout->reset
+		,print_cpu_percent(sum.utime_usec * elapsed)
+		,colout->heading, colout->reset
+		,print_cpu_percent(sum.stime_usec * elapsed)
+		,colout->heading, colout->reset
+		,print_cpu_percent(( sum.utime_usec + sum.stime_usec) * elapsed)
+		,colout->heading, colout->reset
+		,print_cpu_wait(sum.n_wait,sum.elapsed_usec)
+		,colout->heading, colout->reset
+		);
+
+	if (pm.debug)
+	    print_cpu_debug(i,&min,e->elapsed_usec,sum.elapsed_usec);
+	else
+	    putchar('\n');
+     }
+
+     printf(
+	"%s ╚═══════════╩════════╧═══════╧═══════╧═══════╧════════╩"
+	"═══════╧════════╩═══════╧════════╩"
+	"════════╧═══════╧═══════╧═══════╧════════╝%s%s",
+	colout->heading, colout->reset, empty_line );
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+const SaveRestoreTab_t SRT_CpuUsage[] =
+{
+    #undef SRT_NAME
+    #define SRT_NAME CpuUsage_t
+
+    DEF_SRT_COMMENT("cpu_usage"),
+    DEF_SRT_SEPARATOR(),
+
+    DEF_SRT_INT(	par.enabled,		"cpu-enabled" ),
+    DEF_SRT_UINT(	par.used,		"cpu-used" ),
+    DEF_SRT_ARRAY_A(entry),
+      DEF_SRT_UINT(	entry[0].elapsed_usec,	"cpu-elapsed" ),
+      DEF_SRT_UINT(	entry[0].utime_usec,	"cpu-utime" ),
+      DEF_SRT_UINT(	entry[0].stime_usec,	"cpu-stime" ),
+      DEF_SRT_UINT(	entry[0].time_sec,	"cpu-rtime" ),
+      DEF_SRT_FLOAT(	entry[0].top1s,		"cpu-top1s" ),
+      DEF_SRT_FLOAT(	entry[0].top5s,		"cpu-top5s" ),
+      DEF_SRT_UINT(	entry[0].n_wait,	"cpu-nwait" ),
+      DEF_SRT_FLOAT(	entry[0].topw1s,	"cpu-topw1s" ),
+      DEF_SRT_FLOAT(	entry[0].topw5s,	"cpu-topw5s" ),
+    DEF_SRT_ARRAY_END(),
+
+    DEF_SRT_SEPARATOR(),
+    DEF_SRT_TERM()
+};
+
+//-----------------------------------------------------------------------------
+// [[UpdateCpuUsage]]
+
+void UpdateCpuUsageByUCI ( const UsageCtrl_t *uci, u_nsec_t now_nsec )
+{
+    UpdateCpuUsage();
+}
+
+//-----------------------------------------------------------------------------
+
+void UpdateCpuUsage()
+{
+    if (!cpu_usage.par.enabled)
+    {
+	cpu_usage.ref.elapsed_usec = 0;
+	cpu_usage.ref.n_wait = 0;
+	return;
+    }
+    cpu_usage.par.is_active = true;
+
+    CpuUsageEntry_t cur = {0};
+    cur.elapsed_usec = GetTimerUSec();
+
+    if ( cur.elapsed_usec >= cpu_usage.ref.elapsed_usec + USEC_PER_SEC )
+    {
+	// needed for the case that CPU_USAGE_ENTRIES was reduced after restart!
+	if ( cpu_usage.par.used > CPU_USAGE_ENTRIES )
+	     cpu_usage.par.used = CPU_USAGE_ENTRIES;
+
+	struct rusage ru;
+	if (!getrusage(RUSAGE_SELF,&ru))
+	{
+	    cur.time_sec   = GetTimeSec(false);
+	    cur.utime_usec = ru.ru_utime.tv_sec * USEC_PER_SEC + ru.ru_utime.tv_usec;
+	    cur.stime_usec = ru.ru_stime.tv_sec * USEC_PER_SEC + ru.ru_stime.tv_usec;
+
+	    if (cpu_usage.ref.elapsed_usec)
+	    {
+		//--- find index and move data
+
+		int index;
+		if ( cpu_usage.par.used < CPU_USAGE_FIRST_ADD )
+		    index = cpu_usage.par.used + 1;
+		else
+		{
+		    u_usec_t min = CPU_USAGE_NEXT_MIN(USEC_PER_SEC);
+		    for ( index = CPU_USAGE_FIRST_ADD;
+			  index < cpu_usage.par.used;
+			  index++, min = CPU_USAGE_NEXT_MIN(min)
+			)
+		    {
+			CpuUsageEntry_t *e = cpu_usage.entry + index;
+			if ( e->elapsed_usec < min )
+			{
+			    AddCpuEntry(e,e-1);
+			    index--;
+			    break;
+			}
+		    }
+		    if ( ++index > CPU_USAGE_ENTRIES )
+			index = CPU_USAGE_ENTRIES;
+		}
+
+		if ( index > 1 )
+		    memmove( cpu_usage.entry+1, cpu_usage.entry,
+				(index-1) * sizeof(*cpu_usage.entry) );
+
+		if ( cpu_usage.par.used < index )
+		     cpu_usage.par.used = index;
+
+
+		//--- update first entry
+
+		CpuUsageEntry_t *e = cpu_usage.entry;
+		*e		= cpu_usage.ref;
+		e->elapsed_usec	= cur.elapsed_usec - cpu_usage.ref.elapsed_usec;
+		e->utime_usec	= cur.utime_usec   - cpu_usage.ref.utime_usec;
+		e->stime_usec	= cur.stime_usec   - cpu_usage.ref.stime_usec;
+
+
+		//--- update top values (1s)
+
+		if (e->elapsed_usec)
+		{
+		    e->top1s  = 100.0 * ( e->utime_usec + e->stime_usec ) / e->elapsed_usec;
+		    e->topw1s = (double)( USEC_PER_SEC * e->n_wait ) / e->elapsed_usec;
+		}
+
+
+		//--- update top values (5s)
+
+		u_usec_t elapsed5 = 0, total5 = 0, wait5 = 0;
+		CpuUsageEntry_t *e5 = cpu_usage.entry;
+		for ( int i = 0; i < cpu_usage.par.used && elapsed5 < 5*USEC_PER_SEC; i++, e5++ )
+		{
+		    elapsed5 += e5->elapsed_usec;
+		    total5   += e5->utime_usec + e5->stime_usec;
+		    wait5    += e5->n_wait;
+		}
+
+		if (elapsed5)
+		{
+		    if ( wait5 == e->n_wait && total5 == e->utime_usec + e->stime_usec )
+			elapsed5 = 5*NSEC_PER_SEC;
+		    e->top5s  = 100.0 * total5 / elapsed5;
+		    e->topw5s = (double)( USEC_PER_SEC * wait5 ) / elapsed5;
+		}
+	    }
+
+	    cpu_usage.ref = cur;
+	}
+    }
+}
+
+//-----------------------------------------------------------------------------
+
+void UpdateCpuUsageIncrement()
+{
+    UpdateCpuUsage();
+    cpu_usage.ref.n_wait++;
+}
+
+//-----------------------------------------------------------------------------
+
+void AddCpuEntry ( CpuUsageEntry_t *dest, const CpuUsageEntry_t *add )
+{
+    DASSERT(dest);
+    DASSERT(add);
+    dest->elapsed_usec	+= add->elapsed_usec;
+    dest->utime_usec	+= add->utime_usec;
+    dest->stime_usec	+= add->stime_usec;
+    dest->n_wait	+= add->n_wait;
+
+    if ( !dest->time_sec || dest->time_sec > add->time_sec )
+	dest->time_sec = add->time_sec;
+
+    if ( dest->top1s < add->top1s )
+	 dest->top1s = add->top1s;
+    if ( dest->top5s < add->top5s )
+	 dest->top5s = add->top5s;
+
+    if ( dest->topw1s < add->topw1s )
+	 dest->topw1s = add->topw1s;
+    if ( dest->topw5s < add->topw5s )
+	 dest->topw5s = add->topw5s;
+}
+
+//-----------------------------------------------------------------------------
+
+CpuUsageEntry_t GetCpuUsage ( s_usec_t usec )
+{
+    CpuUsageEntry_t res = {0};
+    for ( int i = 0; i < cpu_usage.par.used && usec > 0; i++ )
+    {
+	const CpuUsageEntry_t *e = cpu_usage.entry + i;
+	usec -= e->elapsed_usec;
+	AddCpuEntry(&res,e);
+    }
+    return res;
+}
+
+//-----------------------------------------------------------------------------
+
+uint GetCpuUsagePercent ( s_usec_t usec )
+{
+    CpuUsageEntry_t e = GetCpuUsage(usec);
+    return GetCpuEntryPercent(&e);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+double get_rusage_percent (void)
+{
+    static u_nsec_t prev_time    =   0;
+    static u_usec_t prev_rusage  =   0;
+    static double   prev_percent = 0.0;
+
+    const u_nsec_t cur_time = GetTimerNSec();
+    if ( cur_time < prev_time + 10*NSEC_PER_MSEC )
+	return prev_percent;
+
+    u_usec_t cur_rusage = prev_rusage;
+    struct rusage ru;
+    if (!getrusage(RUSAGE_SELF,&ru))
+    {
+	cur_rusage = ru.ru_utime.tv_sec * USEC_PER_SEC + ru.ru_utime.tv_usec
+		   + ru.ru_stime.tv_sec * USEC_PER_SEC + ru.ru_stime.tv_usec;
+    }
+
+    double percent = 0.0;
+    if ( prev_time && cur_time > prev_time )
+	percent = (double)( 100 * NSEC_PER_USEC * ( cur_rusage - prev_rusage ))
+		/ ( cur_time - prev_time );
+
+    prev_time = cur_time;
+    prev_rusage = cur_rusage;
+
+    return prev_percent = percent;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			urandom support			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -3698,7 +6472,7 @@ const u32 RANDOM32_C_ADD = 2 * 197731421; // 2 Primzahlen
 const u32 RANDOM32_COUNT_BASE = 4294967; // Primzahl == ~UINT_MAX32/1000;
 
 static int random32_a_index = -1;	// Index in die a-Tabelle
-static u32 random32_count = 1;		// Abw�rts-Z�hler bis zum Wechsel von a,c
+static u32 random32_count = 1;		// Abwärts-Zähler bis zum Wechsel von a,c
 static u32 random32_a,
 	   random32_c,
 	   random32_X;			// Die letzten Werte
@@ -3730,7 +6504,7 @@ u32 MyRandom ( u32 max )
 
     if (!--random32_count)
     {
-	// Neue Berechnung von random32_a und random32_c f�llig
+	// Neue Berechnung von random32_a und random32_c fällig
 
 	if ( random32_a_index < 0 )
 	{
@@ -4151,6 +6925,7 @@ char * ScanEscape
 	case 'r':  code = '\r'; break;
 	case 't':  code = '\t'; break;
 	case 'v':  code = '\v'; break;
+	case '!':  code = '|'; break;
 
 	case 'x':
 	    src = ScanNumber(&code,src,src_end,16,2);
@@ -4275,8 +7050,23 @@ char * ScanS32
 	while ( *src > 0 && *src <= ' ' )
 	    src++;
     }
+ #if 0 // 0b and 0d can be hex numbers => so this doeasn't work
+    uint base = default_base;
+    if ( src[0] == '0' )
+    {
+	switch(tolower((int)src[1]))
+	{
+	    case 'x': base = 16; break;
+	    case 'd': base = 10; src+=2; break;
+	    case 'o': base =  8; src+=2; break;
+	    case 'b': base =  2; src+=2; break;
+	}
+    }
+ #else
     const uint base = src[0] == '0' && ( src[1] == 'x' || src[1] == 'X' )
 			? 16 : default_base;
+ #endif
+
     char *end;
     const s32 num = strtoul( src, &end, base );
     if ( (ccp)end > src )
@@ -5714,14 +8504,28 @@ char * ScanSizeRange
     u64		default_factor,		// use this factor if number hasn't one
     u64		default_factor_add,	// use this factor for summands
     int		force_base,		// if 1000|1024: force multiple of this
-    double	max_value		// >0: max value for open ranges
+    double	max_value,		// >0: max value for open ranges
+    range_opt_t	opt			// options, if 0 then use RAOPT__DEFAULT
 )
 {
-    int count = 0;
-    double d1, d2;
+    if (!opt)
+	opt = RAOPT__DEFAULT;
 
-    char *end = ScanSize(&d1,source,default_factor,default_factor_add,force_base);
-    if ( end == source )
+    int count = 0;
+    double d1 = 0, d2;
+
+    bool have_d1 = false;
+    if ( opt & RAOPT_ASSUME_0 )
+    {
+	have_d1	=  *source == ':' && opt & RAOPT_COLON
+		|| *source == '#' && opt & RAOPT_HASH
+		|| *source == ',' && opt & RAOPT_COMMA
+		|| *source == '-' && (opt & (RAOPT_COMMA|RAOPT_NEG)) == RAOPT_COMMA;
+    }
+
+    char *end = have_d1 ? (char*)source
+		: ScanSize(&d1,source,default_factor,default_factor_add,force_base);
+    if ( !have_d1 && end == source )
     {
 	d1 = d2 = 0.0;
 	count = 0;
@@ -5730,13 +8534,33 @@ char * ScanSizeRange
     {
 	count++;
 	d2 = d1;
-	if ( *end == '#' || *end == ':' )
+
+	const bool have_range	=  *end == ':' && opt & RAOPT_COLON
+				|| *end == '-' && opt & RAOPT_MINUS;
+	const bool have_size	=  *end == '#' && opt & RAOPT_HASH
+				|| *end == ',' && opt & RAOPT_COMMA;
+	PRINT0("have_d1=%d, have_range=%d, have_size=%d, %.0g:%.0g |%s|\n",have_d1,have_range,have_size,d1,d2,end);
+	if ( have_range || have_size )
 	{
+	    if ( d1 < 0 && max_value > 0 && opt & RAOPT_NEG )
+	    {
+		d1 += max_value;
+		if ( d1 < 0 )
+		    d1 = 0;
+	    }
+
 	    source = end;
 	    end = ScanSize(&d2,source+1,default_factor,default_factor_add,force_base);
+	    if ( have_range && d2 < 0 && max_value > 0 && opt & RAOPT_NEG )
+	    {
+		d2 += max_value;
+		if ( d2 < 0 )
+		    d2 = 0;
+	    }
+
 	    if ( end == source+1 )
 	    {
-		if ( *source == ':' && max_value > 0.0 )
+		if ( have_range && max_value > 0.0 )
 		{
 		    count++;
 		    d2 = max_value;
@@ -5752,11 +8576,14 @@ char * ScanSizeRange
 	    else
 	    {
 		count++;
-		if ( *source == '#' )
+		if ( have_size )
 		    d2 += d1-1;
 	    }
 	    if ( d2 < d1 )
+	    {
+		count = 0;
 		d2 = d1;
+	    }
 	}
     }
 
@@ -5782,22 +8609,67 @@ char * ScanSizeRangeU32
     u64		default_factor,		// use this factor if number hasn't one
     u64		default_factor_add,	// use this factor for summands
     int		force_base,		// if 1000|1024: force multiple of this
-    u32		max_value		// >0: max value for open ranges
+    u32		max_value,		// >0: max value for open ranges
+    range_opt_t	opt			// options, if 0 then use RAOPT__DEFAULT
 )
 {
     double d1, d2;
     char * end = ScanSizeRange(stat,&d1,&d2,source,
 			default_factor,default_factor_add,force_base,
-			max_value>0 ? max_value : U32_MAX );
+			max_value>0 ? max_value : U32_MAX, opt );
 
     if ( d1 < 0 || d1 > U32_MAX || d2 < 0 || d2 > U32_MAX )
+    {
 	end = (char*)source;
+	if (stat)
+	    *stat = 0;
+    }
     else
     {
 	if (num1)
 	    *num1 = (u32)d1;
 	if (num2)
 	    *num2 = (u32)d2;
+    }
+
+    return end;
+
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * ScanSizeRangeS32
+(
+    int		*stat,			// if not NULL: store result
+					//	0:none, 1:single, 2:range
+    s32		*num1,			// not NULL: store 'from' result
+    s32		*num2,			// not NULL: store 'to' result
+
+    ccp		source,			// source text
+    u64		default_factor,		// use this factor if number hasn't one
+    u64		default_factor_add,	// use this factor for summands
+    int		force_base,		// if 1000|1024: force multiple of this
+    s32		max_value,		// >0: max value for open ranges
+    range_opt_t	opt			// options, if 0 then use RAOPT__DEFAULT
+)
+{
+    double d1, d2;
+    char * end = ScanSizeRange(stat,&d1,&d2,source,
+			default_factor,default_factor_add,force_base,
+			max_value>0 ? max_value : S32_MAX, opt );
+
+    if ( d1 < S32_MIN || d1 > S32_MAX || d2 < S32_MIN || d2 > U32_MAX )
+    {
+	end = (char*)source;
+	if (stat)
+	    *stat = 0;
+    }
+    else
+    {
+	if (num1)
+	    *num1 = (s32)d1;
+	if (num2)
+	    *num2 = (s32)d2;
     }
 
     return end;
@@ -5817,22 +8689,67 @@ char * ScanSizeRangeU64
     u64		default_factor,		// use this factor if number hasn't one
     u64		default_factor_add,	// use this factor for summands
     int		force_base,		// if 1000|1024: force multiple of this
-    u64		max_value		// >0: max value for open ranges
+    u64		max_value,		// >0: max value for open ranges
+    range_opt_t	opt			// options, if 0 then use RAOPT__DEFAULT
 )
 {
     double d1, d2;
     char * end = ScanSizeRange(stat,&d1,&d2,source,
 			default_factor,default_factor_add,force_base,
-			max_value>0 ? max_value : U64_MAX );
+			max_value>0 ? max_value : U64_MAX, opt );
 
     if ( d1 < 0 || d1 > U64_MAX || d2 < 0 || d2 > U64_MAX )
+    {
 	end = (char*)source;
+	if (stat)
+	    *stat = 0;
+    }
     else
     {
 	if (num1)
 	    *num1 = (u64)d1;
 	if (num2)
 	    *num2 = (u64)d2;
+    }
+
+    return end;
+
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * ScanSizeRangeS64
+(
+    int		*stat,			// if not NULL: store result
+					//	0:none, 1:single, 2:range
+    s64		*num1,			// not NULL: store 'from' result
+    s64		*num2,			// not NULL: store 'to' result
+
+    ccp		source,			// source text
+    u64		default_factor,		// use this factor if number hasn't one
+    u64		default_factor_add,	// use this factor for summands
+    int		force_base,		// if 1000|1024: force multiple of this
+    s64		max_value,		// >0: max value for open ranges
+    range_opt_t	opt			// options, if 0 then use RAOPT__DEFAULT
+)
+{
+    double d1, d2;
+    char * end = ScanSizeRange(stat,&d1,&d2,source,
+			default_factor,default_factor_add,force_base,
+			max_value>0 ? max_value : S64_MAX, opt );
+
+    if ( d1 < S64_MIN || d1 > S64_MAX || d2 < S64_MIN || d2 > U64_MAX )
+    {
+	end = (char*)source;
+	if (stat)
+	    *stat = 0;
+    }
+    else
+    {
+	if (num1)
+	    *num1 = (s64)d1;
+	if (num2)
+	    *num2 = (s64)d2;
     }
 
     return end;
@@ -5853,7 +8770,8 @@ char * ScanSizeRangeList
     u64		default_factor,		// use this factor if number hasn't one
     u64		default_factor_add,	// use this factor for summands
     int		force_base,		// if 1000|1024: force multiple of this
-    double	max_value		// >0: max value for open ranges
+    double	max_value,		// >0: max value for open ranges
+    range_opt_t	opt			// options, if 0 then use RAOPT__DEFAULT
 )
 {
     DASSERT(num);
@@ -5868,7 +8786,8 @@ char * ScanSizeRangeList
 
 	int stat;
 	ptr = ScanSizeRange( &stat, num, num+1, ptr,
-			default_factor, default_factor_add, force_base, max_value );
+			default_factor, default_factor_add,
+			force_base, max_value, opt );
 	if (!stat)
 	    break;
 	num += 2;
@@ -5909,7 +8828,8 @@ char * ScanSizeRangeListU32
     u32		default_factor,		// use this factor if number hasn't one
     u32		default_factor_add,	// use this factor for summands
     int		force_base,		// if 1000|1024: force multiple of this
-    u32		max_value		// >0: max value for open ranges
+    u32		max_value,		// >0: max value for open ranges
+    range_opt_t	opt			// options, if 0 then use RAOPT__DEFAULT
 )
 {
     DASSERT(num);
@@ -5920,7 +8840,7 @@ char * ScanSizeRangeListU32
 
     char *end = ScanSizeRangeList( n_range, d, max_range,
 			source, default_factor, default_factor_add,
-			force_base, max_value );
+			force_base, max_value, opt );
 
     uint i;
     for ( i = 0; i < 2*max_range; i++ )
@@ -5944,7 +8864,8 @@ char * ScanSizeRangeListU64
     u64		default_factor,		// use this factor if number hasn't one
     u64		default_factor_add,	// use this factor for summands
     int		force_base,		// if 1000|1024: force multiple of this
-    u64		max_value		// >0: max value for open ranges
+    u64		max_value,		// >0: max value for open ranges
+    range_opt_t	opt			// options, if 0 then use RAOPT__DEFAULT
 )
 {
     DASSERT(num);
@@ -5955,7 +8876,7 @@ char * ScanSizeRangeListU64
 
     char *end = ScanSizeRangeList( n_range, d, max_range,
 			source, default_factor, default_factor_add,
-			force_base, max_value );
+			force_base, max_value, opt );
 
     uint i;
     for ( i = 0; i < 2*max_range; i++ )
@@ -6001,7 +8922,7 @@ enumError ScanSizeOpt
 	err = ERR_SYNTAX;
 	if (print_err)
 	    ERROR0(ERR_SYNTAX,
-			"Illegal number for option --%s: %s\n",
+			"Invalid number for option --%s: %s\n",
 			opt_name, source );
     }
     else if ( min > 0 && d < min )
@@ -6199,6 +9120,7 @@ char * ScanSIFactor
 )
 {
     DASSERT(source);
+    double i = 0.0;
     switch (*(uchar*)source++)
     {
 	case 'y': default_factor = 1e-24; break;
@@ -6207,26 +9129,27 @@ char * ScanSIFactor
 	case 'f': default_factor = 1e-15; break;
 	case 'p': default_factor = 1e-12; break;
 	case 'n': default_factor = 1e-9; break;
-	case 0xb5: // � as ANSI
+	case 0xb5: // µ as ASCII
 	case 'u': default_factor = 1e-6; break;
 	case 'm': default_factor = 1e-3; break;
 	case 'c': default_factor = 1e-2; break;
 	case 'd': default_factor = 1e-1; break;
 
 	case 'h': default_factor = 1e2; break;
-	case 'k': default_factor = 1e3; break;
-	case 'M': default_factor = 1e6; break;
-	case 'G': default_factor = 1e9; break;
-	case 'T': default_factor = 1e12; break;
-	case 'P': default_factor = 1e15; break;
-	case 'E': default_factor = 1e18; break;
-	case 'Z': default_factor = 1e21; break;
-	case 'Y': default_factor = 1e24; break;
+	case 'k':
+	case 'K': default_factor = 1e3;  i =                      1024.0; break;
+	case 'M': default_factor = 1e6;  i =                   1048576.0; break;
+	case 'G': default_factor = 1e9;  i =                1073741824.0; break;
+	case 'T': default_factor = 1e12; i =             1099511627776.0; break;
+	case 'P': default_factor = 1e15; i =          1125899906842624.0; break;
+	case 'E': default_factor = 1e18; i =       1152921504606846976.0; break;
+	case 'Z': default_factor = 1e21; i =    1180591620717411303424.0; break;
+	case 'Y': default_factor = 1e24; i = 1208925819614629174706176.0; break;
 
 	case 0xc2:
 	    if ( (uchar)*source == 0xb5 )
 	    {
-		// � as UTF-8
+		// µ as UTF-8
 		source++;
 		default_factor = 1e-6;
 		break;
@@ -6238,6 +9161,13 @@ char * ScanSIFactor
 	default:
 	   source--;
     }
+
+    if ( *source == 'i' && i )
+    {
+	source++;
+	default_factor = i;
+    }
+
     if (num)
 	*num = default_factor;
     return (char*)source;
@@ -6250,13 +9180,13 @@ double GetDurationFactor ( char ch )
     switch (ch)
     {
 	case 's': return 1.0; break;
-	case 'm': return 60.0; break;
-	case 'h': return 3600.0; break;
+	case 'm': return SEC_PER_MIN; break;
+	case 'h': return SEC_PER_HOUR; break;
 	case 't':
-	case 'd': return 86400.0; break;
-	case 'w': return 7*86400.0; break;
+	case 'd': return SEC_PER_DAY; break;
+	case 'w': return SEC_PER_WEEK; break;
 	case 'j':
-	case 'y': return 365*86400.0; break;
+	case 'y': return SEC_PER_YEAR; break;
 	default:  return 0.0;
     }
 }
@@ -6265,7 +9195,10 @@ double GetDurationFactor ( char ch )
 
 char * ScanDuration
 (
-    double		*num,		// not NULL: store result
+    // Returns a pointer to the the first not used character.
+    // On error, it is 'source' and '*seconds' is set to 0.0.
+
+    double		*seconds,	// not NULL: store result (number of seconds)
     ccp			source,		// source text
     double		default_factor,	// default factor if no SI unit found
     ScanDuration_t	mode
@@ -6273,8 +9206,9 @@ char * ScanDuration
 {
     if (!source)
 	return 0;
+    ccp src, done;
+    done = src = source;
 
-    ccp src = source;
     if ( mode & SDUMD_SKIP_BLANKS )
 	while ( *src == ' ' || *src == '\t' )
 	    src++;
@@ -6298,7 +9232,7 @@ char * ScanDuration
 	    }
 	    else
 		sum += val;
-	    src = end;
+	    done = src = end;
 	    valid = true;
 
 	    if ( mode & SDUMD_ALLOW_SPACE_SEP )
@@ -6313,9 +9247,9 @@ char * ScanDuration
 	    }
 	    mode |= SDUMD_SKIP_BLANKS;
 	}
-	if (num)
-	    *num = sum;
-	return (char*)( valid ? src : source );
+	if (seconds)
+	    *seconds = sum;
+	return (char*)( valid ? done : source );
     }
 
 
@@ -6359,8 +9293,11 @@ char * ScanDuration
 
 	    double si_factor;
 	    end = ScanSIFactor(&si_factor,src,1.0);
+	    char factor = *end;
+	    if ( mode & SDUMD_ALLOW_CAPITALS )
+		factor = tolower((int)factor);
+	    double unit = GetDurationFactor(factor);
 
-	    double unit = GetDurationFactor(*end);
 	    if (unit)
 	    {
 		val *= unit * si_factor;
@@ -6368,7 +9305,10 @@ char * ScanDuration
 	    }
 	    else
 	    {
-		unit = GetDurationFactor(*src);
+		char factor = *src;
+		if ( mode & SDUMD_ALLOW_CAPITALS )
+		    factor = tolower((int)factor);
+		unit = GetDurationFactor(factor);
 		if (unit)
 		{
 		    val *= unit;
@@ -6381,14 +9321,166 @@ char * ScanDuration
 		}
 	    }
 	}
-	if (num)
-	    *num = val;
+	if (seconds)
+	    *seconds = val;
 	return (char*)src;
     }
 
-    if (num)
-	*num = 0.0;
+    if (seconds)
+	*seconds = 0.0;
     return (char*)source;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+double str2duration ( ccp src, char **endptr, double default_factor )
+{
+    double dur = 0.0;
+    char *end = ScanDuration(&dur,src,default_factor,SDUMD_M_DEFAULT);
+    if (endptr)
+	*endptr = end;
+    return dur;
+}
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			ScanIP4				///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ipv4_class_t ScanIP4
+(
+    ipv4_t	*ret_ip4,	// not NULL: return numeric IPv4 here
+    ccp		addr,		// address to analyze
+    int		addr_len	// length of addr; if <0: use strlen(addr)
+)
+{
+    //--- param check
+
+    if (!addr)
+    {
+     error:
+	if (ret_ip4)
+	    *ret_ip4 = 0;
+	return CIP4_ERROR;
+    }
+
+    if ( addr_len < 0 )
+	addr_len = strlen(addr);
+
+    ccp addr_end = addr + addr_len;
+
+
+    //--- skip leading blanks
+
+    while ( addr < addr_end && isblank((int)*addr) )
+	addr++;
+
+
+    //--- scan input
+
+    int count = 0;
+    bool trailing_pt = false;
+    uint num[4] = {0,0,0,0};
+    while ( addr < addr_end )
+    {
+	if ( *addr < '0' || *addr > '9' )
+	    break;
+
+	addr = ScanNumber ( num+count++, addr, addr_end, *addr == '0' ? 8 : 10, 3 );
+	if ( count == 4 || *addr != '.' )
+	{
+	    trailing_pt = false;
+	    break;
+	}
+	addr++;
+	trailing_pt = true;
+    }
+
+    //printf("N=%u .=%u [%u,%u,%u,%u] addr=%s\n",count,trailing_pt,num[0],num[1],num[2],num[3],addr);
+
+    if ( !count || addr < addr_end )
+	goto error;
+
+
+    //--- calculate IPv4 based on class-X
+
+    ipv4_class_t res = CIP4_INVALID;
+    u32 ipv4 = 0;
+
+    switch ( trailing_pt ? 4 : count )
+    {
+     case 1:
+	ipv4 = num[0];
+	res = CIP4_NUMERIC;
+	break;
+
+     case 2:
+	if ( num[0] <= 0xff && num[1] <= 0xffffff )
+	{
+	    ipv4 = num[0] << 24 | num[1];
+	    res = CIP4_CLASS_A;
+	}
+	break;
+
+     case 3:
+	if ( num[0] <= 0xff && num[1] <= 0xff && num[2] <= 0xffff )
+	{
+	    ipv4 = num[0] << 24 | num[1] << 16 | num[2];
+	    res = CIP4_CLASS_B;
+	}
+	break;
+
+     case 4:
+	if ( num[0] <= 0xff && num[1] <= 0xff && num[2] <= 0xff && num[3] <= 0xff )
+	{
+	    ipv4 = num[0] << 24 | num[1] << 16 | num[2] << 8 | num[3];
+	    res = CIP4_CLASS_C;
+	}
+	break;
+    }
+
+
+    //--- return status
+
+    if (ret_ip4)
+	*ret_ip4 = ipv4;
+
+    return res;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * NormalizeIP4
+(
+    // Return a pointer to dest if valid IPv4,
+    // Otherwise return 0 and buf is not modifieid.
+
+    char	*buf,		// result buffer, can be 'addr'
+				// if NULL: use a local circulary static buffer
+    size_t	buf_size,	// size of 'buf', ignored if buf==NULL
+    bool	c_notation,	// TRUE: force lass-C notation (a.b.c.d)
+
+    ccp		addr,		// address to analyze
+    int		addr_len	// length of addr; if <0: use strlen(addr)
+)
+{
+    ipv4_t ip4;
+    ipv4_class_t stat = ScanIP4(&ip4,addr,-1);
+    if ( stat <= CIP4_INVALID )
+	return 0;
+
+    return PrintIP4ByMode( buf, buf_size, ip4, c_notation ? CIP4_CLASS_C : stat, -1 );
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int dclib_aton ( ccp addr, struct in_addr *inp )
+{
+    ipv4_t ip4;
+    ipv4_class_t stat = ScanIP4(&ip4,addr,-1);
+    if (inp)
+	inp->s_addr = htonl(ip4);
+    return stat > CIP4_INVALID;
 }
 
 //
@@ -6396,9 +9488,32 @@ char * ScanDuration
 ///////////////			PrintIP4*()			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+char * PrintIP4N
+(
+    // print as unsigned number (CIP4_NUMERIC)
+
+    char	*buf,		// result buffer
+				// NULL: use a local circulary static buffer
+    size_t	buf_size,	// size of 'buf', ignored if buf==NULL
+    u32		ip4,		// IP4 to print
+    s32		port		// 0..0xffff: add ':port'
+)
+{
+    if (!buf)
+	buf = GetCircBuf( buf_size = FW_IPV4_A_PORT+1 );
+
+    if ( port >= 0 && port <= 0xffff )
+	snprintf(buf,buf_size,"%u:%u", ip4, port );
+    else
+	snprintf(buf,buf_size,"%u",ip4);
+    return buf;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 char * PrintIP4A
 (
-    // print in A-notation
+    // print in A-notation (CIP4_CLASS_A)
 
     char	*buf,		// result buffer
 				// NULL: use a local circulary static buffer
@@ -6426,7 +9541,7 @@ char * PrintIP4A
 
 char * PrintIP4B
 (
-    // print in A-notation
+    // print in B-notation (CIP4_CLASS_B)
 
     char	*buf,		// result buffer
 				// NULL: use a local circulary static buffer
@@ -6579,6 +9694,28 @@ char * PrintAlignedIP4
     return buf;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
+char * PrintIP4ByMode
+(
+    char	 *buf,		// result buffer
+				// NULL: use a local circulary static buffer
+    size_t	 buf_size,	// size of 'buf', ignored if buf==NULL
+    u32		 ip4,		// IP4 to print
+    ipv4_class_t mode,		// CIP4_NUMERIC | CIP4_CLASS_A | CIP4_CLASS_B:
+				// force numeric or class-A/B output; otherwise class-C output
+    s32		 port		// 0..0xffff: add ':port'
+)
+{
+    switch (mode)
+    {
+	case CIP4_NUMERIC: return PrintIP4N(buf,buf_size,ip4,port);
+	case CIP4_CLASS_A: return PrintIP4A(buf,buf_size,ip4,port);
+	case CIP4_CLASS_B: return PrintIP4B(buf,buf_size,ip4,port);
+	default:	   return PrintIP4 (buf,buf_size,ip4,port);
+    }
+}
+
 //
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////				CRC16			///////////////
@@ -6649,6 +9786,40 @@ float double2float ( double d )
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+u64 MulDivU64 ( u64 factor1, u64 factor2, u64 divisor )
+{
+ #if HAVE_INT128
+
+    return (u128)factor1 * (u128)factor2 / divisor;
+
+ #else
+
+    if ( !factor1 || !factor2 )
+	return 0;
+
+    const double product = (double)factor1 * (double)factor2;
+    return product < 0xfffffffffffffff0
+	? factor1 * factor2 / divisor
+	: (u64) trunc( product / divisor );
+
+ #endif
+}
+
+//-----------------------------------------------------------------------------
+
+s64 MulDivS64 ( s64 factor1, s64 factor2, s64 divisor )
+{
+    bool neg = false;
+    if ( factor1 < 0 ) { factor1 = -factor1; neg = !neg; }
+    if ( factor2 < 0 ) { factor2 = -factor2; neg = !neg; }
+    if ( divisor < 0 ) { divisor = -divisor; neg = !neg; }
+    s64 r = MulDivU64(factor1,factor2,divisor);
+    return neg ? -r : r;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
 ccp PrintNiceID4 ( uint id )
 {
     if (!id)
@@ -6708,6 +9879,132 @@ char * ScanNiceID4 ( int * res, ccp arg )
 		{
 		    *res = 10 * num + ch - '0';
 		    return (char*)arg+4;
+		}
+	    }
+	}
+    }
+    return (char*)arg;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintNiceID5 ( uint id )
+{
+    if (!id)
+	return "-----";
+
+    char *buf = GetCircBuf(6);
+    DASSERT(buf);
+
+    buf[0] = 'A' + id / 26000 % 26;
+    buf[1] = 'A' + id /  1000 % 26;
+    buf[2] = '0' + id /   100 % 10;
+    buf[3] = '0' + id /    10 % 10;
+    buf[4] = '0' + id         % 10;
+    buf[5] = 0;
+
+    return buf;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * ScanNiceID5 ( int * res, ccp arg )
+{
+    DASSERT(res);
+    *res = -1;
+
+    if (!arg)
+	return 0;
+
+    char ch = tolower((int)arg[0]);
+    if ( ch >= 'a' && ch <= 'z' )
+    {
+	int num = ch - 'a';
+	ch = tolower((int)arg[1]);
+	if ( ch >= 'a' && ch <= 'z' )
+	{
+	    num = 26 * num + ch - 'a';
+	    ch = arg[2];
+	    if ( ch >= '0' && ch <= '9' )
+	    {
+		num = 10 * num + ch - '0';
+		ch = arg[3];
+		if ( ch >= '0' && ch <= '9' )
+		{
+		    num = 10 * num + ch - '0';
+		    ch = arg[4];
+		    if ( ch >= '0' && ch <= '9' )
+		    {
+			*res = 10 * num + ch - '0';
+			return (char*)arg+5;
+		    }
+		}
+	    }
+	}
+    }
+    return (char*)arg;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+ccp PrintNiceID6 ( uint id )
+{
+    if (!id)
+	return "------";
+
+    char *buf = GetCircBuf(7);
+    DASSERT(buf);
+
+    buf[0] = 'A' + id / 676000 % 26;
+    buf[1] = 'A' + id /  26000 % 26;
+    buf[2] = 'A' + id /   1000 % 26;
+    buf[3] = '0' + id /    100 % 10;
+    buf[4] = '0' + id /     10 % 10;
+    buf[5] = '0' + id          % 10;
+    buf[6] = 0;
+
+    return buf;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+char * ScanNiceID6 ( int * res, ccp arg )
+{
+    DASSERT(res);
+    *res = -1;
+
+    if (!arg)
+	return 0;
+
+    char ch = tolower((int)arg[0]);
+    if ( ch >= 'a' && ch <= 'z' )
+    {
+	int num = ch - 'a';
+	ch = tolower((int)arg[1]);
+	if ( ch >= 'a' && ch <= 'z' )
+	{
+	    num = 26 * num + ch - 'a';
+	    ch = tolower((int)arg[2]);
+	    if ( ch >= 'a' && ch <= 'z' )
+	    {
+		num = 26 * num + ch - 'a';
+		ch = arg[3];
+		if ( ch >= '0' && ch <= '9' )
+		{
+		    num = 10 * num + ch - '0';
+		    ch = arg[4];
+		    if ( ch >= '0' && ch <= '9' )
+		    {
+			num = 10 * num + ch - '0';
+			ch = arg[5];
+			if ( ch >= '0' && ch <= '9' )
+			{
+			    *res = 10 * num + ch - '0';
+			    return (char*)arg+6;
+			}
+		    }
 		}
 	    }
 	}

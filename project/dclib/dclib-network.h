@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -39,6 +39,8 @@
 #include "dclib-system.h"
 #include "dclib-basics.h"
 #include "dclib-file.h"
+
+#include <stddef.h>
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -108,29 +110,401 @@ bool ResolveHostMem
 
 //
 ///////////////////////////////////////////////////////////////////////////////
+///////////////			enum PrintModeIP_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[PrintModeIP_t]]
+
+typedef enum PrintModeIP_t
+{
+    // characters for ScanPrintModeIP(): nria
+    PMIP_NEVER		= 0x000,  ///< '/Bits' unterdrücken.
+    PMIP_RELEVANT	= 0x001,  ///< '/Bits' nur falls relevant.
+    PMIP_IF_SET		= 0x002,  ///< '/Bits' nur falls gesetzt.
+    PMIP_ALWAYS		= 0x003,  ///< '/Bits' immer ausgeben.
+     PMIP_M_BITS	= 0x003,  ///< Maske für Bit-Modi.
+
+    // characters for ScanPrintModeIP(): psmb
+    PMIP_PORT		= 0x004,  ///< Flag: Print port if >0.
+    PMIP_SERVICE	= 0x008,  ///< Flag: Print service instead of port number.
+    PMIP_MASK		= 0x010,  ///< Flag: Print netmask instead of bits for IPv4.
+    PMIP_BRACKETS	= 0x020,  ///< Flag: Print bracktes if [IPv6].
+
+    // characters for ScanPrintModeIP(): f
+    PMIP_FULL_IPV6	= 0x100,  ///< Print IPv6 without short numbers.
+
+    // characters for ScanPrintModeIP(): 0123
+    PMIP_0DOTS		= 0x200,  ///< Print IPv4 as single number (highest priority).
+    PMIP_1DOT		= 0x400,  ///< Print IPv4 as "1.2" (A-Class notation).
+    PMIP_2DOTS		= 0x800,  ///< Print IPv4 as "1.2.3" (B-Class notation).
+    PMIP_3DOTS		=     0,  ///< Print IPv4 as "1.2.3.4" (C-Class notation, default).
+     PMIP_M_DOTS	= 0xc00   ///< Maske für Dot-Modi.
+}
+PrintModeIP_t;
+
+PrintModeIP_t ScanPrintModeIP ( PrintModeIP_t base, ccp arg );
+ccp PrintPrintModeIP ( PrintModeIP_t val, bool align );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			enum IPClass_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[IPClass_t]]
+
+typedef enum IPClass_t
+{
+    IPCL_INVALID,	// 0.0.0.0					::
+    IPCL_LOOPBACK,	// 127.0/8					::1
+    IPCL_LOCAL,		// 10.0/8 172.16/12 192.168/16 169.254/16	fe80::/10
+    IPCL_STANDARD,	// *						*
+    IPCL_SPECIAL,	// 224.0.0.0/3					f00::/8
+    IPCL__N,
+}
+IPClass_t;
+
+//-----------------------------------------------------------------------------
+
+ccp GetIPClassColor ( const ColorSet_t *colset, IPClass_t ipc );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct SplitIP_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[SplitIP_t]]
+
+typedef struct SplitIP_t
+{
+    int		bits;
+    u16		port;
+    char	name[260];
+}
+SplitIP_t;
+
+//-----------------------------------------------------------------------------
+
+bool SplitIP ( SplitIP_t *sip, ccp addr );
+
+static inline void NormalizeNameSIP ( SplitIP_t *sip )
+	{ DASSERT(sip); NormalizeIP4(sip->name,sizeof(sip->name),true,sip->name,-1); }
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct NamesIP_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[NamesIP_t]]
+
+typedef struct NamesIP_t
+{
+    ccp binaddr;
+    ccp ipvers;
+    ccp addr1;
+    ccp addr2;
+    ccp bits;
+    ccp mask1;
+    ccp mask2;
+}
+NamesIP_t;
+
+//-----------------------------------------------------------------------------
+
+// reset if src==NULL
+void SetupNamesIP ( NamesIP_t *dest, const NamesIP_t *src );
+void SetupNamesByListIP ( NamesIP_t *dest, const exmem_list_t *src );
+
+ccp PrintNamesIP ( const NamesIP_t *nip );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct BinIP_t			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+enum
+{
+    IP_SIZE_ADDR	= 39,	///< Maximale Zeichenlänge einer Adresse ohne Maske.
+    IP_SIZE_ADDR_MASK	= 43,	///< Maximale Zeichenlänge einer Adresse mit Maske.
+    IP_SIZE_PREFIX	= 22,	///< Maximale Zeichenlänge einer Adresse, die mit MaskPrefixMIP() gekürzt wurde.
+    IP_SIZE_ADDR_BIN	= 22,	///< Size für eine binäre IP (ohne Maske).
+
+    IP_SIZE_BINIP_C	= 20,	///< Size für binäres Tupel (padding,ipvers,bits,addr).
+    IP_SIZE_BINIP	= 18,	///< Size für binäres Tupel (ipvers,bits,addr).
+    IP_OFFSET_BINIP	=  2,	///< Offset für DB-Transfer.
+};
+
+///////////////////////////////////////////////////////////////////////////////
+// [[BinIP_t]]
+
+typedef struct BinIP_t
+{
+    u16 user_id;		// any id defined by user
+    u8	ipvers;			// 0:invalid, 4:IPv4, 6:IPv6
+    u8	bits;			// number of 1-bits in netmask
+
+    union			// different views of ip address
+    {
+	u8	ip6_8[16];
+	u16	ip6_16[8];
+	u32	ip6_32[4];
+	u64	ip6_64[2];
+	ipv6_t	ip6;
+
+	struct
+	{
+	    ipv4_t ip4_padding[3];
+	    ipv4_t ip4;
+	};
+
+	struct
+	{
+	    ipv4_t  ip4x_padding[3];
+	    ipv4x_t ip4x;
+	};
+    };
+}
+__attribute__ ((packed)) BinIP_t;
+
+_Static_assert( offsetof(BinIP_t,ipvers) == IP_OFFSET_BINIP, "wrong order of BinIP_t members" );
+_Static_assert( sizeof(BinIP_t) == IP_SIZE_BINIP_C, "wrong size of BinIP_t" );
+
+//-----------------------------------------------------------------------------
+
+static inline u8 * GetCorePtrBIP ( const BinIP_t *src ) { return (u8*)&src->ipvers; }
+static inline uint GetCoreSizeBIP ( const BinIP_t *src ) { return IP_SIZE_BINIP; }
+
+BinIP_t GetIPMask ( const BinIP_t *src );
+void ApplyIPMask ( BinIP_t *bip );
+
+IPClass_t GetIPClassBIP ( const BinIP_t * bip );
+static inline ccp GetColorBIP( const ColorSet_t *colset, const BinIP_t * bip )
+	{ return GetIPClassColor(colset,GetIPClassBIP(bip)); }
+
+ccp PrintBIP ( const BinIP_t * bip );
+
+// returns false, if !a1 || !a2 || invalid || differ_after_mask
+// use_mask: bit 0 == 1 : use mask of a1; bit 1 == 2 : use mask of a2 
+bool IsSameBIP ( const BinIP_t *a1, const BinIP_t *a2, uint use_mask );
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct BinIPList_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[BinIPItem_t]]
+
+typedef struct BinIPItem_t
+{
+    ccp		name;	// optional name, alloced
+    BinIP_t	bip;	// IP data
+}
+BinIPItem_t;
+
+///////////////////////////////////////////////////////////////////////////////
+// [[BinIPList_t]]
+
+typedef struct BinIPList_t
+{
+    BinIPItem_t	*list;	// list of elements
+    uint	used;	// number of used elements in 'list'
+    uint	size;	// number of allocated elements in 'list'
+}
+BinIPList_t;
+
+///////////////////////////////////////////////////////////////////////////////
+// [[BinIPIterate_t]]
+
+typedef struct BinIPIterate_t
+{
+    bool		valid;		// iterator is valid
+    const BinIPList_t	*bil;		// list data
+    const BinIPItem_t	*cur;		// current element
+
+    BinIP_t		addr;		// address to serch
+    uint		use_mask;	// flags for IsSameBIP()
+}
+BinIPIterate_t;
+
+///////////////////////////////////////////////////////////////////////////////
+
+static inline void InitializeBIL ( BinIPList_t *bil )
+	{ DASSERT(bil); memset(bil,0,sizeof(*bil)); }
+
+void ResetBIL ( BinIPList_t *bil );
+void ClearBIL ( BinIPList_t *bil );
+
+void SetSizeBIL ( BinIPList_t *bil, int size );
+void SetMinSizeBIL ( BinIPList_t *bil, int min_size );
+BinIPItem_t * CreateItemBIL ( BinIPList_t *bil, int n_item );
+
+#if 0 // not implemented
+BinIPItem_t * InsertBIL ( BinIPList_t *bil, int index, ccp key, CopyMode_t copy_mode );
+BinIPItem_t * InsertByKeyBIL ( BinIPList_t *bil, ccp key, CopyMode_t copy_mode );
+static inline BinIPItem_t * Append ( BinIPList_t *bil, int index, ccp key, CopyMode_t copy_mode )
+	{ return InsertBIL(bil,INT_MAX,key,copy_mode); }
+
+int FindIndexBIL ( const BinIPList_t *bil, ccp key );
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
+
+// bits for use_mask:
+//	bit 0 == 1 : use mask of BinIPList_t::items
+//	bit 1 == 2 : use mask of addr 
+
+BinIPIterate_t FindAddressBIL ( const BinIPList_t *bil, BinIP_t *addr, uint use_mask );
+void FindNextAddressBIL ( BinIPIterate_t *iter );
+
+uint ScanInterfaceAddresses ( BinIPList_t *bil, bool init_bil );
+const BinIPList_t * GetInterfaceAddressList ( bool update );
+
+bool IsLocalBIL ( BinIP_t *addr, uint use_mask );
+static inline bool IsLocalAddress ( BinIP_t *addr ) { return IsLocalBIL(addr,2); }
+static inline bool IsLocalNetwork ( BinIP_t *addr ) { return IsLocalBIL(addr,3); }
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct ManageIP_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[ManageIP_t]]
+
+typedef struct ManageIP_t
+{
+    BinIP_t	bin;		// binary data
+    u16		port;		// 0: not specified
+    bool	have_bits;	// true: bits were specified on input
+    u8		relevant_bits;	// number of relevant bits
+    ccp		name;		// NULL or getnameinfo(), alloced
+    ccp		decoded_name;	// NULL or punycode-decoded 'name' if differ, alloced
+}
+ManageIP_t;
+
+///////////////////////////////////////////////////////////////////////////////
+
+static inline bool IsIPv4MIP ( const ManageIP_t *mip )
+	{ return mip && mip->bin.ipvers == 4; }
+
+static inline bool IsIPv6MIP ( const ManageIP_t *mip )
+	{ return mip && mip->bin.ipvers == 6; }
+
+//-----------------------------------------------------------------------------
+// if bits==-1: ignore parameter
+
+void ResetMIP ( ManageIP_t *mip );	// mip can be NULL
+void ClearNameMIP ( ManageIP_t *mip );	// mip can be NULL
+
+bool AssignMIP ( ManageIP_t *dest, const ManageIP_t *src );
+bool AssignBinMIP ( ManageIP_t *mip, cvp bin, int bits );
+bool AssignSockaddrMIP ( ManageIP_t *mip, cvp sockaddr, u16 port, int bits );
+
+bool ScanMIP ( ManageIP_t *mip, ccp addr );
+
+ManageIP_t GetCopyMIP ( const ManageIP_t *mip );
+ManageIP_t GetSockNameMIP ( int sock );
+ManageIP_t GetPeerNameMIP ( int sock );
+
+// protocol: protocol to use: 0=all, -1=default (IPPROTO_TCP at the moment)
+ManageIP_t GetAddrInfoMIP ( ccp addr, int protocol, IpMode_t ipm );
+
+sockaddr_in46_t GetSockaddrMIP ( const ManageIP_t *mip );
+ccp GetNameInfoMIP ( ManageIP_t *mip );
+
+void ApplyMaskMIP ( ManageIP_t *mip, int bits );
+void MaskPrefixMIP ( ManageIP_t *mip ); // includes ApplyMaskMIP()
+
+//-----------------------------------------------------------------------------
+
+static inline bool PrintBitsMIP ( const ManageIP_t *mip, PrintModeIP_t pmode )
+{
+    DASSERT(mip);
+    pmode &= PMIP_M_BITS;
+    return pmode > PMIP_NEVER
+	&& (  mip->bin.bits < mip->relevant_bits
+	   || pmode == PMIP_IF_SET && mip->have_bits
+	   || pmode >= PMIP_ALWAYS
+	   );
+}
+
+ccp PrintAddrMIP ( const ManageIP_t *mip, PrintModeIP_t pmode );
+ccp PrintVersAddrMIP ( const ManageIP_t *mip, PrintModeIP_t pmode );
+
+static inline IPClass_t GetIPClassMIP ( const ManageIP_t * mip )
+	{ DASSERT(mip); return GetIPClassBIP(&mip->bin); }
+
+//-----------------------------------------------------------------------------
+
+ccp GetSqlSetAddrMIP ( const ManageIP_t *mip, const NamesIP_t *names );
+ccp GetSqlSetMaskMIP ( const ManageIP_t *mip, const NamesIP_t *names );
+ccp GetSqlSetBinMIP  ( const ManageIP_t *mip, const NamesIP_t *names );
+
+ccp GetSqlCondAddrMIP ( const ManageIP_t *mip, const NamesIP_t *names );
+ccp GetSqlCondMaskMIP ( const ManageIP_t *mip, const NamesIP_t *names );
+ccp GetSqlCondBinMaskMIP ( const ManageIP_t *mip, const NamesIP_t *names );
+
+static inline ccp GetSqlCondBinAddrMIP ( const ManageIP_t *mip, const NamesIP_t *names )
+	{ return GetSqlSetBinMIP(mip,names); }
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			struct ResolveIP_t		///////////////
+///////////////////////////////////////////////////////////////////////////////
+// [[ResolveIP_t]]
+
+typedef struct ResolveIP_t
+{
+    IpMode_t	ip_mode;	// used mode
+    ManageIP_t	mip4;		// resolved IPv4
+    ManageIP_t	mip6;		// resolved IPv6
+    ManageIP_t	*mip_list[3];	// ordered and 0-termiated list of valid 'mip*'
+}
+ResolveIP_t;
+
+//-----------------------------------------------------------------------------
+
+void ResetRIP ( ResolveIP_t *rip );	 // rip can be NULL
+void ClearNamesRIP ( ResolveIP_t *rip ); // rip can be NULL
+
+ResolveIP_t GetCopyRIP ( const ResolveIP_t *rip );
+void AssignRIP ( ResolveIP_t *dest, const ResolveIP_t *src );
+
+int ScanRIP
+(
+    // return 0..2 = number of records
+
+    ResolveIP_t	*rip,		// valid data, ResetRIP()
+    ccp		addr,		// address to scan
+    int		protocol,	// protocol to use: 0=all, -1=default (IPPROTO_TCP at the moment)
+    IpMode_t	ip_mode,	// IPv4 and/or IPV6, order of 'mip_list'
+    bool	get_names	// true: call GetNameInfoMIP()
+);
+
+// not implemented yet
+// void DumpRIP ( FILE *f, int indent, const ResolveIP_t *rip );
+
+//
+///////////////////////////////////////////////////////////////////////////////
 ///////////////			struct AllowIP4_t		///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 // standard values
 #define ALLOW_MODE_DENY		0	// access denied
-#define ALLOW_MODE_ALLOW	0x001	// access allowed
-#define ALLOW_MODE_AKEY		0x002	// access allowed by access key
+#define ALLOW_MODE_ALLOW	0x0001	// access allowed
+#define ALLOW_MODE_AKEY		0x0002	// access allowed by access key
 
 // locations
-#define ALLOW_MODE_EXTERN	0x004	// keyword 'EXTERN' set
-#define ALLOW_MODE_LAN		0x008	// keyword 'LAN' set
-#define ALLOW_MODE_LOCAL	0x010	// keyword 'LOCAL' set
+#define ALLOW_MODE_EXTERN	0x0004	// keyword 'EXTERN' set
+#define ALLOW_MODE_LAN		0x0008	// keyword 'LAN' set
+#define ALLOW_MODE_LOCAL	0x0010	// keyword 'LOCAL' set
 
 // users
-#define ALLOW_MODE_PUBLIC	0x020	// keyword 'PUBLIC' set
-#define ALLOW_MODE_USER		0x040	// keyword 'USER' set
-#define ALLOW_MODE_MOD		0x080	// keyword 'MOD' or 'MODERATOR' set
-#define ALLOW_MODE_ADMIN	0x100	// keyword 'ADMIN' or 'ADMINISTRATOR' set
-#define ALLOW_MODE_DEVELOP	0x200	// keyword 'DEVELOP' or 'DEVELOPER' set
+#define ALLOW_MODE_PUBLIC	0x0020	// keyword 'PUBLIC' set
+#define ALLOW_MODE_USER		0x0040	// keyword 'USER' set
+#define ALLOW_MODE_MOD		0x0080	// keyword 'MOD' or 'MODERATOR' set
+#define ALLOW_MODE_ADMIN	0x0100	// keyword 'ADMIN' or 'ADMINISTRATOR' set
+#define ALLOW_MODE_DEVELOP	0x0200	// keyword 'DEVELOP' or 'DEVELOPER' set
 
 // logging
-#define ALLOW_MODE_LOG		0x400	// keyword 'LOG' set
-#define ALLOW_MODE_VERBOSE	0x800	// keyword 'VERBOSE' set
+#define ALLOW_MODE_LOG		0x0400	// keyword 'LOG' set
+#define ALLOW_MODE_VERBOSE	0x0800	// keyword 'VERBOSE' set
+
+// context
+#define ALLOW_RELEASE		0x1000	// accept this record if neither DEBUG nor IS_DEVELOP is set
+#define ALLOW_DEBUG		0x2000	// accept this record if DEBUG or IS_DEVELOP is set
 
 // special processing values
 #define ALLOW_MODE_NOT		0x1000000000000000ull	// negate bits
@@ -685,7 +1059,7 @@ ccp PrintTransferStatsSQL
 						// NULL: use a local circulary static buffer
     size_t			buf_size,	// size of 'buf', ignored if buf==NULL
     const TransferStats_t	*ts,		// valid source
-    ccp				prefix		// not NULL: prefix memebr names
+    ccp				prefix		// not NULL: prefix member names
 );
 
 //-----------------------------------------------------------------------------
@@ -1085,7 +1459,7 @@ typedef struct TCPHandler_t
     TCPHandlerFunc OnAcceptStream;	// not NULL: called before accpeting a connection
     TCPCreateFunc  OnCreateStream;	// not NULL: called to create
 					// and initialize a stream object
-    TCPStreamFunc  OnAddedStream;	// not NULL: called after the stream 
+    TCPStreamFunc  OnAddedStream;	// not NULL: called after the stream
 					// is created and added
     TCPStreamFunc  OnDestroyStream;	// not NULL: called by ResetTCPStream()
 
@@ -1282,11 +1656,11 @@ void CheckSocketsTCP
 );
 
 void CheckTimeoutTCP ( TCPHandler_t *th );
-bool MaintenanceTCP ( TCPHandler_t *th );
+bool MaintainTCP ( TCPHandler_t *th );
 
 void ManageSocketsTCP
 (
-    // call  CheckSocketsTCP(), CheckTimeoutTCP(), MaintenanceTCP()
+    // call  CheckSocketsTCP(), CheckTimeoutTCP(), MaintainTCP()
 
     TCPHandler_t	*th,		// valid TCP handler
     FDList_t		*fdl,		// valid socket list
@@ -1294,7 +1668,7 @@ void ManageSocketsTCP
 );
 
 ///////////////////////////////////////////////////////////////////////////////
-// special case: send single data packtes
+// special case: send single data packets
 
 TCPStream_t * SendSingleUnixTCP
 (

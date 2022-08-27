@@ -14,16 +14,16 @@
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *        Copyright (c) 2012-2021 by Dirk Clemens <wiimm@wiimm.de>         *
+ *        Copyright (c) 2012-2022 by Dirk Clemens <wiimm@wiimm.de>         *
  *                                                                         *
  ***************************************************************************
  *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
+ *   This library is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
  *   the Free Software Foundation; either version 2 of the License, or     *
  *   (at your option) any later version.                                   *
  *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
+ *   This library is distributed in the hope that it will be useful,       *
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
  *   GNU General Public License for more details.                          *
@@ -63,6 +63,22 @@ typedef enum LogLevelMYSQL
     MYLL_ALL
 }
 LogLevelMYSQL;
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			watch long queries		///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void SetupQueryLogMYSQL
+(
+    ccp		fname,		// filename of log file, openend with mode "a"
+    ccp		tag,		// identification of the tool for shared log files
+    u_nsec_t	nsec,		// >0: log queries that need ≥# nsec
+    uint	size		// >0: log queries that are longer ≥# bytes
+);
+
+void CloseQueryLogMYSQL(void);
+struct LogFile_t * OpenQueryLogMYSQL(void);
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -142,7 +158,7 @@ typedef struct MySql_t
 
     //--- statistics
 
-    uint	total_connect_count;	// total number of connections (usualy 1)
+    uint	total_connect_count;	// total number of connections (usually 1)
     uint	total_query_count;	// total number of queries
     u64		total_query_size;	// total size of all queries
     uint	total_result_count;	// total number of fetched results
@@ -157,6 +173,8 @@ typedef struct MySql_t
     u64		total_duration_usec;	// total duration of all queries
 }
 MySql_t;
+
+extern const SaveRestoreTab_t SRT_Mysql[];
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -264,6 +282,7 @@ s64 FetchIntMYSQL
 (
     MySql_t	*my,		// valid struct
     LogLevelMYSQL loglevel,	// log level for mysql errors and queries
+    bool	allow_trail,	// allow additional chars behind number
     s64		return_default	// return this value on non existent result
 );
 
@@ -271,6 +290,7 @@ u64 FetchUIntMYSQL
 (
     MySql_t	*my,		// valid struct
     LogLevelMYSQL loglevel,	// log level for mysql errors and queries
+    bool	allow_trail,	// allow additional chars behind number
     u64		return_default	// return this value on non existent result
 );
 
@@ -302,21 +322,23 @@ s64 PrintFetchIntMYSQL
 (
     MySql_t	*my,		// valid struct
     LogLevelMYSQL loglevel,	// log level for mysql errors and queries
+    bool	allow_trail,	// allow additional chars behind number
     s64		return_default,	// return this value on non existent result
     ccp		format,		// format string for vsnprintf()
     ...				// parameters for 'format'
 )
-__attribute__ ((__format__(__printf__,4,5)));
+__attribute__ ((__format__(__printf__,5,6)));
 
 u64 PrintFetchUIntMYSQL
 (
     MySql_t	*my,		// valid struct
     LogLevelMYSQL loglevel,	// log level for mysql errors and queries
+    bool	allow_trail,	// allow additional chars behind number
     u64		return_default,	// return this value on non existent result
     ccp		format,		// format string for vsnprintf()
     ...				// parameters for 'format'
 )
-__attribute__ ((__format__(__printf__,4,5)));
+__attribute__ ((__format__(__printf__,5,6)));
 
 //-----------------------------------------------------------------------------
 // fetch single row
@@ -534,6 +556,10 @@ MySqlServerStats_t * Max2MySqlServerStats
     MySqlServerStats_t		*dest,	// NULL or destination (maybe same as source)
     const MySqlServerStats_t	*src	// NULL or source
 );
+
+///////////////////////////////////////////////////////////////////////////////
+
+extern UsageDuration_t mysql_query_usage;
 
 //
 ///////////////////////////////////////////////////////////////////////////////

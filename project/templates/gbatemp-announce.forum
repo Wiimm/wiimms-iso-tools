@@ -9,15 +9,9 @@
 [size="3"][color="#0000c0"][b]Feature overview:[/b][/color][/size]
 @@MODULE(features-en.forum)@@
 
-[size="3"][color="#0000c0"][b]Download of the current version:[/b][/color][/size]
-~[size="3"][color="#0000c0"][b]Download[/b][/color] [color="#800000"][b]this EXPERIMENTAL release:[/b][/color][/size]
+[size="3"][color="#0000c0"][b]Download:[/b][/color][/size]
 [list]
-[*] [url=@@URI-DOWNLOAD-I386@@][b]@@DISTRIB-I386@@[/b][/url] : Linux/i386 version
-[*] [url=@@URI-DOWNLOAD-X86_64@@][b]@@DISTRIB-X86_64@@[/b][/url] : Linux/x86_64 version
-~[*] [url=@@URI-DOWNLOAD-MAC@@][b]@@DISTRIB-MAC@@[/b][/url] : Mac OS universal binaries (ppc, i386 and x86-64)
-[*] [url=@@URI-DOWNLOAD-CYGWIN@@][b]@@DISTRIB-CYGWIN@@[/b][/url] : Cygwin (Windows) version
-[*] Other releases are available at [url=@@URI-HOME@@download.html][b]@@URI-HOME@@download.html[/b][/url].
-[/list]
+[*] [url=https://wit.wiimm.de/download.html][b]https://wit.wiimm.de/download.html[/b][/url][/list]
 
 [size="3"][color="#0000c0"][b]There are also some GUI available:[/b][/color][/size]
 [list]

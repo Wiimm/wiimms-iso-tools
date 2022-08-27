@@ -3936,6 +3936,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_VERSION:	version_exit();
 	case GO_HELP:		help_exit(false);
 	case GO_XHELP:		help_exit(true);
+	case GO_CONFIG:		opt_config = optarg; break;
 	case GO_WIDTH:		err += ScanOptWidth(optarg); break;
 
 	case GO_QUIET:		verbose = verbose > -1 ? -1 : verbose - 1; break;
@@ -3965,9 +3966,9 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_ALL:		opt_all++; break;
 	case GO_PART:		AtFileHelper(optarg,0,0,AddPartition); break;
 	case GO_WBFS_ALLOC:	err += ScanOptWbfsAlloc(optarg); break;
-	case GO_SOURCE:		AppendStringField(&source_list,optarg,false); break;
+	case GO_SOURCE:		AppendStringFieldExpand(&source_list,optarg,0,false); break;
 	case GO_NO_EXPAND:	opt_no_expand = true; break;
-	case GO_RECURSE:	AppendStringField(&recurse_list,optarg,false); break;
+	case GO_RECURSE:	AppendStringFieldExpand(&recurse_list,optarg,0,false); break;
 	case GO_RDEPTH:		err += ScanOptRDepth(optarg); break;
 	case GO_PSEL:		err += ScanOptPartSelector(optarg); break;
 	case GO_RAW:		part_selector.whole_disc
@@ -4064,12 +4065,24 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
 	case GO_ALLOW_FST:	err += ScanOptAllowFST(optarg); break;
 	case GO_ALLOW_NKIT:	err += ScanOptAllowNKIT(optarg); break;
 
+	case GO_JSON:		script_fform = PSFF_JSON; break;
+	case GO_SH:		script_fform = PSFF_SH; break;
+	case GO_BASH:		script_fform = PSFF_BASH; break;
+	case GO_PHP:		script_fform = PSFF_PHP; break;
+	case GO_MAKEDOC:	script_fform = PSFF_MAKEDOC; break;
+	case GO_VAR:		script_varname = optarg; break;
+	case GO_ARRAY:		script_array++; break;
+	case GO_AVAR:		script_array++; script_varname = optarg; break;
+	case GO_CASE:		err += ScanOptCase(optarg); break;
+	case GO_INSTALL:	opt_install++; break;
+
 	case GO_ITIME:		SetTimeOpt(PT_USE_ITIME|PT_F_ITIME); break;
 	case GO_MTIME:		SetTimeOpt(PT_USE_MTIME|PT_F_MTIME); break;
 	case GO_CTIME:		SetTimeOpt(PT_USE_CTIME|PT_F_CTIME); break;
 	case GO_ATIME:		SetTimeOpt(PT_USE_ATIME|PT_F_ATIME); break;
 
 	case GO_LONG:		long_count++; break;
+	case GO_BRIEF:		brief_count++; break;
 	case GO_NUMERIC:	break;
 	case GO_TECHNICAL:	opt_technical++; break;
 	case GO_MIXED:	    	break;
@@ -4172,6 +4185,7 @@ enumError CheckOptions ( int argc, char ** argv, bool is_env )
  #ifdef DEBUG
     DumpUsedOptions(&InfoUI_wwt,TRACE_FILE,11);
  #endif
+    NormalizeOptions( verbose > 3 && !is_env );
 
     if ( verbose > 3 && !is_env )
     {
@@ -4236,21 +4250,34 @@ enumError CheckCommand ( int argc, char ** argv )
     TRACE("COMMAND FOUND: #%lld = %s\n",(u64)cmd_ct->id,cmd_ct->name1);
     current_command = cmd_ct;
 
-    enumError err = VerifySpecificOptions(&InfoUI_wwt,cmd_ct);
-    if (err)
-	hint_exit(err);
+//    if (!allow_all)
+//    {
+	enumError err = VerifySpecificOptions(&InfoUI_wwt,cmd_ct);
+	if (err)
+	    hint_exit(err);
+//    }
+    WarnDepractedOptions(&InfoUI_wwt);
 
-    argc -= optind+1;
-    argv += optind+1;
+    if ( cmd_ct->id != CMD_ARGTEST )
+    {
+	argc -= optind+1;
+	argv += optind+1;
 
-    while ( argc-- > 0 )
-	AtFileHelper(*argv++,false,true,AddParam);
+	if ( cmd_ct->id == CMD_TEST )
+	    while ( argc-- > 0 )
+		AddParam(*argv++,false);
+	else
+	    while ( argc-- > 0 )
+		AtFileHelper(*argv++,false,true,AddParam);
+    }
 
     switch ((enumCommands)cmd_ct->id)
     {
 	case CMD_VERSION:	version_exit();
 	case CMD_HELP:		PrintHelp(&InfoUI_wwt,stdout,0,"HELP",0,URI_HOME,
 					first_param ? first_param->arg : 0 ); break;
+	case CMD_CONFIG:	err = cmd_config(); break;
+	case CMD_ARGTEST:	err = cmd_argtest(argc,argv); break;
 	case CMD_INFO:		err = cmd_info(); break;
 	case CMD_TEST:		err = cmd_test(); break;
 	case CMD_ERROR:		err = cmd_error(); break;
@@ -4317,6 +4344,7 @@ enumError CheckCommand ( int argc, char ** argv )
 
 int main ( int argc, char ** argv )
 {
+    print_title_func = print_title;
     SetupLib(argc,argv,WWT_SHORT,PROG_WWT);
 
     //----- process arguments

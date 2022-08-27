@@ -45,7 +45,7 @@ WDF_LONG		= Wiimms WDF Tool
 WFUSE_SHORT		= wfuse
 WFUSE_LONG		= Wiimms FUSE Tool
 
-VERSION_NUM		= 3.04a
+VERSION_NUM		= 3.05a
 BETA_VERSION		= 0
 			# 0:off  -1:"beta"  >0:"beta#"
 
@@ -228,7 +228,7 @@ DIR_LIST	+= $(SETUP_DIR)
 RM_FILES2	+= $(SETUP_FILES)
 
 TEXT_DIR	=  ./text-files
-TEXT_FILES	=  logo.inc ui-head.inc
+TEXT_FILES	=  logo.inc ui-head.inc config-paths.inc
 DIR_LIST	+= $(TEXT_DIR)
 RM_FILES2	+= $(TEXT_FILES)
 
@@ -297,7 +297,7 @@ DEFINES1	+= -D_7ZIP_ST=1		# disable 7zip multi threading
 DEFINES1	+= -D_LZMA_PROB32=1	# LZMA option
 DEFINES		=  $(strip $(DEFINES1) $(MODE) $(XDEF))
 
-CFLAGS		+= -fomit-frame-pointer -fno-strict-aliasing -funroll-loops
+CFLAGS		+= -std=gnu99 -fomit-frame-pointer -fno-strict-aliasing -funroll-loops
 CFLAGS		+= -Wall -Wno-parentheses -Wno-unused-function
 #CFLAGS		+= -O3 -Isrc/libwbfs -Isrc/lzma -Isrc -I$(UI) -I. -Iwork
 CFLAGS		+= -O3 -Isrc/libwbfs -Isrc -I$(UI) -I. -Iwork
@@ -315,6 +315,10 @@ ifeq ($(SYSTEM),mac)
   CFLAGS	+= -I/usr/local/include
 else
   LDFLAGS	+= -static-libgcc
+endif
+
+ifeq ($(shell expr $(GCC_VERSION) '>=' 7.0 ),1)
+  CFLAGS	+= -Wno-format-truncation
 endif
 
 CFLAGS		+= $(XFLAGS)
@@ -542,15 +546,6 @@ c+ clean+: clean
 .PHONY : c++ clean++
 c++ clean++: clean+
 	@test -d .svn && svn st | sort -k2 || true
-
-#
-#--------------------------
-
-.PHONY: dclib
-dclib:
-	@echo "DCLIB_MYSQL=$(DCLIB_MYSQL)"
-	@echo "DCLIB_FLAGS=$(DCLIB_FLAGS)"
-	@echo "DCLIB_O=$(DCLIB_O)"
 
 #
 #--------------------------
@@ -804,6 +799,8 @@ templates.sed: Makefile
 		's|@@@@-@@-@@|$(DATE)|g;' \
 		's|@@:@@:@@|$(TIME)|g;' \
 		's|@@AUTHOR@@|$(AUTHOR)|g;' \
+		's|@@SYSTEM@@|$(SYSTEM)|g;' \
+		's|@@SYSTEM2@@|$(SYSTEM2)|g;' \
 		's|@@TOOLSET-SHORT@@|$(TOOLSET_SHORT)|g;' \
 		's|@@TOOLSET-LONG@@|$(TOOLSET_LONG)|g;' \
 		's|@@WIT-SHORT@@|$(WIT_SHORT)|g;' \

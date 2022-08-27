@@ -60,6 +60,18 @@
 		" If the first non option is a valid command name,"
 		" then a help for the given command is printed." },
 
+  { H_DEF_CMD,	"CONFIG",	"CONFIG",
+		    "wit CONFIG [options]...",
+		"Show all information about the search" \
+		" for the configuration file and its content."
+		" The command can also export the settings for scripts"
+		" or can create or update configuration files." },
+
+  { T_DEF_CMD,	"ARGTEST",	"ARGTEST",
+		    "wit ARGTEST ...",
+		"This debug command accepts all kinds of parameters"
+		" and prints one line for each parameter." },
+
   { T_DEF_CMD,	"INFO",		"INFO",
 		    "wit INFO [keyword]...",
 		"Print some internal information about the keywords."
@@ -341,6 +353,15 @@
 		"Stop parsing the command line and print a help message"
 		" with all commands included. Exit after printing." },
 
+  { H_OPT_GP,	"CONFIG",	"config",
+		"file",
+		"Define a configuration file or a directory as source."
+		" In later case, file @'" CONFIG_FILE "'@ is searched."
+		"\n "
+		" If option is not not set,"
+		" then file @'" CONFIG_FILE "'@ is searched in different directories."
+		" Use command @'wszst CONFIG'@ to get more details." },
+
   { T_OPT_GP,	"WIDTH",	"width",
 		"width",
 		"Define the width (number of columns) for help and some other messages"
@@ -488,6 +509,12 @@
 		"path",
 		"Use the entered file or directory as source."
 		"\n "
+		" If parameter PATH contains at least one wildcard (e.g. '*.wbfs'),"
+		" then PATH is used as search pattern and all found files are added."
+		" In order to use this variant, the calling shell must not interpret"
+		" the wildcards. Therefore, the parameter must usually be enclosed"
+		" in single or double quotes."
+		"\n "
 		" Directories are expanded to all containing files"
 		" but hidden files (file names begins with a point) are ignored."
 		" If a command needs only images then non image files"
@@ -503,6 +530,12 @@
 		"path",
 		" If @path@ is not a directory, then it is used as a simple"
 		" source file like {--source}."
+		"\n "
+		" If parameter PATH contains at least one wildcard (e.g. '*.wbfs'),"
+		" then PATH is used as search pattern and all found files are added."
+		" In order to use this variant, the calling shell must not interpret"
+		" the wildcards. Therefore, the parameter must usually be enclosed"
+		" in single or double quotes."
 		"\n "
 		" Directories are scanned for source files recursively."
 		" The option {--rdepth} limits the search depth."
@@ -1236,6 +1269,16 @@
 		"varname",
 		"Shortcut for: {--array --var name}" },
 
+  { T_OPT_GP,	"CASE",		"case",
+		"case",
+		"@CASE@ is one of @LOWER@, @AUTO@ (default) or @UPPER@."
+		"If @LOWER@ or @UPPER@ are set, then the lower/upper case"
+		" of the variable names is adjusted accordingly." },
+
+  { T_OPT_C,	"INSTALL",	"install",
+		0,
+		"Manage configuration for an installation." },
+
   { T_SEP_OPT,	0,0,0,0 }, //----- separator -----
 
   { T_OPT_C,	"ITIME",	"itime",
@@ -1582,7 +1625,7 @@
   { T_COPT,	"COMPRESSION",	0,0,0 },
   { T_COPT,	"MEM",		0,0,0 },
 
-  //---------- wszst GROUP SCRIPT ----------
+  //---------- wit GROUP SCRIPT ----------
 
   { T_GRP_BEG,	"SCRIPT",	0,0,0 },
 
@@ -1594,6 +1637,7 @@
   { T_COPT,	"VAR",		0,0,0 },
   { T_COPT,	"ARRAY",	0,0,0 },
   { T_COPT,	"AVAR",		0,0,0 },
+  { T_COPT,	"CASE",		0,0,0 },
 
   //
   //---------- COMMAND wit VERSION ----------
@@ -1612,6 +1656,26 @@
   { T_CMD_BEG,	"HELP",		0,0,0 },
 
   { T_COPT,	"WIDTH",	0,0,0 },
+  { T_ALL_OPT,	0,		0,0,0 },
+
+  //---------- COMMAND wszst CONFIG ----------
+
+  { T_CMD_BEG,	"CONFIG",	0,0,0 },
+
+  { T_COPT,	"CONFIG",	0,0,0 },
+  { T_COPT,	"INSTALL",	0,0,0 },
+  { T_COPT,	"LONG",		0,0,
+	"If set, print the search list too."
+	" This option is ignored, if any script output is enabled." },
+  { T_SEP_OPT,	0,0,0,0 },
+  { T_COPY_GRP,	"SCRIPT",	0,0,0 },
+  { T_COPT,	"BRIEF",	0,0,
+	"If printed as sections, exclude all comments." },
+
+  //---------- COMMAND wszst ARGTEST ----------
+
+  { T_CMD_BEG,	"ARGTEST",	0,0,0 },
+
   { T_ALL_OPT,	0,		0,0,0 },
 
   //---------- COMMAND wit INFO ----------

@@ -50,6 +50,7 @@
 extern PrintScriptFF	script_fform;
 extern ccp		script_varname;
 extern int		script_array;
+extern LowerUpper_t	opt_case;
 
 //-----------------------------------------------------------------------------
 // [[PatchStat_t]]

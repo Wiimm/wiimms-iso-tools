@@ -100,6 +100,8 @@ typedef enum enumRevID
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#define CONFIG_FILE		"wiimms-iso-tools.conf"
+
 #define TRACE_SEEK_FORMAT "%-20.20s fd=%d,%p %9llx%s\n"
 #define TRACE_RDWR_FORMAT "%-20.20s fd=%d,%p %9llx..%9llx %8zx%s\n"
 
@@ -130,6 +132,11 @@ typedef enum enumRevID
 void SetupLib ( int argc, char ** argv, ccp p_progname, enumProgID prid );
 void SetupColors();
 void CloseAll();
+
+void NormalizeOptions
+(
+    uint	log_level	// >0: print PROGRAM_NAME and pathes
+);
 
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -1287,6 +1294,18 @@ typedef struct SetupDef_t
 } SetupDef_t;
 
 //-----------------------------------------------------------------------------
+// [[ListDef_t]]
+
+typedef struct ListDef_t
+{
+    ccp			name;		// section name
+    bool		append;		// true: append string instead of insert
+    StringField_t	*sf;		// NULL or valid pointer to string field
+    exmem_list_t	*eml;		// NULL or valid pointer to exmem list
+
+} ListDef_t;
+
+//-----------------------------------------------------------------------------
 
 size_t ResetSetup
 (
@@ -1295,10 +1314,12 @@ size_t ResetSetup
 
 enumError ScanSetupFile
 (
-	SetupDef_t * list,	// object list terminated with an element 'name=NULL'
-	ccp path1,		// filename of text file, part 1
-	ccp path2,		// filename of text file, part 2
-	bool silent		// true: suppress error message if file not found
+    SetupDef_t		* sdef,		// object list terminated with an element 'name=NULL'
+    const ListDef_t	* ldef,		// NULL or object list terminated
+					//	with an element 'name=NULL'
+    ccp			path1,		// filename of text file, part 1
+    ccp			path2,		// filename of text file, part 2
+    bool		silent		// true: suppress error message if file not found
 );
 
 //
@@ -1419,8 +1440,49 @@ RepairMode ScanRepairMode ( ccp arg );
 
 //
 ///////////////////////////////////////////////////////////////////////////////
-///////////////			    etc				///////////////
+///////////////			scan configuration		///////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [[config_t]]
+
+typedef struct config_t
+{
+    ccp config_file;
+    ccp base_path;
+    ccp install_path;
+    ccp install_config;
+    ccp share_path;
+    ccp titles_path;
+}
+config_t;
+
+//-----------------------------------------------------------------------------
+
+static inline void InitializeConfig ( config_t *config )
+	{ DASSERT(config); memset(config,0,sizeof(*config)); }
+
+void ResetConfig ( config_t *config );
+
+enumError ScanConfig
+(
+    config_t		*config,	// store configuration here
+    ccp			path,		// NULL or path
+    bool		silent		// true: suppress printing of error messages
+);
+
+void SearchConfigHelper ( search_file_list_t *sfl, int stop_mode );
+const config_t * GetConfig(void);
+void PrintConfig ( FILE *f, const config_t *config, bool verbose );
+void PrintConfigScript ( FILE *f, const config_t *config );
+void PrintConfigFile ( FILE *f, const config_t *config );
+
+const StringField_t * GetSearchList(void);
+
+//
+///////////////////////////////////////////////////////////////////////////////
+///////////////			    misc			///////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void SetupPrintScriptByOptions ( PrintScript_t *ps );
 
 size_t AllocTempBuffer ( size_t needed_size );
 int AddCertFile ( ccp fname, int unused );
@@ -1434,11 +1496,14 @@ void cmd_version_section ( bool sect_header, ccp name_short, ccp name_long );
 ///////////////			    vars			///////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+extern ccp		opt_config;
+extern int		opt_install;
+extern ccp		std_share_path;
+extern ccp		share_path;
 extern enumProgID	prog_id;
 extern u32		revision_id;
 extern ccp		search_path[];
 extern ccp		lang_info;
-extern volatile int	SIGINT_level;
 extern volatile int	verbose;
 extern volatile int	logging;
 extern int		progress;
@@ -1471,6 +1536,8 @@ extern u32		opt_recurse_depth;
 extern StringField_t	source_list;
 extern StringField_t	recurse_list;
 extern StringField_t	created_files;
+
+extern void (*print_title_func) ( FILE * f );
 
 //-----------------------------------
 

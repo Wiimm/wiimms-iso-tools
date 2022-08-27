@@ -12,16 +12,9 @@ Dieses ist das Ankündigungsthema für [url=@@URI-HOME@@][b]@@TOOLSET-SHORT@@[/b
 (Die Links zeigen auf die englischsprachige Website)[/color]
 @@MODULE(features-de.forum)@@
 
-[size=12][color=#0000c0][b]Download der aktuellen Version:[/b][/color][/size]
-~[size=12][color=#0000c0][b]Download[/b][/color] [color=#800000][b]der EXPERIMENTELLEN Version:[/b][/color][/size]
-[list]
-[*] [url=@@URI-DOWNLOAD-I386@@][b]@@DISTRIB-I386@@[/b][/url] : Linux/i386 Version
-[*] [url=@@URI-DOWNLOAD-X86_64@@][b]@@DISTRIB-X86_64@@[/b][/url] : Linux/x86_64 Version
-~[*] [url=@@URI-DOWNLOAD-MAC@@][b]@@DISTRIB-MAC@@[/b][/url] : Mac OS Universal Binaries (ppc, i386 und x86-64)
-[*] [url=@@URI-DOWNLOAD-CYGWIN@@][b]@@DISTRIB-CYGWIN@@[/b][/url] : Cygwin (Windows) Version
-[/list] Weitere Versionen sind unter [url=@@URI-HOME@@download.html][b]@@URI-HOME@@download.html[/b][/url] verfügbar.
-
-[size=12][color=#0000c0][b]Es existieren auch mehrere graphische Oberflächen (GUI) zur Bedienung von WIT. Die beiden wichtigsten sind:[/b][/color][/size]
+[size=12][color=#0000c0][b]Download:[/b][/color][/size]
+[list][*][url=https://wit.wiimm.de/download.html][b]https://wit.wiimm.de/download.html[/b][/url][/list]
+[size=12][color=#0000c0][b]Es existieren auch mehrere graphische Oberflächen (GUI) zur Bedienung von WIT. Die wichtigsten sind:[/b][/color][/size]
 [list]
 [*] [url=@@URI-QTWITGUI@@][b]QtWitGui[/b], Bearbeitung einzelner Wii ISO discs.[/url]
     Dieses QT basierte GUI bietet Dinge rund um die Bearbeitung (Kopieren, modifizieren) von einzelnen WIi ISO discs.
@@ -39,4 +32,4 @@ Dieses ist das Ankündigungsthema für [url=@@URI-HOME@@][b]@@TOOLSET-SHORT@@[/b
 @@MODULE(last-history.txt)@@
 [/code]
 
-Die Quellen stehen unter der GPL2 Lizenz und können entweder direkt aus dem [url=@@URI-REPOS@@][b]SVN Repository[/b][/url] exportiert oder mit einem [url=@@URI-VIEWVC@@][b]Browser besurft werden[/b][/url]. Unter [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url] gibt es weitere Informationen.
+Die Quellen stehen unter der GPL2 Lizenz und sind unter [url=https://github.com/Wiimm/wiimms-iso-tools]github[/url] verfügbar. Für weitere Informationen siehe [url=@@URI-HOME@@][b]@@URI-HOME@@[/b][/url].

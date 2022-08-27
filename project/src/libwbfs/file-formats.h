@@ -198,6 +198,25 @@ enum // some constants
 typedef char id6_t[7];
 
 //-------------------------------------------------------------------------
+// [[id6_union_t]]
+
+typedef union id6_union_t
+{
+    char id6[6];
+    struct
+    {
+	char disc_id;
+	char game_code[2];
+	char region_code;
+	char maker_code[2];
+    }
+    __attribute__ ((packed));
+}
+__attribute__ ((packed)) id6_union_t;
+
+_Static_assert( sizeof(id6_union_t) == 6, "wrong id6_union_t" );
+
+//-------------------------------------------------------------------------
 
 extern const char skeleton_marker[10];
 
@@ -429,10 +448,7 @@ typedef struct wd_header_128_t
 {
 	// -> http://www.wiibrew.org/wiki/Wiidisc#Header
 
-  /* 0x00 */	char	disc_id;
-  /* 0x01 */	char	game_code[2];
-  /* 0x03 */	char	region_code;
-  /* 0x04 */	char	marker_code[2];
+  /* 0x00 */	id6_union_t id6;
 
   /* 0x06 */	u8	disc_number;
   /* 0x07 */	u8	disc_version;
@@ -452,6 +468,8 @@ typedef struct wd_header_128_t
   /* 0x62 */	u8	padding[0x1e];
 
 } __attribute__ ((packed)) wd_header_128_t;
+
+_Static_assert( sizeof(wd_header_128_t) == 0x80, "wrong wd_header_128_t" );
 
 //-----------------------------------------------------------------------------
 
@@ -481,10 +499,7 @@ typedef struct wd_header_t
 {
 	// -> http://www.wiibrew.org/wiki/Wiidisc#Header
 
-  /* 0x00 */	char	disc_id;
-  /* 0x01 */	char	game_code[2];
-  /* 0x03 */	char	region_code;
-  /* 0x04 */	char	marker_code[2];
+  /* 0x00 */	id6_union_t id6;
 
   /* 0x06 */	u8	disc_number;
   /* 0x07 */	u8	disc_version;
@@ -506,6 +521,8 @@ typedef struct wd_header_t
   /* 0x80 */	wbfs_inode_info_t iinfo;		// off=WBFS_INODE_INFO_OFF
 
 } __attribute__ ((packed)) wd_header_t;
+
+_Static_assert( sizeof(wd_header_t) == 0x80 + sizeof(wbfs_inode_info_t), "wrong wd_header_t" );
 
 //-----------------------------------------------------------------------------
 

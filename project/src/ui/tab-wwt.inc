@@ -57,8 +57,16 @@
 		    "wwt HELP [command] [ignored]...",
 		0 /* copy of wit */ },
 
+  { H_DEF_CMD,	"CONFIG",	"CONFIG",
+		    "wwt CONFIG [options]...",
+		0 /* copy of wit */ },
+
+  { T_DEF_CMD,	"ARGTEST",	"ARGTEST",
+		    "wwt ARGTEST ...",
+		0 /* copy of wit */ },
+
   { T_DEF_CMD,	"INFO",		"INFO",
-		    "wit INFO [keyword]...",
+		    "wwt INFO [keyword]...",
 		0 /* copy of wit */ },
 
   { T_DEF_CMD,	"TEST",		"TEST",
@@ -298,6 +306,9 @@
   { T_OPT_S,	"XHELP",	"xhelp",
 		0, 0 /* copy of wit */ },
 
+  { T_OPT_GP,	"CONFIG",	"config",
+		0, 0 /* copy of wit */ },
+
   { T_OPT_GP,	"WIDTH",	"width",
 		0, 0 /* copy of wit */ },
 
@@ -442,6 +453,38 @@
 		0, 0 /* copy of wit */ },
 
   { H_OPT_C,	"USER_BIN",	"user-bin|userbin",
+		0, 0 /* copy of wit */ },
+
+  { T_SEP_OPT,	0,0,0,0 }, //----- separator -----
+
+  { T_OPT_G,	"SH",		"sh",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_G,	"BASH",		"bash",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_G,	"JSON",		"json",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_G,	"PHP",		"php",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_G,	"MAKEDOC",	"makedoc",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_GP,	"VAR",		"var",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_G,	"ARRAY",	"array",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_GP,	"AVAR",		"avar",
+		0, 0 /* copy of wit */ },
+
+  { T_OPT_GP,	"CASE",		"case",
+		0, 0 /* copy of wit */ },
+
+ { T_OPT_GP,	"INSTALL",	"install",
 		0, 0 /* copy of wit */ },
 
   { T_SEP_OPT,	0,0,0,0 }, //----- separator -----
@@ -738,6 +781,9 @@
   { T_OPT_CM,	"LONG",		"l|long",
 		0, 0 /* copy of wit */ },
 
+  { T_OPT_C,	"BRIEF",	"b|brief",
+		0, 0 /* copy of wit */ },
+
   { T_OPT_CP,	"SHOW",		"+|show",
 		0, 0 /* copy of wit */ },
 
@@ -980,6 +1026,19 @@
   { H_COPT,	"COMPRESSION",	0,0,0 },
   { H_COPT,	"MEM",		0,0,0 },
 
+  //---------- wwt GROUP SCRIPT ----------
+
+  { T_GRP_BEG,	"SCRIPT",	0,0,0 },
+
+  { T_COPT,	"SH",		0,0,0 },
+  { T_COPT,	"BASH",		0,0,0 },
+  { T_COPT,	"JSON",		0,0,0 },
+  { T_COPT,	"PHP",		0,0,0 },
+  { T_COPT,	"MAKEDOC",	0,0,0 },
+  { T_COPT,	"VAR",		0,0,0 },
+  { T_COPT,	"ARRAY",	0,0,0 },
+  { T_COPT,	"AVAR",		0,0,0 },
+  { T_COPT,	"CASE",		0,0,0 },
 
   //
   //---------- COMMAND wwt VERSION ----------
@@ -994,6 +1053,26 @@
   { T_CMD_BEG,	"HELP",		0,0,0 },
 
   { T_COPT,	"WIDTH",	0,0,0 },
+  { T_ALL_OPT,	0,		0,0,0 },
+
+  //---------- COMMAND wszst CONFIG ----------
+
+  { T_CMD_BEG,	"CONFIG",	0,0,0 },
+
+  { T_COPT,	"CONFIG",	0,0,0 },
+  { T_COPT,	"INSTALL",	0,0,0 },
+  { T_COPT,	"LONG",		0,0,
+	"If set, print the search list too."
+	" This option is ignored, if any script output is enabled." },
+  { T_SEP_OPT,	0,0,0,0 },
+  { T_COPY_GRP,	"SCRIPT",	0,0,0 },
+  { T_COPT,	"BRIEF",	0,0,
+	"If printed as sections, exclude all comments." },
+
+  //---------- COMMAND wszst ARGTEST ----------
+
+  { T_CMD_BEG,	"ARGTEST",	0,0,0 },
+
   { T_ALL_OPT,	0,		0,0,0 },
 
   //---------- COMMAND wwt INFO ----------
