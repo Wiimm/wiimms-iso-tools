@@ -4260,15 +4260,72 @@ char * NormalizeFileName
 		if ( isalnum(ch)
 			|| ( is_utf8
 				? ch >= 0x80
-				:    ch == 0xe4 // ä
-				  || ch == 0xf6 // ö
-				  || ch == 0xfc // ü
-				  || ch == 0xdf // ß
-				  || ch == 0xc4 // Ä
-				  || ch == 0xd6 // Ö
-				  || ch == 0xdc // Ü
+				:  ch == 0xc0 // À
+				|| ch == 0xc1 // Á
+				|| ch == 0xc2 // Â
+				|| ch == 0xc3 // Ã
+				|| ch == 0xc4 // Ä
+				|| ch == 0xc5 // Å
+				|| ch == 0xc6 // Æ
+				|| ch == 0xc7 // Ç
+				|| ch == 0xc8 // È
+				|| ch == 0xc9 // É
+				|| ch == 0xca // Ê
+				|| ch == 0xcb // Ë
+				|| ch == 0xcc // Ì
+				|| ch == 0xcd // Í
+				|| ch == 0xce // Î
+				|| ch == 0xcf // Ï
+				|| ch == 0xd0 // Ð
+				|| ch == 0xd1 // Ñ
+				|| ch == 0xd2 // Ò
+				|| ch == 0xd3 // Ó
+				|| ch == 0xd4 // Ô
+				|| ch == 0xd5 // Õ
+				|| ch == 0xd6 // Ö
+				|| ch == 0xd7 // ×
+				|| ch == 0xd8 // Ø
+				|| ch == 0xd9 // Ù
+				|| ch == 0xda // Ú
+				|| ch == 0xdb // Û
+				|| ch == 0xdc // Ü
+				|| ch == 0xdd // Ý
+				|| ch == 0xde // Þ
+				|| ch == 0xdf // ß
+				|| ch == 0xe0 // à
+				|| ch == 0xe1 // á
+				|| ch == 0xe2 // â
+				|| ch == 0xe3 // ã
+				|| ch == 0xe4 // ä
+				|| ch == 0xe5 // å
+				|| ch == 0xe6 // æ
+				|| ch == 0xe7 // ç
+				|| ch == 0xe8 // è
+				|| ch == 0xe9 // é
+				|| ch == 0xea // ê
+				|| ch == 0xeb // ë
+				|| ch == 0xec // ì
+				|| ch == 0xed // í
+				|| ch == 0xee // î
+				|| ch == 0xef // ï
+				|| ch == 0xf0 // ð
+				|| ch == 0xf1 // ñ
+				|| ch == 0xf2 // ò
+				|| ch == 0xf3 // ó
+				|| ch == 0xf4 // ô
+				|| ch == 0xf5 // õ
+				|| ch == 0xf6 // ö
+				|| ch == 0xf7 // ÷
+				|| ch == 0xf8 // ø
+				|| ch == 0xf9 // ù
+				|| ch == 0xfa // ú
+				|| ch == 0xfb // û
+				|| ch == 0xfc // ü
+				|| ch == 0xfd // ý
+				|| ch == 0xfe // þ
+				|| ch == 0xff // ÿ
 			    )
-			|| strchr("_+-=%'\"$%&#,.!()[]{}<>",ch)
+			|| strchr("~_+-=%'\"$%&#,.!()[]{}<>",ch)
 			)
 		{
 		    *dest++ = ch;
